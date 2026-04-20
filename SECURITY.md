@@ -10,12 +10,12 @@ Expected response time: within 7 days.
 
 This project handles several sensitive values that must never be committed:
 
-| Secret | Where it's used |
-|---|---|
-| `HF_TOKEN` | HuggingFace model downloads (gated models) |
-| `RUNPOD_API_KEY` | RunPod GPU provisioning |
+| Secret           | Where it's used                                                      |
+| ---------------- | -------------------------------------------------------------------- |
+| `HF_TOKEN`       | HuggingFace model downloads (gated models)                           |
+| `RUNPOD_API_KEY` | RunPod GPU provisioning                                              |
 | `QDRANT_API_KEY` | Qdrant Cloud or hosted Qdrant instance (not needed for local Docker) |
-| `QDRANT_URL` | Qdrant host URL in non-local environments |
+| `QDRANT_URL`     | Qdrant host URL in non-local environments                            |
 
 **Rules:**
 

@@ -21,12 +21,12 @@ uv run python scripts/build_index.py   # embed + index processed/ data
 
 Managed via `uv` and `pyproject.toml`. Groups:
 
-| Group | Key packages |
-|---|---|
-| core | `transformers`, `torch`, `accelerate`, `FlagEmbedding`, `qdrant-client`, `pydantic`, `numpy` |
-| api | `fastapi`, `uvicorn[standard]` |
-| dev | `pytest`, `pytest-mock`, `pytest-cov`, `ruff`, `mypy` |
-| train | `unsloth`, `trl`, `peft`, `bitsandbytes`, `datasets` |
+| Group | Key packages                                                                                 |
+| ----- | -------------------------------------------------------------------------------------------- |
+| core  | `transformers`, `torch`, `accelerate`, `FlagEmbedding`, `qdrant-client`, `pydantic`, `numpy` |
+| api   | `fastapi`, `uvicorn[standard]`                                                               |
+| dev   | `pytest`, `pytest-mock`, `pytest-cov`, `ruff`, `mypy`                                        |
+| train | `unsloth`, `trl`, `peft`, `bitsandbytes`, `datasets`                                         |
 
 The `train` group is RunPod-only. Don't install it locally unless you have a CUDA GPU.
 
@@ -58,11 +58,11 @@ processed/              READ ONLY
 
 ## Data sources and chunking
 
-| Path | Format | Chunking strategy |
-|---|---|---|
+| Path                    | Format                                 | Chunking strategy                                                                                       |
+| ----------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | `processed/bulbapedia/` | `Title: ...\n<body>`, one doc per line | Split at `Title:` boundary first, then recursive by `\n\n` → sentence. Target 512 tokens, ~10% overlap. |
-| `processed/pokeapi/` | one entry per line, no header | No chunking — each line is already an atomic fact (~100–300 tokens). One doc per line. |
-| `processed/smogon/` | `Name (tier): ...`, one entry per line | Recursive sentence-aware split. Target 256–512 tokens, ~10% overlap. |
+| `processed/pokeapi/`    | one entry per line, no header          | No chunking — each line is already an atomic fact (~100–300 tokens). One doc per line.                  |
+| `processed/smogon/`     | `Name (tier): ...`, one entry per line | Recursive sentence-aware split. Target 256–512 tokens, ~10% overlap.                                    |
 
 Every chunk must carry these metadata fields in its Qdrant payload: `source` (`bulbapedia` / `pokeapi` / `smogon`), `pokemon_name` (if extractable), `chunk_index`, `original_doc_id`.
 
@@ -72,9 +72,10 @@ Every chunk must carry these metadata fields in its Qdrant payload: `source` (`b
 
 **Model**: `BAAI/bge-m3` via `FlagEmbedding.BGEM3FlagModel`
 **Vector DB**: Qdrant (local Docker in dev, hosted or RunPod-attached in prod)
-**Retrieval mode**: hybrid — dense + sparse in a single BGE-M3 pass, fused with RRF or weighted sum, then reranked with `BAAI/bge-reranker-v2-m3`
+**Retrieval mode**: hybrid — dense + sparse in a single BGE-M3 pass, fused with Qdrant `Prefetch` + `Fusion.RRF` (RRF chosen over weighted sum — no per-collection tuning required), then reranked with `BAAI/bge-reranker-v2-m3`
 
 BGE-M3 output types and what to store in Qdrant:
+
 - **Dense** (1024-dim): always index — primary semantic search
 - **Sparse**: always index — keyword/lexical search, free alongside dense
 - **ColBERT multi-vector**: optional — higher recall, significantly more storage and query cost; add later if recall is insufficient

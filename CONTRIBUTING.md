@@ -107,15 +107,15 @@ Each Qdrant collection must be created with both `vectors_config` (dense, 1024-d
 
 **Chunking strategy per source**:
 
-| Source | Strategy | Target size | Overlap |
-|---|---|---|---|
-| `pokeapi` | None — each line is one document | ~100–300 tokens | 0 |
-| `smogon` | Recursive, sentence-aware | 256–512 tokens | ~10% |
-| `bulbapedia` | Split at `Title:` then recursive `\n\n` → sentence | 512 tokens | Test 0% vs 10% |
+| Source       | Strategy                                           | Target size     | Overlap        |
+| ------------ | -------------------------------------------------- | --------------- | -------------- |
+| `pokeapi`    | None — each line is one document                   | ~100–300 tokens | 0              |
+| `smogon`     | Recursive, sentence-aware                          | 256–512 tokens  | ~10%           |
+| `bulbapedia` | Split at `Title:` then recursive `\n\n` → sentence | 512 tokens      | Test 0% vs 10% |
 
 Every chunk's Qdrant payload must include: `source`, `pokemon_name` (if extractable from title/header), `chunk_index`, `original_doc_id`. This enables payload-filtered queries (e.g. `source == "smogon" AND pokemon_name == "Garchomp"`) before the vector search runs.
 
-**Retrieval pipeline**: dense+sparse hybrid → rerank top-K with `BAAI/bge-reranker-v2-m3` → assemble context. The reranker uses `FlagEmbedding.FlagReranker`, not the embedding model class.
+**Retrieval pipeline**: dense+sparse hybrid fused with Qdrant `Prefetch` + `Fusion.RRF` → rerank top-K with `BAAI/bge-reranker-v2-m3` → assemble context. The reranker uses `FlagEmbedding.FlagReranker`, not the embedding model class. Generator dependency injection uses `PromptBuilderProtocol` (defined in `src/generation/protocols.py`) — any callable `(str, tuple[RetrievedChunk, ...]) -> str` satisfies it.
 
 ## Workflow
 
@@ -150,6 +150,7 @@ See `TESTING.md` for full details.
 Types: `feat`, `fix`, `test`, `refactor`, `docs`, `chore`, `experiment`
 
 Examples:
+
 ```
 feat(retrieval): add namespace filtering to vector search
 fix(pipeline): raise RetrievalError when index is empty
@@ -164,7 +165,7 @@ chore(deps): bump transformers to 4.41.0
 - [ ] Coverage doesn't drop below 80% on any module
 - [ ] `pyproject.toml` and `uv.lock` committed together if deps changed
 - [ ] No secrets, tokens, or API keys in any committed file
-- [ ] PR description explains *why*, not just *what*
+- [ ] PR description explains _why_, not just _what_
 
 ## Code standards
 
@@ -183,6 +184,7 @@ Training scripts are in `scripts/training/` and are **not imported by `src/`**. 
 Recommended GPU for Gemma 4 E4B QLoRA: **RTX 4090 (24GB)** on RunPod community cloud (~$0.35–$0.69/hr). The model requires ~17GB VRAM with 4-bit quantization via Unsloth.
 
 Steps:
+
 1. Spin up a RunPod pod with the PyTorch template
 2. Attach a network volume for checkpoints (survives pod termination)
 3. `git clone` the repo, `uv sync --extra train`

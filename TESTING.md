@@ -120,18 +120,22 @@ def test_it_works(): ...
 
 ## Mocking the embedder
 
-Never load `BAAI/bge-m3` in unit tests. Mock `BGEM3FlagModel.encode` to return correctly shaped outputs:
+Never load `BAAI/bge-m3` in unit tests. Mock at the `BGEEmbedder` level — `BGEEmbedder.encode()` returns an `EmbeddingOutput` dataclass, not the raw `BGEM3FlagModel` dict:
 
 ```python
+from src.retrieval.embedder import EmbeddingOutput
+
 @pytest.fixture
 def mock_embedder(mocker):
     embedder = mocker.MagicMock()
-    embedder.encode.return_value = {
-        "dense_vecs": [[0.1] * 1024],          # shape: (n_docs, 1024)
-        "lexical_weights": [{"pokemon": 0.8}],  # sparse token weights
-    }
+    embedder.encode.return_value = EmbeddingOutput(
+        dense=[[0.1] * 1024],          # shape: (n_docs, 1024)
+        sparse=[{"pokemon": 0.8}],     # sparse token weights
+    )
     return embedder
 ```
+
+Do **not** mock `BGEM3FlagModel.encode` directly with the raw `{"dense_vecs": ..., "lexical_weights": ...}` dict — that is the internal FlagEmbedding format, not what the rest of the system sees.
 
 Integration tests in `test_embedder.py` that call the real model are marked `@pytest.mark.slow` and `@pytest.mark.integration`. They verify output shapes and types, not semantic content.
 
@@ -183,7 +187,7 @@ Drops below 80% on any module block the PR. Use `# pragma: no cover` sparingly a
 ## CI gates (in order)
 
 1. `uv run ruff check .` — zero errors
-2. `uv run mypy src/` — zero errors  
+2. `uv run mypy src/` — zero errors
 3. `uv run pytest -m "not gpu" --cov=src` — all pass, coverage ≥80%
 
 GPU tests run only on explicit trigger (manual dispatch or `[gpu]` tag in commit message).
