@@ -43,14 +43,14 @@ class TestModelLoader:
     def test_get_model_raises_before_load(self) -> None:
         from src.generation.loader import ModelLoader
 
-        loader = ModelLoader(config=GenerationConfig(model_id=_GEMMA_ID))
+        loader = ModelLoader(config=GenerationConfig(model_id=_GEMMA_ID), device="cpu")
         with pytest.raises(RuntimeError, match="load"):
             loader.get_model()
 
     def test_get_tokenizer_raises_before_load(self) -> None:
         from src.generation.loader import ModelLoader
 
-        loader = ModelLoader(config=GenerationConfig(model_id=_GEMMA_ID))
+        loader = ModelLoader(config=GenerationConfig(model_id=_GEMMA_ID), device="cpu")
         with pytest.raises(RuntimeError, match="load"):
             loader.get_tokenizer()
 
@@ -60,7 +60,7 @@ class TestModelLoader:
         fake_model = MagicMock()
         fake_tokenizer = MagicMock()
 
-        loader = ModelLoader(config=GenerationConfig(model_id=_GEMMA_ID))
+        loader = ModelLoader(config=GenerationConfig(model_id=_GEMMA_ID), device="cpu")
         with (
             patch(
                 "src.generation.loader.AutoModelForImageTextToText.from_pretrained",
@@ -83,7 +83,7 @@ class TestModelLoader:
         fake_model = MagicMock()
         fake_tokenizer = MagicMock()
 
-        loader = ModelLoader(config=GenerationConfig(model_id=_GEMMA_ID))
+        loader = ModelLoader(config=GenerationConfig(model_id=_GEMMA_ID), device="cpu")
         with (
             patch(
                 "src.generation.loader.AutoModelForImageTextToText.from_pretrained",
@@ -104,7 +104,7 @@ class TestModelLoader:
         fake_model = MagicMock()
         fake_tokenizer = MagicMock()
 
-        loader = ModelLoader(config=GenerationConfig(model_id=_GEMMA_ID))
+        loader = ModelLoader(config=GenerationConfig(model_id=_GEMMA_ID), device="cpu")
         with (
             patch(
                 "src.generation.loader.AutoModelForImageTextToText.from_pretrained",
@@ -123,7 +123,9 @@ class TestModelLoader:
         from src.generation.loader import ModelLoader
         from src.generation.models import GenerationConfig
 
-        loader = ModelLoader(config=GenerationConfig(model_id="google/gemma-4-E4B-it"))
+        loader = ModelLoader(
+            config=GenerationConfig(model_id="google/gemma-4-E4B-it"), device="cpu"
+        )
         with (
             patch(
                 "src.generation.loader.AutoModelForImageTextToText.from_pretrained",
