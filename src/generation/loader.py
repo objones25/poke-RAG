@@ -53,16 +53,12 @@ class ModelLoader:
 
     def get_model(self) -> PreTrainedModel:
         if self._model is None:
-            raise RuntimeError(
-                f"Model '{self._model_id}' not loaded. Call load() first."
-            )
+            raise RuntimeError(f"Model '{self._model_id}' not loaded. Call load() first.")
         return self._model
 
     def get_tokenizer(self) -> PreTrainedTokenizerBase:
         if self._tokenizer is None:
-            raise RuntimeError(
-                f"Tokenizer for '{self._model_id}' not loaded. Call load() first."
-            )
+            raise RuntimeError(f"Tokenizer for '{self._model_id}' not loaded. Call load() first.")
         return self._tokenizer
 
     def unload(self) -> None:

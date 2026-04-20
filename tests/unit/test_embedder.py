@@ -1,4 +1,5 @@
 """Unit tests for src/retrieval/embedder.py — RED until embedder.py is implemented."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock

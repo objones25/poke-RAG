@@ -1,4 +1,5 @@
 """Integration tests for scripts/build_index.py — RED until implementation exists."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -8,22 +9,7 @@ import pytest
 
 from src.retrieval.types import EmbeddingOutput
 from src.types import RetrievedChunk, Source
-
-
-def _make_chunk(
-    text: str = "some text",
-    source: Source = "pokeapi",
-    chunk_index: int = 0,
-) -> RetrievedChunk:
-    return RetrievedChunk(
-        text=text,
-        score=0.0,
-        source=source,
-        entity_name=None,
-        entity_type=None,
-        chunk_index=chunk_index,
-        original_doc_id=f"doc_{chunk_index}",
-    )
+from tests.conftest import make_chunk as _make_chunk
 
 
 def _make_embedder(dense_dim: int = 3, num_texts: int = 1) -> MagicMock:

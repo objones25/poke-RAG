@@ -1,4 +1,5 @@
 """Embed processed Pokémon data and upsert into Qdrant, file by file."""
+
 from __future__ import annotations
 
 import argparse
@@ -34,9 +35,7 @@ def discover_files(
         if not source_dir.exists():
             _LOG.warning("Source directory not found, skipping: %s", source_dir)
             continue
-        files = sorted(
-            p for p in source_dir.glob("*.txt") if not p.stem.endswith("_aug")
-        )
+        files = sorted(p for p in source_dir.glob("*.txt") if not p.stem.endswith("_aug"))
         results.extend((source, f) for f in files)
     return results
 
@@ -161,9 +160,7 @@ def run(
                     f"{len(result.sparse)} sparse vectors for batch of {len(batch)}"
                 )
             if dry_run:
-                _LOG.info(
-                    "[dry-run] would upsert %d chunk(s) into '%s'", len(batch), source
-                )
+                _LOG.info("[dry-run] would upsert %d chunk(s) into '%s'", len(batch), source)
             else:
                 vector_store.upsert(source, batch, result)
                 _LOG.debug("Upserted batch %d–%d for '%s'", i, i + len(batch), file_key)
@@ -178,6 +175,7 @@ def run(
 
 def main() -> None:
     from dotenv import load_dotenv
+
     load_dotenv()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
@@ -211,6 +209,7 @@ def main() -> None:
 
     try:
         from src.config import Settings
+
         settings = Settings.from_env()
     except KeyError as exc:
         _LOG.error("Missing required environment variable: %s. Set QDRANT_URL and retry.", exc)

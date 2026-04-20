@@ -2,6 +2,7 @@
 
 All external model/tokenizer dependencies are mocked — no GPU required.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -11,28 +12,9 @@ import pytest
 
 from src.generation.models import GenerationConfig
 from src.types import GenerationResult, RetrievedChunk, Source
+from tests.conftest import make_chunk as _chunk
 
 _GEMMA_ID = "google/gemma-4-E4B-it"
-
-
-def _chunk(
-    text: str = "some text",
-    score: float = 0.9,
-    source: Source = "bulbapedia",
-    entity_name: str | None = "Pikachu",
-    entity_type: str | None = "pokemon",
-    chunk_index: int = 0,
-    original_doc_id: str = "doc1",
-) -> RetrievedChunk:
-    return RetrievedChunk(
-        text=text,
-        score=score,
-        source=source,
-        entity_name=entity_name,
-        entity_type=entity_type,  # type: ignore[arg-type]
-        chunk_index=chunk_index,
-        original_doc_id=original_doc_id,
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -263,9 +245,7 @@ class TestInferencer:
 
 @pytest.mark.unit
 class TestGenerator:
-    def _make_generator(
-        self, answer: str = "A great answer about Pikachu."
-    ) -> Any:
+    def _make_generator(self, answer: str = "A great answer about Pikachu.") -> Any:
         from src.generation.generator import Generator
         from src.generation.models import GenerationConfig
 

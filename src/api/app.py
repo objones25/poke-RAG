@@ -20,7 +20,10 @@ load_dotenv()  # populate os.environ before lifespan runs
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     setup_logging()
-    app.state.pipeline = build_pipeline()
+    try:
+        app.state.pipeline = build_pipeline()
+    except Exception as exc:
+        raise RuntimeError(f"Failed to initialize RAG pipeline: {exc}") from exc
     yield
 
 

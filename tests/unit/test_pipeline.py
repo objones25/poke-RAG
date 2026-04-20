@@ -1,29 +1,11 @@
 """Unit tests for src/pipeline/rag_pipeline.py — RED until implemented."""
+
 from __future__ import annotations
 
 import pytest
 
 from src.types import GenerationResult, RetrievalError, RetrievalResult, RetrievedChunk, Source
-
-
-def _make_chunk(
-    text: str = "some text",
-    score: float = 0.9,
-    source: Source = "pokeapi",
-    entity_name: str | None = "Pikachu",
-    entity_type: str | None = "pokemon",
-    chunk_index: int = 0,
-    doc_id: str = "doc_0",
-) -> RetrievedChunk:
-    return RetrievedChunk(
-        text=text,
-        score=score,
-        source=source,
-        entity_name=entity_name,
-        entity_type=entity_type,  # type: ignore[arg-type]
-        chunk_index=chunk_index,
-        original_doc_id=doc_id,
-    )
+from tests.conftest import make_chunk as _make_chunk
 
 
 def _make_retrieval_result(
@@ -119,16 +101,16 @@ class TestRAGPipelineQuery:
         assert result.query == "What are Bulbasaur's types?"
 
     def test_num_chunks_used_matches_retrieved_count(self, mocker) -> None:
-        chunks = tuple(_make_chunk(doc_id=f"doc_{i}", chunk_index=i) for i in range(4))
+        chunks = tuple(_make_chunk(original_doc_id=f"doc_{i}", chunk_index=i) for i in range(4))
         pipeline, _, _ = self._make_pipeline(mocker, chunks=chunks)
         result = pipeline.query("Any question.")
         assert result.num_chunks_used == 4
 
     def test_sources_used_are_deduped(self, mocker) -> None:
         chunks = (
-            _make_chunk(source="pokeapi", doc_id="doc_0", chunk_index=0),
-            _make_chunk(source="pokeapi", doc_id="doc_1", chunk_index=1),
-            _make_chunk(source="bulbapedia", doc_id="doc_2", chunk_index=2),
+            _make_chunk(source="pokeapi", original_doc_id="doc_0", chunk_index=0),
+            _make_chunk(source="pokeapi", original_doc_id="doc_1", chunk_index=1),
+            _make_chunk(source="bulbapedia", original_doc_id="doc_2", chunk_index=2),
         )
         pipeline, _, _ = self._make_pipeline(mocker, chunks=chunks)
         result = pipeline.query("Any question.")
@@ -137,9 +119,9 @@ class TestRAGPipelineQuery:
 
     def test_sources_used_are_sorted(self, mocker) -> None:
         chunks = (
-            _make_chunk(source="smogon", doc_id="doc_0", chunk_index=0),
-            _make_chunk(source="bulbapedia", doc_id="doc_1", chunk_index=1),
-            _make_chunk(source="pokeapi", doc_id="doc_2", chunk_index=2),
+            _make_chunk(source="smogon", original_doc_id="doc_0", chunk_index=0),
+            _make_chunk(source="bulbapedia", original_doc_id="doc_1", chunk_index=1),
+            _make_chunk(source="pokeapi", original_doc_id="doc_2", chunk_index=2),
         )
         pipeline, _, _ = self._make_pipeline(mocker, chunks=chunks)
         result = pipeline.query("Any question.")
@@ -170,7 +152,7 @@ class TestRAGPipelineQuery:
         assert kwargs["sources"] is None
 
     def test_generator_called_with_query_and_chunks(self, mocker) -> None:
-        chunks = (_make_chunk(doc_id="doc_0"),)
+        chunks = (_make_chunk(original_doc_id="doc_0"),)
         pipeline, _, generator = self._make_pipeline(mocker, chunks=chunks)
         pipeline.query("What type is Pikachu?")
         generator.generate.assert_called_once_with("What type is Pikachu?", chunks)

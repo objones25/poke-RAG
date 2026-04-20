@@ -1,30 +1,11 @@
 """Unit tests for src/retrieval/context_assembler.py — RED until implemented."""
+
 from __future__ import annotations
 
 import pytest
 
 from src.retrieval.context_assembler import ContextAssembler
-from src.types import RetrievedChunk
-
-
-def _make_chunk(
-    text: str = "sample text",
-    score: float = 0.9,
-    source: str = "pokeapi",
-    entity_name: str | None = "Bulbasaur",
-    entity_type: str | None = "pokemon",
-    chunk_index: int = 0,
-    doc_id: str = "doc_0",
-) -> RetrievedChunk:
-    return RetrievedChunk(
-        text=text,
-        score=score,
-        source=source,  # type: ignore[arg-type]
-        entity_name=entity_name,
-        entity_type=entity_type,  # type: ignore[arg-type]
-        chunk_index=chunk_index,
-        original_doc_id=doc_id,
-    )
+from tests.conftest import make_chunk as _make_chunk
 
 
 @pytest.mark.unit
@@ -42,8 +23,8 @@ class TestContextAssemblerAssemble:
     def test_multiple_chunks_all_text_included(self) -> None:
         assembler = ContextAssembler()
         chunks = [
-            _make_chunk(text="text one", doc_id="doc_0"),
-            _make_chunk(text="text two", doc_id="doc_1", chunk_index=1),
+            _make_chunk(text="text one", original_doc_id="doc_0"),
+            _make_chunk(text="text two", original_doc_id="doc_1", chunk_index=1),
         ]
         result = assembler.assemble(chunks)
         assert "text one" in result
@@ -64,8 +45,8 @@ class TestContextAssemblerAssemble:
     def test_chunks_separated_in_output(self) -> None:
         assembler = ContextAssembler()
         chunks = [
-            _make_chunk(text="first chunk", doc_id="doc_0"),
-            _make_chunk(text="second chunk", doc_id="doc_1", chunk_index=1),
+            _make_chunk(text="first chunk", original_doc_id="doc_0"),
+            _make_chunk(text="second chunk", original_doc_id="doc_1", chunk_index=1),
         ]
         result = assembler.assemble(chunks)
         first_pos = result.index("first chunk")
@@ -75,8 +56,8 @@ class TestContextAssemblerAssemble:
     def test_deduplicates_identical_text(self) -> None:
         assembler = ContextAssembler()
         chunks = [
-            _make_chunk(text="duplicate text", score=0.9, doc_id="doc_0"),
-            _make_chunk(text="duplicate text", score=0.5, doc_id="doc_1", chunk_index=1),
+            _make_chunk(text="duplicate text", score=0.9, original_doc_id="doc_0"),
+            _make_chunk(text="duplicate text", score=0.5, original_doc_id="doc_1", chunk_index=1),
         ]
         result = assembler.assemble(chunks)
         assert result.count("duplicate text") == 1
@@ -84,8 +65,8 @@ class TestContextAssemblerAssemble:
     def test_deduplication_keeps_highest_score(self) -> None:
         assembler = ContextAssembler()
         chunks = [
-            _make_chunk(text="dup", score=0.3, source="pokeapi", doc_id="doc_0"),
-            _make_chunk(text="dup", score=0.9, source="smogon", doc_id="doc_1", chunk_index=1),
+            _make_chunk(text="dup", score=0.3, source="pokeapi", original_doc_id="doc_0"),
+            _make_chunk(text="dup", score=0.9, source="smogon", original_doc_id="doc_1", chunk_index=1),
         ]
         result = assembler.assemble(chunks)
         assert "smogon" in result
@@ -94,18 +75,18 @@ class TestContextAssemblerAssemble:
     def test_deduplication_emits_winner_once(self) -> None:
         assembler = ContextAssembler()
         chunks = [
-            _make_chunk(text="shared", score=0.5, doc_id="doc_0"),
-            _make_chunk(text="shared", score=0.8, doc_id="doc_1", chunk_index=1),
-            _make_chunk(text="shared", score=0.2, doc_id="doc_2", chunk_index=2),
+            _make_chunk(text="shared", score=0.5, original_doc_id="doc_0"),
+            _make_chunk(text="shared", score=0.8, original_doc_id="doc_1", chunk_index=1),
+            _make_chunk(text="shared", score=0.2, original_doc_id="doc_2", chunk_index=2),
         ]
         result = assembler.assemble(chunks)
         assert result.count("shared") == 1
 
     def test_token_budget_truncates_last_chunk_not_omits(self) -> None:
         assembler = ContextAssembler(max_tokens=10)
-        short = _make_chunk(text="short", doc_id="doc_0")
+        short = _make_chunk(text="short", original_doc_id="doc_0")
         long_text = "word " * 100
-        long_chunk = _make_chunk(text=long_text, doc_id="doc_1", chunk_index=1)
+        long_chunk = _make_chunk(text=long_text, original_doc_id="doc_1", chunk_index=1)
         result = assembler.assemble([short, long_chunk])
         assert "short" in result
         assert len(result.split()) < 30
@@ -121,14 +102,14 @@ class TestContextAssemblerAssemble:
         chunk = _make_chunk(text=long_text)
         result = assembler.assemble([chunk])
         approx_tokens = len(result.split()) / 0.75
-        assert approx_tokens <= 20 * 1.2  # 20% tolerance for header overhead
+        assert approx_tokens <= 20
 
     def test_chunk_order_preserved(self) -> None:
         assembler = ContextAssembler()
         chunks = [
-            _make_chunk(text="alpha", doc_id="doc_0", chunk_index=0),
-            _make_chunk(text="beta", doc_id="doc_1", chunk_index=1),
-            _make_chunk(text="gamma", doc_id="doc_2", chunk_index=2),
+            _make_chunk(text="alpha", original_doc_id="doc_0", chunk_index=0),
+            _make_chunk(text="beta", original_doc_id="doc_1", chunk_index=1),
+            _make_chunk(text="gamma", original_doc_id="doc_2", chunk_index=2),
         ]
         result = assembler.assemble(chunks)
         assert result.index("alpha") < result.index("beta") < result.index("gamma")
@@ -142,8 +123,8 @@ class TestContextAssemblerAssemble:
     def test_separator_customisable(self) -> None:
         assembler = ContextAssembler(separator="===")
         chunks = [
-            _make_chunk(text="chunk a", doc_id="doc_0"),
-            _make_chunk(text="chunk b", doc_id="doc_1", chunk_index=1),
+            _make_chunk(text="chunk a", original_doc_id="doc_0"),
+            _make_chunk(text="chunk b", original_doc_id="doc_1", chunk_index=1),
         ]
         result = assembler.assemble(chunks)
         assert "===" in result
@@ -154,7 +135,7 @@ class TestContextAssemblerDefaults:
     def test_default_max_tokens_is_large(self) -> None:
         assembler = ContextAssembler()
         long_chunks = [
-            _make_chunk(text="word " * 100, doc_id=f"doc_{i}", chunk_index=i) for i in range(5)
+            _make_chunk(text="word " * 100, original_doc_id=f"doc_{i}", chunk_index=i) for i in range(5)
         ]
         result = assembler.assemble(long_chunks)
         assert len(result) > 0
@@ -163,8 +144,8 @@ class TestContextAssemblerDefaults:
         sep = "\n~~\n"
         assembler = ContextAssembler(separator=sep)
         chunks = [
-            _make_chunk(text="a", doc_id="doc_0"),
-            _make_chunk(text="b", doc_id="doc_1", chunk_index=1),
+            _make_chunk(text="a", original_doc_id="doc_0"),
+            _make_chunk(text="b", original_doc_id="doc_1", chunk_index=1),
         ]
         result = assembler.assemble(chunks)
         assert sep in result

@@ -1,4 +1,5 @@
 """Source-aware document chunker for pokeapi, smogon, and bulbapedia files."""
+
 from __future__ import annotations
 
 import logging
@@ -154,7 +155,7 @@ def chunk_smogon_line(
     entity_name = _extract_smogon_name(stripped)
 
     colon_idx = stripped.find(":")
-    body = stripped[colon_idx + 1:].strip() if colon_idx != -1 else stripped
+    body = stripped[colon_idx + 1 :].strip() if colon_idx != -1 else stripped
 
     raw_chunks = _recursive_split(body, _SMOGON_TARGET_TOKENS)
     if not raw_chunks:
@@ -189,7 +190,7 @@ def chunk_bulbapedia_doc(
     entity_name: str | None = None
 
     if lines[0].startswith("Title:"):
-        title = lines[0][len("Title:"):].strip()
+        title = lines[0][len("Title:") :].strip()
         entity_name = _extract_bulbapedia_name(title)
         body = "\n".join(lines[1:]).strip()
     else:
@@ -234,18 +235,24 @@ def chunk_file(path: Path, *, source: Source) -> list[RetrievedChunk]:
 
     if source == "pokeapi":
         for i, line in enumerate(text.splitlines()):
-            chunks.extend(chunk_pokeapi_line(line, doc_id=f"{path.stem}_{i}", entity_type=entity_type))
+            chunks.extend(
+                chunk_pokeapi_line(line, doc_id=f"{path.stem}_{i}", entity_type=entity_type)
+            )
 
     elif source == "smogon":
         for i, line in enumerate(text.splitlines()):
-            chunks.extend(chunk_smogon_line(line, doc_id=f"{path.stem}_{i}", entity_type=entity_type))
+            chunks.extend(
+                chunk_smogon_line(line, doc_id=f"{path.stem}_{i}", entity_type=entity_type)
+            )
 
     elif source == "bulbapedia":
         docs = _RE_BULBA_DOC_SPLIT.split(text)
         for i, doc in enumerate(docs):
             doc = doc.strip()
             if doc:
-                chunks.extend(chunk_bulbapedia_doc(doc, doc_id=f"{path.stem}_{i}", entity_type=entity_type))
+                chunks.extend(
+                    chunk_bulbapedia_doc(doc, doc_id=f"{path.stem}_{i}", entity_type=entity_type)
+                )
 
     _LOG.debug("Chunked '%s' (source=%s) → %d chunk(s)", path.name, source, len(chunks))
     return chunks

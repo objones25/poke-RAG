@@ -1,4 +1,5 @@
 """BGE reranker wrapping FlagEmbedding.FlagReranker."""
+
 from __future__ import annotations
 
 import logging

@@ -1,4 +1,5 @@
 """Retrieval subsystem — public API."""
+
 from src.retrieval.chunker import (
     chunk_bulbapedia_doc,
     chunk_file,

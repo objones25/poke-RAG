@@ -2,6 +2,7 @@
 
 Uses a mocked model that returns deterministic output — no GPU required.
 """
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
@@ -68,7 +69,7 @@ def generator(config: GenerationConfig) -> Generator:
         "Charizard is a Fire/Flying-type Pokémon with 109 Special Attack."
     )
 
-    loader = ModelLoader(config=config)
+    loader = ModelLoader(config=config, device="cpu")
     with (
         patch(
             "src.generation.loader.AutoModelForImageTextToText.from_pretrained",

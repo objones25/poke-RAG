@@ -1,4 +1,5 @@
 """Unit tests for src/retrieval/chunker.py — RED until chunker.py is implemented."""
+
 from __future__ import annotations
 
 import pytest

@@ -1,4 +1,5 @@
 """Unit tests for src/retrieval/retriever.py — RED until implemented."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock
@@ -8,25 +9,7 @@ import pytest
 from src.retrieval.retriever import Retriever
 from src.retrieval.types import EmbeddingOutput
 from src.types import RetrievalError, RetrievalResult, RetrievedChunk, Source
-
-
-def _make_chunk(
-    text: str = "some text",
-    score: float = 0.9,
-    source: str = "pokeapi",
-    entity_name: str | None = "Bulbasaur",
-    entity_type: str | None = "pokemon",
-    idx: int = 0,
-) -> RetrievedChunk:
-    return RetrievedChunk(
-        text=text,
-        score=score,
-        source=source,  # type: ignore[arg-type]
-        entity_name=entity_name,
-        entity_type=entity_type,  # type: ignore[arg-type]
-        chunk_index=idx,
-        original_doc_id=f"doc_{idx}",
-    )
+from tests.conftest import make_chunk
 
 
 def _make_embedder(dense_dim: int = 1024) -> MagicMock:
@@ -40,13 +23,13 @@ def _make_embedder(dense_dim: int = 1024) -> MagicMock:
 
 def _make_vector_store(chunks: list[RetrievedChunk] | None = None) -> MagicMock:
     mock = MagicMock()
-    mock.search.return_value = chunks if chunks is not None else [_make_chunk()]
+    mock.search.return_value = chunks if chunks is not None else [make_chunk()]
     return mock
 
 
 def _make_reranker(chunks: list[RetrievedChunk] | None = None) -> MagicMock:
     mock = MagicMock()
-    mock.rerank.return_value = chunks if chunks is not None else [_make_chunk()]
+    mock.rerank.return_value = chunks if chunks is not None else [make_chunk()]
     return mock
 
 
@@ -71,7 +54,7 @@ class TestRetrieverRetrieve:
         assert result.query == "my query"
 
     def test_result_documents_are_retrieved_chunks(self) -> None:
-        chunks = [_make_chunk(idx=0), _make_chunk(idx=1)]
+        chunks = [make_chunk(chunk_index=0), make_chunk(chunk_index=1)]
         retriever = Retriever(
             embedder=_make_embedder(),
             vector_store=_make_vector_store(),
@@ -111,9 +94,7 @@ class TestRetrieverRetrieve:
             reranker=_make_reranker(),
         )
         retriever.retrieve("query", sources=["pokeapi"])
-        sources_searched = {
-            call[1]["collection"] for call in vector_store.search.call_args_list
-        }
+        sources_searched = {call[1]["collection"] for call in vector_store.search.call_args_list}
         assert sources_searched == {"pokeapi"}
 
     def test_passes_top_k_to_reranker(self) -> None:
@@ -139,7 +120,7 @@ class TestRetrieverRetrieve:
         assert call_args[0] == "specific query"
 
     def test_documents_match_reranker_output(self) -> None:
-        reranked = [_make_chunk(text="reranked result", idx=0)]
+        reranked = [make_chunk(text="reranked result", chunk_index=0)]
         retriever = Retriever(
             embedder=_make_embedder(),
             vector_store=_make_vector_store(),
@@ -218,9 +199,7 @@ class TestRetrieverRetrieve:
     def test_sparse_vector_passed_to_search(self) -> None:
         sparse = {10: 0.7, 20: 0.3}
         embedder = MagicMock()
-        embedder.encode.return_value = EmbeddingOutput(
-            dense=[[0.1] * 1024], sparse=[sparse]
-        )
+        embedder.encode.return_value = EmbeddingOutput(dense=[[0.1] * 1024], sparse=[sparse])
         vector_store = _make_vector_store()
         retriever = Retriever(
             embedder=embedder,

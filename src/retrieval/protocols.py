@@ -4,6 +4,7 @@ Every concrete class (BGEEmbedder, QdrantVectorStore, BGEReranker, Retriever)
 must satisfy the corresponding protocol. This enables unit tests to inject
 mocks without importing heavy ML dependencies.
 """
+
 from __future__ import annotations
 
 from typing import Protocol, runtime_checkable

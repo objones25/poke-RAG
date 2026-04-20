@@ -1,4 +1,5 @@
 """RAG retrieval orchestrator: embed → search → rerank."""
+
 from __future__ import annotations
 
 import logging

@@ -1,27 +1,7 @@
 import pytest
 
 from src.generation.prompt_builder import build_prompt
-from src.types import RetrievedChunk
-
-
-def _chunk(
-    text: str,
-    score: float,
-    source: str = "bulbapedia",
-    entity_name: str | None = "Charizard",
-    entity_type: str | None = "pokemon",
-    chunk_index: int = 0,
-    original_doc_id: str = "doc1",
-) -> RetrievedChunk:
-    return RetrievedChunk(
-        text=text,
-        score=score,
-        source=source,  # type: ignore[arg-type]
-        entity_name=entity_name,
-        entity_type=entity_type,  # type: ignore[arg-type]
-        chunk_index=chunk_index,
-        original_doc_id=original_doc_id,
-    )
+from tests.conftest import make_chunk as _chunk
 
 
 @pytest.mark.unit
@@ -83,7 +63,8 @@ class TestBuildPromptContent:
             _chunk("Text B.", score=0.7, source="bulbapedia", chunk_index=1),
         )
         prompt = build_prompt("Question?", chunks)
-        assert prompt.lower().count("bulbapedia") >= 1
+        sources_line = next(l for l in prompt.splitlines() if l.startswith("Sources:"))
+        assert sources_line.lower().count("bulbapedia") == 1
 
     def test_multiple_chunks_highest_score_appears_first(self) -> None:
         chunks = (

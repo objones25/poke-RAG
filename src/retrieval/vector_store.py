@@ -1,4 +1,5 @@
 """Qdrant-backed vector store with hybrid dense+sparse search."""
+
 from __future__ import annotations
 
 import contextlib
@@ -30,6 +31,7 @@ _SOURCES: tuple[Source, ...] = ("bulbapedia", "pokeapi", "smogon")
 _DENSE_DIM = 1024
 _DENSE_VECTOR_NAME = "dense"
 _SPARSE_VECTOR_NAME = "sparse"
+_UPSERT_BATCH_SIZE = 100
 
 
 class QdrantVectorStore:
@@ -41,13 +43,12 @@ class QdrantVectorStore:
     def ensure_collections(self) -> None:
         _LOG.info("Ensuring %d Qdrant collections: %s", len(_SOURCES), _SOURCES)
         for source in _SOURCES:
+            # suppress AlreadyExists: Qdrant raises UnexpectedResponse(409) on duplicate create
             with contextlib.suppress(UnexpectedResponse):
                 self._client.create_collection(
                     collection_name=source,
                     vectors_config={
-                        _DENSE_VECTOR_NAME: VectorParams(
-                            size=_DENSE_DIM, distance=Distance.COSINE
-                        ),
+                        _DENSE_VECTOR_NAME: VectorParams(size=_DENSE_DIM, distance=Distance.COSINE),
                     },
                     sparse_vectors_config={
                         _SPARSE_VECTOR_NAME: SparseVectorParams(
@@ -85,10 +86,16 @@ class QdrantVectorStore:
             )
             for i, doc in enumerate(documents)
         ]
-        batch_size = 100
-        for i in range(0, len(points), batch_size):
-            self._client.upsert(collection_name=collection, points=points[i : i + batch_size])
-            _LOG.debug("Upserted points %d–%d into '%s'", i, min(i + batch_size, len(points)), collection)
+        for i in range(0, len(points), _UPSERT_BATCH_SIZE):
+            self._client.upsert(
+                collection_name=collection, points=points[i : i + _UPSERT_BATCH_SIZE]
+            )
+            _LOG.debug(
+                "Upserted points %d–%d into '%s'",
+                i,
+                min(i + _UPSERT_BATCH_SIZE, len(points)),
+                collection,
+            )
         _LOG.debug("Upsert to '%s' complete", collection)
 
     def search(
@@ -102,13 +109,7 @@ class QdrantVectorStore:
         _LOG.debug("Searching '%s': top_k=%d, entity_name=%s", collection, top_k, entity_name)
 
         query_filter = (
-            Filter(
-                must=[
-                    FieldCondition(
-                        key="entity_name", match=MatchValue(value=entity_name)
-                    )
-                ]
-            )
+            Filter(must=[FieldCondition(key="entity_name", match=MatchValue(value=entity_name))])
             if entity_name is not None
             else None
         )

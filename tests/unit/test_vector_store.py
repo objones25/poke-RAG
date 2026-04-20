@@ -1,4 +1,5 @@
 """Unit tests for src/retrieval/vector_store.py — RED until vector_store.py is implemented."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock
@@ -15,23 +16,7 @@ def _make_client() -> MagicMock:
     return MagicMock()
 
 
-def _make_chunk(
-    text: str = "sample text",
-    source: str = "pokeapi",
-    entity_name: str | None = "Bulbasaur",
-    entity_type: str | None = None,
-    chunk_index: int = 0,
-    doc_id: str = "doc_0",
-) -> RetrievedChunk:
-    return RetrievedChunk(
-        text=text,
-        score=0.0,
-        source=source,  # type: ignore[arg-type]
-        entity_name=entity_name,
-        entity_type=entity_type,  # type: ignore[arg-type]
-        chunk_index=chunk_index,
-        original_doc_id=doc_id,
-    )
+from tests.conftest import make_chunk as _make_chunk
 
 
 def _make_embeddings(n: int = 1, dense_dim: int = 1024) -> EmbeddingOutput:
@@ -87,7 +72,7 @@ class TestUpsert:
     def test_upserts_all_chunks(self) -> None:
         client = _make_client()
         store = QdrantVectorStore(client)
-        chunks = [_make_chunk(doc_id=f"doc_{i}") for i in range(5)]
+        chunks = [_make_chunk(original_doc_id=f"doc_{i}") for i in range(5)]
         store.upsert("pokeapi", chunks, _make_embeddings(n=5))
         points = client.upsert.call_args[1]["points"]
         assert len(points) == 5
@@ -103,7 +88,7 @@ class TestUpsert:
     def test_payload_contains_metadata(self) -> None:
         client = _make_client()
         store = QdrantVectorStore(client)
-        chunk = _make_chunk(source="pokeapi", entity_name="Ivysaur", chunk_index=2, doc_id="d_1")
+        chunk = _make_chunk(source="pokeapi", entity_name="Ivysaur", chunk_index=2, original_doc_id="d_1")
         store.upsert("pokeapi", [chunk], _make_embeddings(n=1))
         payload = client.upsert.call_args[1]["points"][0].payload
         assert payload["source"] == "pokeapi"
@@ -117,7 +102,7 @@ class TestUpsert:
         embeddings = _make_embeddings(n=1, dense_dim=1024)
         store.upsert("pokeapi", [_make_chunk()], embeddings)
         point = client.upsert.call_args[1]["points"][0]
-        assert "dense" in point.vector or isinstance(point.vector, dict)
+        assert "dense" in point.vector
 
     def test_point_vector_includes_sparse(self) -> None:
         client = _make_client()
@@ -155,9 +140,7 @@ class TestSearch:
 
     def test_score_assigned_from_qdrant(self) -> None:
         client = _make_client()
-        client.query_points.return_value.points = [
-            self._make_scored_point("text", 0.87)
-        ]
+        client.query_points.return_value.points = [self._make_scored_point("text", 0.87)]
         store = QdrantVectorStore(client)
         results = store.search("pokeapi", [0.1] * 1024, {1: 0.5}, top_k=5)
         assert results[0].score == pytest.approx(0.87)

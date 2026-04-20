@@ -1,4 +1,5 @@
 """Formats retrieved chunks into a single context string for the LLM prompt."""
+
 from __future__ import annotations
 
 from src.types import RetrievedChunk

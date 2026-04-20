@@ -12,6 +12,4 @@ class PromptBuilderProtocol(Protocol):
 
 @runtime_checkable
 class GeneratorProtocol(Protocol):
-    def generate(
-        self, query: str, chunks: tuple[RetrievedChunk, ...]
-    ) -> GenerationResult: ...
+    def generate(self, query: str, chunks: tuple[RetrievedChunk, ...]) -> GenerationResult: ...

@@ -1,4 +1,5 @@
 """BGE-M3 hybrid embedder wrapping FlagEmbedding.BGEM3FlagModel."""
+
 from __future__ import annotations
 
 import logging
@@ -32,9 +33,7 @@ class BGEEmbedder:
         )
         _LOG.info("Loading BGE-M3 embedder '%s' on %s (fp16=%s)", model_name, device, use_fp16)
         instance = cls(
-            BGEM3FlagModel(
-                model_name_or_path=model_name, use_fp16=use_fp16, device=device
-            )
+            BGEM3FlagModel(model_name_or_path=model_name, use_fp16=use_fp16, device=device)
         )
         _LOG.info("BGE-M3 embedder '%s' ready", model_name)
         return instance
@@ -53,8 +52,7 @@ class BGEEmbedder:
 
         dense: list[list[float]] = [list(map(float, vec)) for vec in raw["dense_vecs"]]
         sparse: list[dict[int, float]] = [
-            {int(k): float(v) for k, v in weights.items()}
-            for weights in raw["lexical_weights"]
+            {int(k): float(v) for k, v in weights.items()} for weights in raw["lexical_weights"]
         ]
         _LOG.debug("Encoded %d texts → dense_dim=%d", len(dense), len(dense[0]) if dense else 0)
         return EmbeddingOutput(dense=dense, sparse=sparse)

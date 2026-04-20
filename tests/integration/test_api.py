@@ -1,4 +1,5 @@
 """Integration tests for the FastAPI HTTP layer."""
+
 from __future__ import annotations
 
 import pytest
