@@ -216,14 +216,12 @@ def main() -> None:
         _LOG.error("Missing required environment variable: %s. Set QDRANT_URL and retry.", exc)
         sys.exit(1)
 
-    import torch
     from qdrant_client import QdrantClient
 
     from src.retrieval.embedder import BGEEmbedder
     from src.retrieval.vector_store import QdrantVectorStore
 
-    use_fp16 = torch.cuda.is_available()
-    embedder = BGEEmbedder.from_pretrained(model_name=settings.embed_model, use_fp16=use_fp16)
+    embedder = BGEEmbedder.from_pretrained(model_name=settings.embed_model, device=settings.device)
     client = QdrantClient(url=settings.qdrant_url, api_key=settings.qdrant_api_key)
     vector_store = QdrantVectorStore(client)
 
