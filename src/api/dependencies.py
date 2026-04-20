@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import torch
 from fastapi import Request
 from qdrant_client import QdrantClient
 
@@ -26,10 +25,9 @@ def get_pipeline(request: Request) -> RAGPipeline:
 
 def build_pipeline() -> RAGPipeline:
     settings = Settings.from_env()
-    use_fp16 = torch.cuda.is_available()
 
-    embedder = BGEEmbedder.from_pretrained(model_name=settings.embed_model, use_fp16=use_fp16)
-    reranker = BGEReranker.from_pretrained(model_name=settings.rerank_model, use_fp16=use_fp16)
+    embedder = BGEEmbedder.from_pretrained(model_name=settings.embed_model, device=settings.device)
+    reranker = BGEReranker.from_pretrained(model_name=settings.rerank_model, device=settings.device)
 
     client = QdrantClient(url=settings.qdrant_url, api_key=settings.qdrant_api_key)
     vector_store = QdrantVectorStore(client)
@@ -47,7 +45,7 @@ def build_pipeline() -> RAGPipeline:
         return_tensors=settings.return_tensors,
         truncation=settings.truncation,
     )
-    loader = ModelLoader(config=gen_config)
+    loader = ModelLoader(config=gen_config, device=settings.device)
     loader.load()
     inferencer = Inferencer(
         model=loader.get_model(),
