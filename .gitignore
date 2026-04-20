@@ -1,0 +1,113 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+wheels/
+*.egg-link
+MANIFEST
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Secrets / environment
+.env
+.env.*
+!.env.example
+
+# uv
+.uv/
+
+# Pytest / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+*.lcov
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# ruff
+.ruff_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+*.sublime-project
+*.sublime-workspace
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# ML / model artifacts
+*.bin
+*.safetensors
+*.pt
+*.pth
+*.ckpt
+*.h5
+*.onnx
+models/
+checkpoints/
+adapters/
+
+# HuggingFace cache
+.cache/
+huggingface/
+
+# Qdrant local data
+qdrant_storage/
+qdrant_snapshots/
+
+# Training outputs
+runs/
+logs/
+wandb/
+mlruns/
+output/
+
+# Data outputs (processed/ is read-only source — never write there)
+data/embeddings/
+data/indexed/
+
+# Secrets
+*.pem
+*.key
+*.crt
+secrets/
+
+# Misc
+*.log
+*.pid
+tmp/
+temp/

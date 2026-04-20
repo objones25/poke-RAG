@@ -1,0 +1,29 @@
+Title: Pokémon Ball Descriptions
+
+The Master Ball functions as a Pokémon item. When deployed in combat, it unfailingly captures any wild Pokémon. Should it be utilized during a trainer battle, it will have no effect, and the item will be expended. This is renowned as the premier Poké Ball, boasting unparalleled performance, guaranteed to secure any wild Pokémon.
+
+The Ultra Ball is a Pokémon item. Its use in battle involves an attempt to capture a wild Pokémon, applying a 2× catch rate modifier. Activating it in a trainer battle yields no result and consumes the item. This superior Poké Ball offers a significantly increased success rate for capturing Pokémon compared to a Great Ball.
+
+The Great Ball functions as a Pokémon item. When deployed in combat, it endeavors to catch a wild Pokémon, utilizing a 1.5× catch rate. In a trainer encounter, its activation is fruitless, and the ball is forfeited. This is a reliable, high-performance Poké Ball, offering an improved success rate for capturing Pokémon over a standard Poké Ball.
+
+The Poké Ball is a standard Pokémon item. When used during a battle, it attempts to capture a wild Pokémon with a 1× catch rate. Its application in a trainer battle results in no action, and the item is consumed. This fundamental device for catching wild Pokémon is designed as a capsule system, thrown to comfortably encapsulate its target.
+
+The Safari Ball serves as a specialized Pokémon item. In combat, it tries to capture a wild Pokémon with a 1.5× catch rate. Its utility is strictly confined to specific locations: the Great Marsh or the Kanto Safari Zone. This unique Poké Ball is distinguished by its camouflage pattern, reflecting its use in these particular environments.
+
+The Net Ball is a Pokémon item for capturing wild Pokémon. When employed in battle, its catch rate is 3× if the target is a Water-type or Bug-type Pokémon; otherwise, it operates at a 1× catch rate. As with others, using it against a trainer's Pokémon has no effect and results in its loss. This distinctive Poké Ball is notably more effective against Water- or Bug-type creatures.
+
+The Dive Ball is a Pokémon item primarily used for capturing wild Pokémon. In a battle, its catch rate is elevated to 3.5× if the wild Pokémon was encountered through surfing or fishing; otherwise, it defaults to a 1× rate. Attempting to use it in a trainer battle will be futile, and the item will be consumed. This particular Poké Ball proves especially proficient when attempting to catch Pokémon found underwater.
+
+The Nest Ball functions as a Pokémon item for wild Pokémon capture attempts. In battle, its catch rate is dynamically determined by the formula `(40 - level) / 10`, where `level` represents the wild Pokémon’s level, peaking at 3.9× for a level 1 Pokémon. For Pokémon with a level exceeding 30, the catch rate is 1×. Deploying it in a trainer battle has no effect, and the ball is lost. This distinctive Poké Ball gains effectiveness as the wild Pokémon's level decreases.
+
+The Repeat Ball is a Pokémon item designed for capturing wild Pokémon. During a battle, if the wild Pokémon's species is already recorded as caught in the trainer’s Pokédex, it provides a 3× catch rate; otherwise, the rate is 1×. Activating it in a trainer battle is ineffective, leading to its loss. This particular Poké Ball is especially efficient at re-catching Pokémon species previously encountered and captured.
+
+The Timer Ball functions as a Pokémon item for capturing wild Pokémon. Its catch rate in battle begins at 1.1× on the first turn and progressively rises by 0.1× with each subsequent turn, capping at 4× by turn 30. If deployed in a trainer battle, it has no effect and is consumed. This distinctive Poké Ball demonstrates increasing effectiveness the longer a battle persists.
+
+The Luxury Ball is a Pokémon item used for attempting to catch a wild Pokémon, employing a 1× catch rate. A unique property of this ball is that any Pokémon caught within it experiences an additional point increase to its happiness whenever its happiness would normally rise. As expected, usage in a trainer battle is ineffective and results in the item's disposal. It is known for making captured Pokémon quickly grow more amiable.
+
+The Premier Ball is a Pokémon item. It is utilized in battle to attempt the capture of a wild Pokémon, functioning at a 1× catch rate. Its deployment against a trainer's Pokémon will yield no result, and the ball will be expended. This somewhat rare Poké Ball is uniquely crafted to memorialize a special event.
+
+The Dusk Ball is a Pokémon item for capturing wild Pokémon. When activated in battle, it offers a heightened 3.5× catch rate if it is currently nighttime or if the wild Pokémon was encountered within a cave; otherwise, its rate is 1×. Using it in a trainer battle is ineffective, and the ball is lost. This specialized Poké Ball is engineered to enhance the success of catching Pokémon during the night or in subterranean environments.
+
+The Heal Ball is a Pokémon item. Its function in battle is to attempt to capture a wild Pokémon with a 1× catch rate. Upon a successful capture, the newly caught Pokémon immediately has its HP fully restored, the PP for all its moves replenished, and any existing status ailments cured. If used in a trainer battle, nothing occurs, and the ball is consumed.

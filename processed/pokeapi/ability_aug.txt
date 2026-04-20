@@ -1,0 +1,37 @@
+Title: Rewritten Pokémon Ability Descriptions
+
+Stench is a Pokémon ability. When this Pokémon lands a damaging attack, there is a 10% likelihood for the target to flinch with each strike, provided the move does not inherently possess a flinching secondary effect. This ability's effect does not combine with that of any held item. In the overworld, if this Pokémon leads the party, the frequency of wild encounters is cut in half, effectively helping to deter wild POKéMON.
+
+Drizzle is a Pokémon ability. Upon this Pokémon's entry into battle, the weather immediately shifts to rain. This rainy condition persists until another weather-altering ability or move replaces it. Should multiple Pokémon possessing Drizzle, Drought, Sand Stream, or Snow Warning enter the arena simultaneously, their abilities activate sequentially based on their Speed stat, respecting any Trick Room effect. Each subsequent weather effect will nullify the preceding one, ensuring that only the weather summoned by the slowest of these Pokémon remains active. This effect notably brings forth rain during combat.
+
+Speed Boost is a Pokémon ability. This Pokémon's Speed stat is elevated by one stage at the conclusion of every turn, resulting in a gradual increase to its SPEED over time.
+
+Battle Armor is a Pokémon ability. Opposing moves are unable to land critical hits against this Pokémon. This protective capability operates identically to the Shell Armor ability.
+
+Sturdy is a Pokémon ability. If this Pokémon possesses its full HP, any single hit that would typically cause it to faint will instead leave it with 1 HP. Additionally, regardless of its current HP, this Pokémon gains complete immunity to one-hit KO moves such as Fissure, Guillotine, Horn Drill, and Sheer Cold. Should this Pokémon be holding a Focus Sash, its Sturdy ability will take precedence, meaning the item will not be consumed.
+
+Damp is a Pokémon ability. While this Pokémon remains active in battle, the moves Self-Destruct and Explosion will completely fail, and the Aftermath ability will not activate. This effectively prevents self-destructive maneuvers by all combatants.
+
+Limber is a Pokémon ability. This Pokémon is impervious to paralysis. Should a Pokémon become paralyzed and subsequently gain this ability, its paralysis will be immediately cured. This includes instances where the ability is reacquired upon exiting battle.
+
+Sand Veil is a Pokémon ability. When a sandstorm is active, this Pokémon benefits from a 1.25× boost to its evasion, and it takes no damage from the sandstorm, irrespective of its type. This evasion increase is not categorized as a stat modifier. Overworld: If this Pokémon is in the lead party slot, the frequency of wild encounters is halved during a sandstorm.
+
+Static is a Pokémon ability. Any time an opposing move makes direct contact with this Pokémon, the attacking Pokémon has a 30% likelihood of becoming paralyzed. Notably, even Pokémon that are normally immune to Electric-type moves can still be paralyzed by this ability. Overworld: If this Pokémon is at the head of the party, there is a 50% chance that encountered wild Pokémon will be Electric-type, where applicable.
+
+Volt Absorb is a Pokémon ability. Each time an Electric-type move strikes this Pokémon, it regenerates 1/4 of its maximum HP, simultaneously nullifying any other effects the move might have had. This ability will not trigger if this Pokémon is Ground-type and thereby already immune to Electric moves. Furthermore, Electric moves will bypass this Pokémon's Substitute. This healing effect applies even to non-damaging Electric-type moves, such as Thunder Wave.
+
+Water Absorb is a Pokémon ability. Whenever a Water-type move connects with this Pokémon, it restores 1/4 of its maximum HP, overriding any additional effects of the move. Water moves will also ignore this Pokémon's Substitute.
+
+Oblivious is a Pokémon ability. This Pokémon is immune to the infatuated status condition and cannot be affected by the move Captivate. If a Pokémon is already infatuated and then gains this ability, its infatuation status is immediately removed.
+
+Cloud Nine is a Pokémon ability. While this Pokémon is actively participating in battle, weather conditions can still be present, but they will not exert any of their usual effects. This ability operates identically to Air Lock.
+
+Compound Eyes is a Pokémon ability. The accuracy of this Pokémon's moves is boosted by a factor of 1.3×. However, this ability confers no benefit to one-hit KO moves, specifically Fissure, Guillotine, Horn Drill, and Sheer Cold. Overworld: If this Pokémon is the first in the party, the probability of encountering a wild Pokémon holding a specific item increases from 50%, 5%, or 1% to 60%, 20%, or 5%, respectively.
+
+Insomnia is a Pokémon ability. This Pokémon cannot be afflicted with the sleep status condition, which also causes the move Rest to fail completely. If a Pokémon is asleep and then acquires this ability, it will instantly awaken; this includes cases where a lost ability is regained after battle. In combat, this ability functions identically to Vital Spirit.
+
+Color Change is a Pokémon ability. Whenever this Pokémon sustains damage from a move, its type dynamically shifts to match the type of that move. If the Pokémon possesses two types, both are overwritten. The Pokémon must directly take damage for the ability to activate; for instance, moves blocked by a Substitute or indirect damage sources like Spikes will not trigger Color Change. In the case of a multiple-hit attack, this ability only takes effect on the final hit. In the specific games Pokémon Colosseum and XD: Gale of Darkness, this ability does not activate in response to Shadow-type moves.
+
+Immunity is a Pokémon ability. This Pokémon is completely safeguarded from being poisoned, including severe poisoning. If a Pokémon is poisoned and subsequently gains this ability, its poison status is immediately cured. This includes scenarios where a lost ability is restored after battle.
+
+Flash Fire is a Pokémon ability. This Pokémon is immune to damage from Fire-type moves. Once this Pokémon has been struck by a Fire-type attack, its own Fire-type moves will deal 1.5× their normal damage until it exits battle. This enhancement does not apply while the Pokémon is frozen. Nevertheless, the Fire damage bonus persists even if the Pokémon becomes frozen and then thaws, or if the ability itself is lost or suppressed. Fire moves will bypass this Pokémon's Substitute, and the ability activates even when hit by non-damaging Fire-type moves.
