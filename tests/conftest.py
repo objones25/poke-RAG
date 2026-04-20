@@ -50,7 +50,7 @@ def make_generation_result() -> Callable[..., GenerationResult]:
     def _factory(
         answer: str = "Pikachu is Electric-type.",
         sources_used: tuple[Source, ...] = ("pokeapi",),
-        model_name: str = "google/gemma-4-E4B-it",
+        model_name: str = "google/gemma-2-2b-it",
         num_chunks_used: int = 1,
     ) -> GenerationResult:
         return GenerationResult(

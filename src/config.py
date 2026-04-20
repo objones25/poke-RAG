@@ -37,7 +37,7 @@ class Settings:
             qdrant_api_key=os.getenv("QDRANT_API_KEY"),
             embed_model=os.getenv("EMBED_MODEL", "BAAI/bge-m3"),
             rerank_model=os.getenv("RERANK_MODEL", "BAAI/bge-reranker-v2-m3"),
-            gen_model=os.getenv("GEN_MODEL", "google/gemma-4-E4B-it"),
+            gen_model=os.getenv("GEN_MODEL", "google/gemma-2-2b-it"),
             temperature=float(os.getenv("TEMPERATURE", "0.7")),
             max_new_tokens=int(os.getenv("MAX_NEW_TOKENS", "512")),
             top_p=float(os.getenv("TOP_P", "0.9")),

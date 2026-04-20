@@ -14,7 +14,7 @@ from src.generation.models import GenerationConfig
 from src.types import GenerationResult, RetrievedChunk, Source
 from tests.conftest import make_chunk as _chunk
 
-_GEMMA_ID = "google/gemma-4-E4B-it"
+_GEMMA_ID = "google/gemma-2-2b-it"
 
 
 # ---------------------------------------------------------------------------
@@ -47,7 +47,7 @@ class TestModelLoader:
         loader = ModelLoader(config=GenerationConfig(model_id=_GEMMA_ID), device="cpu")
         with (
             patch(
-                "src.generation.loader.AutoModelForImageTextToText.from_pretrained",
+                "src.generation.loader.AutoModelForCausalLM.from_pretrained",
                 return_value=fake_model,
             ) as mock_model,
             patch(
@@ -70,7 +70,7 @@ class TestModelLoader:
         loader = ModelLoader(config=GenerationConfig(model_id=_GEMMA_ID), device="cpu")
         with (
             patch(
-                "src.generation.loader.AutoModelForImageTextToText.from_pretrained",
+                "src.generation.loader.AutoModelForCausalLM.from_pretrained",
                 return_value=fake_model,
             ),
             patch(
@@ -91,7 +91,7 @@ class TestModelLoader:
         loader = ModelLoader(config=GenerationConfig(model_id=_GEMMA_ID), device="cpu")
         with (
             patch(
-                "src.generation.loader.AutoModelForImageTextToText.from_pretrained",
+                "src.generation.loader.AutoModelForCausalLM.from_pretrained",
                 return_value=fake_model,
             ),
             patch(
@@ -108,11 +108,11 @@ class TestModelLoader:
         from src.generation.models import GenerationConfig
 
         loader = ModelLoader(
-            config=GenerationConfig(model_id="google/gemma-4-E4B-it"), device="cpu"
+            config=GenerationConfig(model_id="google/gemma-2-2b-it"), device="cpu"
         )
         with (
             patch(
-                "src.generation.loader.AutoModelForImageTextToText.from_pretrained",
+                "src.generation.loader.AutoModelForCausalLM.from_pretrained",
                 return_value=MagicMock(),
             ) as mock_model,
             patch(
@@ -124,7 +124,7 @@ class TestModelLoader:
             loader.load()
 
         mock_model.assert_called_once()
-        assert mock_model.call_args[0][0] == "google/gemma-4-E4B-it"
+        assert mock_model.call_args[0][0] == "google/gemma-2-2b-it"
 
 
 # ---------------------------------------------------------------------------
@@ -315,7 +315,7 @@ class TestGenerator:
     def test_model_name_is_gemma_4(self) -> None:
         gen, _, _, _ = self._make_generator()
         result = gen.generate("Question?", (_chunk(),))
-        assert result.model_name == "google/gemma-4-E4B-it"
+        assert result.model_name == "google/gemma-2-2b-it"
 
     def test_sources_used_are_sorted_alphabetically(self) -> None:
         gen, _, _, _ = self._make_generator()

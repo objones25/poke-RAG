@@ -15,7 +15,7 @@ def _make_result(**overrides: object) -> PipelineResult:
         "answer": "Pikachu is Electric-type.",
         "sources_used": ("pokeapi",),
         "num_chunks_used": 3,
-        "model_name": "google/gemma-4-E4B-it",
+        "model_name": "google/gemma-2-2b-it",
         "query": "What type is Pikachu?",
     }
     defaults.update(overrides)

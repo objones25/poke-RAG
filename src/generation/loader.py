@@ -4,7 +4,7 @@ import logging
 
 import torch
 from transformers import (
-    AutoModelForImageTextToText,
+    AutoModelForCausalLM,
     AutoTokenizer,
     PreTrainedModel,
     PreTrainedTokenizerBase,
@@ -16,7 +16,6 @@ _LOG = logging.getLogger(__name__)
 
 
 def _dtype_for_device(device: str) -> torch.dtype:
-    """Return appropriate torch dtype for the given device."""
     if device == "cuda":
         return torch.bfloat16
     if device == "mps":
@@ -44,10 +43,10 @@ class ModelLoader:
         self._tokenizer.pad_token = self._tokenizer.eos_token
         _LOG.debug("Tokenizer for '%s' ready", self._model_id)
 
-        self._model = AutoModelForImageTextToText.from_pretrained(
+        self._model = AutoModelForCausalLM.from_pretrained(
             self._model_id,
             device_map=self._device,
-            torch_dtype=dtype,
+            dtype=dtype,
         )
         _LOG.info("Model '%s' ready", self._model_id)
 

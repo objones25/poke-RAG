@@ -18,7 +18,7 @@ def _make_retrieval_result(
 def _make_generation_result(
     answer: str = "Pikachu is Electric-type.",
     sources_used: tuple[Source, ...] = ("pokeapi",),
-    model_name: str = "google/gemma-4-E4B-it",
+    model_name: str = "google/gemma-2-2b-it",
     num_chunks_used: int = 1,
 ) -> GenerationResult:
     return GenerationResult(
@@ -93,7 +93,7 @@ class TestRAGPipelineQuery:
     def test_model_name_comes_from_generation_result(self, mocker) -> None:
         pipeline, _, _ = self._make_pipeline(mocker)
         result = pipeline.query("Any question.")
-        assert result.model_name == "google/gemma-4-E4B-it"
+        assert result.model_name == "google/gemma-2-2b-it"
 
     def test_query_stored_in_result(self, mocker) -> None:
         pipeline, _, _ = self._make_pipeline(mocker)

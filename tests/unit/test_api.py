@@ -15,7 +15,7 @@ def _make_result(**overrides: object) -> PipelineResult:
         "answer": "Pikachu is Electric-type.",
         "sources_used": ("pokeapi",),
         "num_chunks_used": 3,
-        "model_name": "google/gemma-4-E4B-it",
+        "model_name": "google/gemma-2-2b-it",
         "query": "What type is Pikachu?",
     }
     defaults.update(overrides)
@@ -59,7 +59,7 @@ class TestQueryEndpoint:
         assert body["answer"] == "Pikachu is Electric-type."
         assert body["sources_used"] == ["bulbapedia", "pokeapi"]
         assert body["num_chunks_used"] == 5
-        assert body["model_name"] == "google/gemma-4-E4B-it"
+        assert body["model_name"] == "google/gemma-2-2b-it"
         assert body["query"] == "What type is Pikachu?"
 
     def test_retrieval_error_returns_503(self, client, mock_pipeline) -> None:

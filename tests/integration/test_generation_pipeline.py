@@ -19,7 +19,7 @@ from src.types import GenerationResult, RetrievedChunk
 
 @pytest.fixture()
 def config() -> GenerationConfig:
-    return GenerationConfig(model_id="google/gemma-4-E4B-it")
+    return GenerationConfig(model_id="google/gemma-2-2b-it")
 
 
 @pytest.fixture()
@@ -72,7 +72,7 @@ def generator(config: GenerationConfig) -> Generator:
     loader = ModelLoader(config=config, device="cpu")
     with (
         patch(
-            "src.generation.loader.AutoModelForImageTextToText.from_pretrained",
+            "src.generation.loader.AutoModelForCausalLM.from_pretrained",
             return_value=fake_model,
         ),
         patch(
@@ -119,7 +119,7 @@ class TestGenerationPipelineIntegration:
         self, generator: Generator, sample_chunks: tuple[RetrievedChunk, ...]
     ) -> None:
         result = generator.generate("Tell me about Charizard.", sample_chunks)
-        assert result.model_name == "google/gemma-4-E4B-it"
+        assert result.model_name == "google/gemma-2-2b-it"
 
     def test_raises_on_empty_chunks(self, generator: Generator) -> None:
         with pytest.raises(ValueError, match="chunks"):

@@ -10,7 +10,7 @@ Applies every session. Short. If a rule conflicts with a user instruction, flag 
 
 **BGE-M3 embedding class.** Use `FlagEmbedding.BGEM3FlagModel`, not `sentence-transformers`. Call `.encode(..., return_dense=True, return_sparse=True)`. For reranking use `FlagEmbedding.FlagReranker` with `BAAI/bge-reranker-v2-m3` — it is a different class from the embedder.
 
-**Gemma 4 model class.** Load via `AutoModelForImageTextToText`, not `AutoModelForCausalLM`. Easy to get wrong.
+**Generation model class.** Load via `AutoModelForCausalLM` (Gemma 2 is a causal LM, not a vision-language model).
 
 **No generator without retrieved context.** If retrieval raises or returns nothing, propagate the error. Never call `generator.generate()` without grounded documents.
 

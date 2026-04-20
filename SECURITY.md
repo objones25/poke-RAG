@@ -47,7 +47,7 @@ This project uses ML libraries (`transformers`, `torch`, `unsloth`, `trl`, `peft
 ## Model weights
 
 - Model weights downloaded from HuggingFace are not audited for backdoors or adversarial modifications
-- Only use weights from the official `google/` namespace on HuggingFace for Gemma 4
+- Only use weights from the official `google/` namespace on HuggingFace for Gemma models
 - LoRA adapters trained on RunPod should be treated as untrusted if loaded from external sources
 
 ## Data files

@@ -2,7 +2,7 @@
 
 ## What this project is
 
-Agentic RAG system for Pokémon knowledge, backed by `google/gemma-4-E4B-it`. Queries hit a vector index built from three sources (Bulbapedia, PokéAPI, Smogon), retrieve grounded context, and pass it to the model for generation. Optional LoRA fine-tuning on RunPod. Eventually served as an HTTP API.
+Agentic RAG system for Pokémon knowledge, backed by `google/gemma-2-2b-it`. Queries hit a vector index built from three sources (Bulbapedia, PokéAPI, Smogon), retrieve grounded context, and pass it to the model for generation. Optional LoRA fine-tuning on RunPod. Eventually served as an HTTP API.
 
 ## Commands
 
@@ -32,7 +32,7 @@ The `train` group is RunPod-only. Don't install it locally unless you have a CUD
 
 > **Embeddings**: Use `FlagEmbedding` (`BGEM3FlagModel`), not `sentence-transformers`. Only `FlagEmbedding` exposes all three BGE-M3 output types (dense, sparse, ColBERT). `sentence-transformers` gives dense only.
 
-> **Gemma 4 loads via `AutoModelForImageTextToText`, not `AutoModelForCausalLM`.** Verify via Context7 before writing any HuggingFace model-loading code — the API changes frequently.
+> **Gemma 2 loads via `AutoModelForCausalLM`.** Verify via Context7 before writing any HuggingFace model-loading code — the API changes frequently.
 
 ## Codebase layout
 

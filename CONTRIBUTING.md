@@ -181,7 +181,7 @@ chore(deps): bump transformers to 4.41.0
 
 Training scripts are in `scripts/training/` and are **not imported by `src/`**. The serving layer works with or without a LoRA adapter.
 
-Recommended GPU for Gemma 4 E4B QLoRA: **RTX 4090 (24GB)** on RunPod community cloud (~$0.35–$0.69/hr). The model requires ~17GB VRAM with 4-bit quantization via Unsloth.
+Recommended GPU for Gemma 2 2B QLoRA: **RTX 4090 (24GB)** on RunPod community cloud (~$0.35–$0.69/hr). The model requires ~17GB VRAM with 4-bit quantization via Unsloth.
 
 Steps:
 
