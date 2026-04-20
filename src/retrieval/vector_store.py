@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import contextlib
+import logging
 import uuid
 from typing import Any
 
@@ -23,6 +24,8 @@ from qdrant_client.models import (
 from src.retrieval.types import EmbeddingOutput
 from src.types import RetrievedChunk, Source, VectorIndexError
 
+_LOG = logging.getLogger(__name__)
+
 _SOURCES: tuple[Source, ...] = ("bulbapedia", "pokeapi", "smogon")
 _DENSE_DIM = 1024
 _DENSE_VECTOR_NAME = "dense"
@@ -36,6 +39,7 @@ class QdrantVectorStore:
         self._client = client
 
     def ensure_collections(self) -> None:
+        _LOG.info("Ensuring %d Qdrant collections: %s", len(_SOURCES), _SOURCES)
         for source in _SOURCES:
             with contextlib.suppress(UnexpectedResponse):
                 self._client.create_collection(
@@ -51,6 +55,7 @@ class QdrantVectorStore:
                         ),
                     },
                 )
+            _LOG.debug("Collection '%s' ready", source)
 
     def upsert(
         self,
@@ -58,6 +63,7 @@ class QdrantVectorStore:
         documents: list[RetrievedChunk],
         embeddings: EmbeddingOutput,
     ) -> None:
+        _LOG.info("Upserting %d point(s) into '%s'", len(documents), collection)
         points = [
             PointStruct(
                 id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"{doc.original_doc_id}:{doc.chunk_index}")),
@@ -79,6 +85,7 @@ class QdrantVectorStore:
             for i, doc in enumerate(documents)
         ]
         self._client.upsert(collection_name=collection, points=points)
+        _LOG.debug("Upsert to '%s' complete", collection)
 
     def search(
         self,
@@ -88,6 +95,8 @@ class QdrantVectorStore:
         top_k: int,
         pokemon_name: str | None = None,
     ) -> list[RetrievedChunk]:
+        _LOG.debug("Searching '%s': top_k=%d, pokemon_name=%s", collection, top_k, pokemon_name)
+
         query_filter = (
             Filter(
                 must=[
@@ -139,4 +148,6 @@ class QdrantVectorStore:
                 )
             except (KeyError, TypeError, ValueError) as exc:
                 raise VectorIndexError(f"Malformed payload for point {p.id}: {exc}") from exc
+
+        _LOG.debug("Search '%s' → %d result(s)", collection, len(chunks))
         return chunks

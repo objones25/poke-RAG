@@ -24,18 +24,22 @@ class ModelLoader:
 
     def load(self) -> None:
         if self._model is not None:
+            _LOG.debug("Model '%s' already loaded — skipping", self._model_id)
             return
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        _LOG.info("Loading model %s on %s", self._model_id, device)
+        dtype = torch.bfloat16 if device == "cuda" else torch.float32
+        _LOG.info("Loading '%s' on %s (dtype=%s)", self._model_id, device, dtype)
 
         self._tokenizer = AutoTokenizer.from_pretrained(self._model_id)
+        _LOG.debug("Tokenizer for '%s' ready", self._model_id)
+
         self._model = AutoModelForImageTextToText.from_pretrained(
             self._model_id,
             device_map=device,
-            torch_dtype=torch.bfloat16 if device == "cuda" else torch.float32,
+            torch_dtype=dtype,
         )
-        _LOG.info("Model loaded successfully")
+        _LOG.info("Model '%s' ready", self._model_id)
 
     def get_model(self) -> PreTrainedModel:
         if self._model is None:
@@ -54,4 +58,6 @@ class ModelLoader:
     def unload(self) -> None:
         self._model = None
         self._tokenizer = None
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
         _LOG.info("Model '%s' unloaded", self._model_id)

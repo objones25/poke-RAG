@@ -1,10 +1,13 @@
 """BGE reranker wrapping FlagEmbedding.FlagReranker."""
 from __future__ import annotations
 
+import logging
 from dataclasses import replace
 from typing import Any
 
 from src.types import RetrievedChunk
+
+_LOG = logging.getLogger(__name__)
 
 
 class BGEReranker:
@@ -21,7 +24,10 @@ class BGEReranker:
     def from_pretrained(cls, *, model_name: str, use_fp16: bool) -> BGEReranker:
         from FlagEmbedding import FlagReranker  # type: ignore[import-untyped]
 
-        return cls(FlagReranker(model_name, use_fp16=use_fp16))
+        _LOG.info("Loading BGE reranker '%s' (fp16=%s)", model_name, use_fp16)
+        instance = cls(FlagReranker(model_name, use_fp16=use_fp16))
+        _LOG.info("BGE reranker '%s' ready", model_name)
+        return instance
 
     def rerank(
         self,
@@ -32,6 +38,7 @@ class BGEReranker:
         if not documents:
             return []
 
+        _LOG.debug("Reranking %d candidates, top_k=%d", len(documents), top_k)
         pairs = [[query, doc.text] for doc in documents]
         scores: list[float] = [float(s) for s in self._model.compute_score(pairs)]
 
@@ -40,4 +47,6 @@ class BGEReranker:
             key=lambda c: c.score,
             reverse=True,
         )
-        return ranked[:top_k]
+        result = ranked[:top_k]
+        _LOG.debug("Rerank complete: top_score=%.4f", result[0].score if result else 0.0)
+        return result

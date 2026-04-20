@@ -1,9 +1,12 @@
 """BGE-M3 hybrid embedder wrapping FlagEmbedding.BGEM3FlagModel."""
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from src.retrieval.types import EmbeddingOutput
+
+_LOG = logging.getLogger(__name__)
 
 
 class BGEEmbedder:
@@ -20,12 +23,16 @@ class BGEEmbedder:
     def from_pretrained(cls, *, model_name: str, use_fp16: bool) -> BGEEmbedder:
         from FlagEmbedding import BGEM3FlagModel  # type: ignore[import-untyped]
 
-        return cls(BGEM3FlagModel(model_name_or_path=model_name, use_fp16=use_fp16))
+        _LOG.info("Loading BGE-M3 embedder '%s' (fp16=%s)", model_name, use_fp16)
+        instance = cls(BGEM3FlagModel(model_name_or_path=model_name, use_fp16=use_fp16))
+        _LOG.info("BGE-M3 embedder '%s' ready", model_name)
+        return instance
 
     def encode(self, texts: list[str]) -> EmbeddingOutput:
         if not texts:
             return EmbeddingOutput(dense=[], sparse=[])
 
+        _LOG.debug("Encoding %d text(s)", len(texts))
         raw = self._model.encode(
             texts,
             return_dense=True,
@@ -38,4 +45,5 @@ class BGEEmbedder:
             {int(k): float(v) for k, v in weights.items()}
             for weights in raw["lexical_weights"]
         ]
+        _LOG.debug("Encoded %d texts → dense_dim=%d", len(dense), len(dense[0]) if dense else 0)
         return EmbeddingOutput(dense=dense, sparse=sparse)

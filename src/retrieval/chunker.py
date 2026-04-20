@@ -1,10 +1,13 @@
 """Source-aware document chunker for pokeapi, smogon, and bulbapedia files."""
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
 
 from src.types import RetrievedChunk, Source
+
+_LOG = logging.getLogger(__name__)
 
 _SMOGON_TARGET_TOKENS = 400
 _BULBA_TARGET_TOKENS = 512
@@ -203,4 +206,5 @@ def chunk_file(path: Path, *, source: Source) -> list[RetrievedChunk]:
             if doc:
                 chunks.extend(chunk_bulbapedia_doc(doc, doc_id=f"{path.stem}_{i}"))
 
+    _LOG.debug("Chunked '%s' (source=%s) → %d chunk(s)", path.name, source, len(chunks))
     return chunks
