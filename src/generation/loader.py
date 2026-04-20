@@ -15,9 +15,19 @@ from src.generation.models import GenerationConfig
 _LOG = logging.getLogger(__name__)
 
 
+def _dtype_for_device(device: str) -> torch.dtype:
+    """Return appropriate torch dtype for the given device."""
+    if device == "cuda":
+        return torch.bfloat16
+    if device == "mps":
+        return torch.float16
+    return torch.float32
+
+
 class ModelLoader:
-    def __init__(self, config: GenerationConfig) -> None:
+    def __init__(self, config: GenerationConfig, device: str) -> None:
         self._config = config
+        self._device = device
         self._model_id = self._config.model_id
         self._model: PreTrainedModel | None = None
         self._tokenizer: PreTrainedTokenizerBase | None = None
@@ -27,9 +37,8 @@ class ModelLoader:
             _LOG.debug("Model '%s' already loaded — skipping", self._model_id)
             return
 
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        dtype = torch.bfloat16 if device == "cuda" else torch.float32
-        _LOG.info("Loading '%s' on %s (dtype=%s)", self._model_id, device, dtype)
+        dtype = _dtype_for_device(self._device)
+        _LOG.info("Loading '%s' on %s (dtype=%s)", self._model_id, self._device, dtype)
 
         self._tokenizer = AutoTokenizer.from_pretrained(self._model_id)  # type: ignore[no-untyped-call]
         self._tokenizer.pad_token = self._tokenizer.eos_token
@@ -37,7 +46,7 @@ class ModelLoader:
 
         self._model = AutoModelForImageTextToText.from_pretrained(
             self._model_id,
-            device_map=device,
+            device_map=self._device,
             torch_dtype=dtype,
         )
         _LOG.info("Model '%s' ready", self._model_id)
@@ -59,6 +68,6 @@ class ModelLoader:
     def unload(self) -> None:
         self._model = None
         self._tokenizer = None
-        if torch.cuda.is_available():
+        if self._device == "cuda" and torch.cuda.is_available():
             torch.cuda.empty_cache()
         _LOG.info("Model '%s' unloaded", self._model_id)
