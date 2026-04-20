@@ -35,6 +35,7 @@ def _chunk(
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.unit
 class TestModelLoader:
     def test_get_model_raises_before_load(self) -> None:
         from src.generation.loader import ModelLoader
@@ -142,6 +143,7 @@ class TestModelLoader:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.unit
 class TestInferencer:
     def _make_inferencer(self) -> Any:
         from src.generation.inference import Inferencer
@@ -247,6 +249,7 @@ class TestInferencer:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.unit
 class TestGenerator:
     def _make_generator(
         self, answer: str = "A great answer about Pikachu."

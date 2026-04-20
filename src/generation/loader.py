@@ -32,6 +32,7 @@ class ModelLoader:
         _LOG.info("Loading '%s' on %s (dtype=%s)", self._model_id, device, dtype)
 
         self._tokenizer = AutoTokenizer.from_pretrained(self._model_id)
+        self._tokenizer.pad_token = self._tokenizer.eos_token
         _LOG.debug("Tokenizer for '%s' ready", self._model_id)
 
         self._model = AutoModelForImageTextToText.from_pretrained(

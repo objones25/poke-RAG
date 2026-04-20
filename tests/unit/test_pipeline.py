@@ -33,7 +33,7 @@ def _make_retrieval_result(
 
 def _make_generation_result(
     answer: str = "Pikachu is Electric-type.",
-    sources_used: tuple[str, ...] = ("pokeapi",),
+    sources_used: tuple[Source, ...] = ("pokeapi",),
     model_name: str = "google/gemma-4-E4B-it",
     num_chunks_used: int = 1,
 ) -> GenerationResult:

@@ -9,6 +9,12 @@ from src.types import RetrievedChunk, Source
 
 _LOG = logging.getLogger(__name__)
 
+_RE_SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
+_RE_SMOGON_NAME = re.compile(r"^([\w\s\-'.]+?)\s*\(")
+_RE_BULBA_NAME = re.compile(r"^(.+?)\s+\(Pokémon\)\s*$")
+_RE_POKEAPI_NAME = re.compile(r"^(.*?)\s+is\s+(?:a|an|the)\s+")
+_RE_BULBA_DOC_SPLIT = re.compile(r"\n(?=Title:)")
+
 _SMOGON_TARGET_TOKENS = 400
 _BULBA_TARGET_TOKENS = 512
 _OVERLAP_RATIO = 0.1
@@ -20,7 +26,7 @@ def _approx_tokens(text: str) -> int:
 
 
 def _split_sentences(text: str) -> list[str]:
-    parts = re.split(r"(?<=[.!?])\s+", text.strip())
+    parts = _RE_SENTENCE_SPLIT.split(text.strip())
     return [p for p in parts if p.strip()]
 
 
@@ -80,19 +86,19 @@ def _recursive_split(text: str, target_tokens: int) -> list[str]:
 
 def _extract_smogon_name(line: str) -> str | None:
     """Extract Pokémon name from 'Name (tier): ...' format."""
-    match = re.match(r"^([\w\s\-'.]+?)\s*\(", line)
+    match = _RE_SMOGON_NAME.match(line)
     return match.group(1).strip() if match else None
 
 
 def _extract_bulbapedia_name(title: str) -> str | None:
     """Extract name from 'Name (Pokémon)' title pattern."""
-    match = re.match(r"^(.+?)\s+\(Pokémon\)\s*$", title)
+    match = _RE_BULBA_NAME.match(title)
     return match.group(1).strip() if match else None
 
 
 def _extract_pokeapi_name(line: str) -> str | None:
     """Extract name from 'Name is a/an/the ...' pattern."""
-    match = re.match(r"^(.*?)\s+is\s+(?:a|an|the)\s+", line)
+    match = _RE_POKEAPI_NAME.match(line)
     return match.group(1).strip() if match else None
 
 
@@ -200,7 +206,7 @@ def chunk_file(path: Path, *, source: Source) -> list[RetrievedChunk]:
             chunks.extend(chunk_smogon_line(line, doc_id=f"{path.stem}_{i}"))
 
     elif source == "bulbapedia":
-        docs = re.split(r"\n(?=Title:)", text)
+        docs = _RE_BULBA_DOC_SPLIT.split(text)
         for i, doc in enumerate(docs):
             doc = doc.strip()
             if doc:

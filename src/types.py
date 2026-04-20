@@ -25,7 +25,7 @@ class RetrievalResult:
 @dataclass(frozen=True)
 class GenerationResult:
     answer: str
-    sources_used: tuple[str, ...]
+    sources_used: tuple[Source, ...]
     model_name: str
     num_chunks_used: int
 

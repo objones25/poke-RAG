@@ -22,6 +22,7 @@ def _chunk(
     )
 
 
+@pytest.mark.unit
 class TestBuildPromptValidation:
     def test_raises_on_empty_chunks(self) -> None:
         with pytest.raises(ValueError, match="chunks"):
@@ -38,6 +39,7 @@ class TestBuildPromptValidation:
             build_prompt("   ", (chunk,))
 
 
+@pytest.mark.unit
 class TestBuildPromptContent:
     def test_contains_query(self) -> None:
         chunk = _chunk("Charizard is a Fire/Flying-type Pokémon.", score=0.9)

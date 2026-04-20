@@ -4,11 +4,11 @@ from __future__ import annotations
 import logging
 
 from src.retrieval.protocols import EmbedderProtocol, RerankerProtocol, VectorStoreProtocol
-from src.types import RetrievalError, RetrievalResult, Source
+from src.types import EmbeddingError, RetrievalError, RetrievalResult, Source
 
 _LOG = logging.getLogger(__name__)
 
-_ALL_SOURCES: list[Source] = ["bulbapedia", "pokeapi", "smogon"]
+_ALL_SOURCES: tuple[Source, ...] = ("bulbapedia", "pokeapi", "smogon")
 _DEFAULT_CANDIDATES_PER_SOURCE = 20
 
 
@@ -46,6 +46,8 @@ class Retriever:
         except Exception as exc:
             raise RetrievalError(f"Embedding failed: {exc}") from exc
 
+        if not embedding.dense or not embedding.sparse:
+            raise EmbeddingError("Embedder returned empty result for query")
         query_dense = embedding.dense[0]
         query_sparse = embedding.sparse[0]
 

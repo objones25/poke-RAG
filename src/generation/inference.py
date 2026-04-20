@@ -49,6 +49,8 @@ class Inferencer:
             do_sample=self._config.do_sample,
         )
 
+        if output_ids.shape[0] == 0:
+            raise RuntimeError(f"Model generate() returned no sequences (shape={output_ids.shape!r})")
         generated: torch.Tensor = output_ids[0][prompt_len:]
         _LOG.debug("Generated %d new tokens", generated.shape[-1])
 
