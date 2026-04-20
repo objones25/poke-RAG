@@ -24,7 +24,9 @@ def make_chunk() -> Callable[..., RetrievedChunk]:
             source=source,
             pokemon_name=pokemon_name,
             chunk_index=chunk_index,
-            original_doc_id=original_doc_id if original_doc_id is not None else f"doc_{chunk_index}",
+            original_doc_id=(
+                original_doc_id if original_doc_id is not None else f"doc_{chunk_index}"
+            ),
         )
 
     return _factory

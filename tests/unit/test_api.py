@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from src.api.app import app
 from src.pipeline.types import PipelineResult
-from src.types import RetrievalError, Source
+from src.types import RetrievalError
 
 
 def _make_result(**overrides: object) -> PipelineResult:

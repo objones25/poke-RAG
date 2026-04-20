@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 
 from src.api.dependencies import build_pipeline, get_pipeline
 from src.api.models import QueryRequest, QueryResponse
+from src.api.query_parser import parse_query
 from src.pipeline.rag_pipeline import RAGPipeline
 from src.types import RetrievalError
 from src.utils.logging import setup_logging
@@ -46,7 +47,7 @@ def query(
     body: QueryRequest,
     pipeline: RAGPipeline = Depends(get_pipeline),  # noqa: B008
 ) -> QueryResponse:
-    result = pipeline.query(body.query, sources=body.sources)
+    result = pipeline.query(parse_query(body.query), sources=body.sources)
     return QueryResponse(
         answer=result.answer,
         sources_used=list(result.sources_used),
