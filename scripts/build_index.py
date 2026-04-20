@@ -1,7 +1,8 @@
-"""Embed processed Pokémon data and upsert into Qdrant."""
+"""Embed processed Pokémon data and upsert into Qdrant, file by file."""
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 from pathlib import Path
@@ -20,6 +21,7 @@ _LOG = logging.getLogger(__name__)
 _PROCESSED_DIR = Path(__file__).parent.parent / "processed"
 _ALL_SOURCES: tuple[Source, ...] = ("bulbapedia", "pokeapi", "smogon")
 _DEFAULT_BATCH_SIZE = 32
+_DEFAULT_CHECKPOINT = Path(__file__).parent.parent / ".build_index_checkpoint.json"
 
 
 def discover_files(
@@ -98,6 +100,20 @@ def group_by_source(
     }
 
 
+def _load_checkpoint(path: Path) -> set[str]:
+    if not path.exists():
+        return set()
+    try:
+        return set(json.loads(path.read_text()))
+    except (json.JSONDecodeError, OSError):
+        _LOG.warning("Could not read checkpoint file %s — starting fresh", path)
+        return set()
+
+
+def _save_checkpoint(path: Path, completed: set[str]) -> None:
+    path.write_text(json.dumps(sorted(completed)))
+
+
 def run(
     *,
     embedder: BGEEmbedder,
@@ -106,31 +122,58 @@ def run(
     processed_dir: Path,
     batch_size: int = _DEFAULT_BATCH_SIZE,
     dry_run: bool = False,
+    checkpoint_path: Path | None = None,
 ) -> None:
     files = discover_files(processed_dir, sources)
     if not files:
         _LOG.warning("No files found in %s for sources %s", processed_dir, sources)
         return
 
-    _LOG.info("Discovered %d files across %d sources", len(files), len(sources))
-    chunks = chunk_all_files(files)
-    _LOG.info("Produced %d chunks", len(chunks))
+    completed = _load_checkpoint(checkpoint_path) if checkpoint_path else set()
+    remaining = [(src, p) for src, p in files if f"{src}/{p.name}" not in completed]
 
-    embeddings = embed_in_batches(embedder, chunks, batch_size=batch_size)
-    _LOG.info("Embedded %d chunks", len(embeddings.dense))
-
-    grouped = group_by_source(chunks, embeddings)
-
-    if dry_run:
-        for source, (src_chunks, _) in grouped.items():
-            _LOG.info("[dry-run] would upsert %d chunks into '%s'", len(src_chunks), source)
+    if not remaining:
+        _LOG.info("All %d file(s) already indexed — nothing to do.", len(files))
         return
 
-    vector_store.ensure_collections()
-    for source, (src_chunks, src_embeddings) in grouped.items():
-        _LOG.info("Upserting %d chunks into '%s'", len(src_chunks), source)
-        vector_store.upsert(source, src_chunks, src_embeddings)
-    _LOG.info("Done.")
+    _LOG.info(
+        "Discovered %d file(s); %d already indexed, %d to process.",
+        len(files),
+        len(files) - len(remaining),
+        len(remaining),
+    )
+
+    if not dry_run:
+        vector_store.ensure_collections()
+
+    for source, path in remaining:
+        file_key = f"{source}/{path.name}"
+        chunks = chunk_file(path, source=source)
+        _LOG.info("Processing '%s' → %d chunk(s)", file_key, len(chunks))
+
+        for i in range(0, len(chunks), batch_size):
+            batch = chunks[i : i + batch_size]
+            texts = [c.text for c in batch]
+            result = embedder.encode(texts)
+            if len(result.dense) != len(batch) or len(result.sparse) != len(batch):
+                raise RuntimeError(
+                    f"Embedder returned {len(result.dense)} dense and "
+                    f"{len(result.sparse)} sparse vectors for batch of {len(batch)}"
+                )
+            if dry_run:
+                _LOG.info(
+                    "[dry-run] would upsert %d chunk(s) into '%s'", len(batch), source
+                )
+            else:
+                vector_store.upsert(source, batch, result)
+                _LOG.debug("Upserted batch %d–%d for '%s'", i, i + len(batch), file_key)
+
+        completed.add(file_key)
+        if checkpoint_path:
+            _save_checkpoint(checkpoint_path, completed)
+        _LOG.info("Done: %s", file_key)
+
+    _LOG.info("Indexing complete.")
 
 
 def main() -> None:
@@ -150,9 +193,21 @@ def main() -> None:
     parser.add_argument(
         "--dry-run", action="store_true", help="Log what would be indexed without writing."
     )
+    parser.add_argument(
+        "--checkpoint",
+        type=Path,
+        default=_DEFAULT_CHECKPOINT,
+        help="Path to checkpoint file (default: .build_index_checkpoint.json).",
+    )
+    parser.add_argument(
+        "--no-checkpoint",
+        action="store_true",
+        help="Disable checkpointing (re-index everything).",
+    )
     args = parser.parse_args()
 
     sources: tuple[Source, ...] = tuple(args.sources) if args.sources else _ALL_SOURCES
+    checkpoint_path: Path | None = None if args.no_checkpoint else args.checkpoint
 
     try:
         from src.config import Settings
@@ -179,6 +234,7 @@ def main() -> None:
         processed_dir=_PROCESSED_DIR,
         batch_size=args.batch_size,
         dry_run=args.dry_run,
+        checkpoint_path=checkpoint_path,
     )
 
 

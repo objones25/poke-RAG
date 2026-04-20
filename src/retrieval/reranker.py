@@ -21,11 +21,12 @@ class BGEReranker:
         self._model = model
 
     @classmethod
-    def from_pretrained(cls, *, model_name: str, use_fp16: bool) -> BGEReranker:
+    def from_pretrained(cls, *, model_name: str, device: str) -> BGEReranker:
         from FlagEmbedding import FlagReranker  # type: ignore[import-untyped]
 
-        _LOG.info("Loading BGE reranker '%s' (fp16=%s)", model_name, use_fp16)
-        instance = cls(FlagReranker(model_name, use_fp16=use_fp16))
+        use_fp16 = device in ("cuda", "mps")
+        _LOG.info("Loading BGE reranker '%s' on %s (fp16=%s)", model_name, device, use_fp16)
+        instance = cls(FlagReranker(model_name, use_fp16=use_fp16, device=device))
         _LOG.info("BGE reranker '%s' ready", model_name)
         return instance
 

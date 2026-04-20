@@ -21,16 +21,21 @@ class BGEEmbedder:
         self._model = model
 
     @classmethod
-    def from_pretrained(cls, *, model_name: str, use_fp16: bool) -> BGEEmbedder:
+    def from_pretrained(cls, *, model_name: str, device: str) -> BGEEmbedder:
         from FlagEmbedding import BGEM3FlagModel  # type: ignore[import-untyped]
 
+        use_fp16 = device in ("cuda", "mps")
         warnings.filterwarnings(
             "ignore",
             message=".*fast tokenizer.*`__call__`.*",
             category=UserWarning,
         )
-        _LOG.info("Loading BGE-M3 embedder '%s' (fp16=%s)", model_name, use_fp16)
-        instance = cls(BGEM3FlagModel(model_name_or_path=model_name, use_fp16=use_fp16))
+        _LOG.info("Loading BGE-M3 embedder '%s' on %s (fp16=%s)", model_name, device, use_fp16)
+        instance = cls(
+            BGEM3FlagModel(
+                model_name_or_path=model_name, use_fp16=use_fp16, device=device
+            )
+        )
         _LOG.info("BGE-M3 embedder '%s' ready", model_name)
         return instance
 

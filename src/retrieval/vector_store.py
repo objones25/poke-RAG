@@ -84,7 +84,10 @@ class QdrantVectorStore:
             )
             for i, doc in enumerate(documents)
         ]
-        self._client.upsert(collection_name=collection, points=points)
+        batch_size = 100
+        for i in range(0, len(points), batch_size):
+            self._client.upsert(collection_name=collection, points=points[i : i + batch_size])
+            _LOG.debug("Upserted points %d–%d into '%s'", i, min(i + batch_size, len(points)), collection)
         _LOG.debug("Upsert to '%s' complete", collection)
 
     def search(
