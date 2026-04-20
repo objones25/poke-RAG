@@ -18,7 +18,8 @@ def _make_client() -> MagicMock:
 def _make_chunk(
     text: str = "sample text",
     source: str = "pokeapi",
-    pokemon_name: str | None = "Bulbasaur",
+    entity_name: str | None = "Bulbasaur",
+    entity_type: str | None = None,
     chunk_index: int = 0,
     doc_id: str = "doc_0",
 ) -> RetrievedChunk:
@@ -26,7 +27,8 @@ def _make_chunk(
         text=text,
         score=0.0,
         source=source,  # type: ignore[arg-type]
-        pokemon_name=pokemon_name,
+        entity_name=entity_name,
+        entity_type=entity_type,  # type: ignore[arg-type]
         chunk_index=chunk_index,
         original_doc_id=doc_id,
     )
@@ -101,11 +103,11 @@ class TestUpsert:
     def test_payload_contains_metadata(self) -> None:
         client = _make_client()
         store = QdrantVectorStore(client)
-        chunk = _make_chunk(source="pokeapi", pokemon_name="Ivysaur", chunk_index=2, doc_id="d_1")
+        chunk = _make_chunk(source="pokeapi", entity_name="Ivysaur", chunk_index=2, doc_id="d_1")
         store.upsert("pokeapi", [chunk], _make_embeddings(n=1))
         payload = client.upsert.call_args[1]["points"][0].payload
         assert payload["source"] == "pokeapi"
-        assert payload["pokemon_name"] == "Ivysaur"
+        assert payload["entity_name"] == "Ivysaur"
         assert payload["chunk_index"] == 2
         assert payload["original_doc_id"] == "d_1"
 
@@ -128,13 +130,14 @@ class TestUpsert:
 
 @pytest.mark.unit
 class TestSearch:
-    def _make_scored_point(self, text: str, score: float, pokemon: str | None = None) -> MagicMock:
+    def _make_scored_point(self, text: str, score: float, entity: str | None = None) -> MagicMock:
         p = MagicMock()
         p.score = score
         p.payload = {
             "text": text,
             "source": "pokeapi",
-            "pokemon_name": pokemon,
+            "entity_name": entity,
+            "entity_type": None,
             "chunk_index": 0,
             "original_doc_id": "doc_0",
         }
@@ -167,19 +170,19 @@ class TestSearch:
         call_kwargs = client.query_points.call_args[1]
         assert call_kwargs["collection_name"] == "bulbapedia"
 
-    def test_pokemon_name_filter_applied_when_given(self) -> None:
+    def test_entity_name_filter_applied_when_given(self) -> None:
         client = _make_client()
         client.query_points.return_value.points = []
         store = QdrantVectorStore(client)
-        store.search("pokeapi", [0.1] * 1024, {1: 0.5}, top_k=5, pokemon_name="Pikachu")
+        store.search("pokeapi", [0.1] * 1024, {1: 0.5}, top_k=5, entity_name="Pikachu")
         call_kwargs = client.query_points.call_args[1]
         assert call_kwargs.get("query_filter") is not None
 
-    def test_no_filter_when_pokemon_name_is_none(self) -> None:
+    def test_no_filter_when_entity_name_is_none(self) -> None:
         client = _make_client()
         client.query_points.return_value.points = []
         store = QdrantVectorStore(client)
-        store.search("pokeapi", [0.1] * 1024, {1: 0.5}, top_k=5, pokemon_name=None)
+        store.search("pokeapi", [0.1] * 1024, {1: 0.5}, top_k=5, entity_name=None)
         call_kwargs = client.query_points.call_args[1]
         assert call_kwargs.get("query_filter") is None
 
@@ -205,7 +208,8 @@ class TestSearch:
         p.payload = {
             "text": "Pikachu is electric",
             "source": "pokeapi",
-            "pokemon_name": "Pikachu",
+            "entity_name": "Pikachu",
+            "entity_type": "pokemon",
             "chunk_index": 1,
             "original_doc_id": "poke_5",
         }
@@ -215,7 +219,7 @@ class TestSearch:
         chunk = results[0]
         assert chunk.text == "Pikachu is electric"
         assert chunk.source == "pokeapi"
-        assert chunk.pokemon_name == "Pikachu"
+        assert chunk.entity_name == "Pikachu"
         assert chunk.chunk_index == 1
         assert chunk.original_doc_id == "poke_5"
 

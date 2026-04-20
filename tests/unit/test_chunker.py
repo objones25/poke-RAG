@@ -27,13 +27,13 @@ class TestChunkPokeapiLine:
         chunks = chunk_pokeapi_line("Bulbasaur is a Seed Pokémon.", doc_id="pokeapi_0")
         assert chunks[0].source == "pokeapi"
 
-    def test_pokemon_name_extracted(self) -> None:
+    def test_entity_name_extracted(self) -> None:
         chunks = chunk_pokeapi_line("Bulbasaur is a Seed Pokémon.", doc_id="pokeapi_0")
-        assert chunks[0].pokemon_name == "Bulbasaur"
+        assert chunks[0].entity_name == "Bulbasaur"
 
     def test_hyphenated_name_extracted(self) -> None:
         chunks = chunk_pokeapi_line("Ho-Oh is a Rainbow Pokémon.", doc_id="pokeapi_1")
-        assert chunks[0].pokemon_name == "Ho-Oh"
+        assert chunks[0].entity_name == "Ho-Oh"
 
     def test_score_is_zero(self) -> None:
         chunks = chunk_pokeapi_line("Bulbasaur is a Seed Pokémon.", doc_id="pokeapi_0")
@@ -71,10 +71,10 @@ class TestChunkSmogonLine:
         chunks = chunk_smogon_line(line, doc_id="smogon_0")
         assert all(c.source == "smogon" for c in chunks)
 
-    def test_pokemon_name_extracted(self) -> None:
+    def test_entity_name_extracted(self) -> None:
         line = "Garbodor (NU): Garbodor is a consistent Spiker."
         chunks = chunk_smogon_line(line, doc_id="smogon_0")
-        assert chunks[0].pokemon_name == "Garbodor"
+        assert chunks[0].entity_name == "Garbodor"
 
     def test_score_is_zero(self) -> None:
         chunks = chunk_smogon_line("Pikachu (OU): Fast attacker.", doc_id="smogon_0")
@@ -111,19 +111,19 @@ class TestChunkSmogonLine:
     def test_whitespace_only_returns_empty(self) -> None:
         assert chunk_smogon_line("   ", doc_id="smogon_0") == []
 
-    def test_pokemon_name_none_when_unparseable(self) -> None:
+    def test_entity_name_none_when_unparseable(self) -> None:
         line = "just some text without a name pattern"
         chunks = chunk_smogon_line(line, doc_id="smogon_0")
-        # Should not crash; pokemon_name may be None
-        assert chunks[0].pokemon_name is None
+        # Should not crash; entity_name may be None
+        assert chunks[0].entity_name is None
 
 
 @pytest.mark.unit
 class TestChunkBulbapediaDoc:
-    def test_pokemon_name_extracted_from_title(self) -> None:
+    def test_entity_name_extracted_from_title(self) -> None:
         doc = "Title: Abomasnow (Pokémon)\n\nAbomasnow is a large, bipedal Pokémon."
         chunks = chunk_bulbapedia_doc(doc, doc_id="bulba_0")
-        assert chunks[0].pokemon_name == "Abomasnow"
+        assert chunks[0].entity_name == "Abomasnow"
 
     def test_source_is_bulbapedia(self) -> None:
         doc = "Title: Pikachu (Pokémon)\n\nPikachu is electric."
@@ -162,10 +162,10 @@ class TestChunkBulbapediaDoc:
         chunks = chunk_bulbapedia_doc(doc, doc_id="bulba_0")
         assert [c.chunk_index for c in chunks] == list(range(len(chunks)))
 
-    def test_non_pokemon_title_gives_none_name(self) -> None:
+    def test_non_pokemon_title_extracts_name_prefix(self) -> None:
         doc = "Title: Pokémon (species)\n\nPokémon are fictional creatures."
         chunks = chunk_bulbapedia_doc(doc, doc_id="bulba_0")
-        assert chunks[0].pokemon_name is None
+        assert chunks[0].entity_name == "Pokémon"
 
     def test_all_text_covered_across_chunks(self) -> None:
         doc = (
@@ -223,7 +223,7 @@ class TestChunkFile:
         )
         p.write_text(content, encoding="utf-8")
         chunks = chunk_file(p, source="bulbapedia")
-        names = {c.pokemon_name for c in chunks}
+        names = {c.entity_name for c in chunks}
         assert "Pikachu" in names
         assert "Raichu" in names
 

@@ -10,7 +10,8 @@ def _make_chunk(
     text: str = "some text",
     score: float = 0.9,
     source: Source = "pokeapi",
-    pokemon_name: str | None = "Pikachu",
+    entity_name: str | None = "Pikachu",
+    entity_type: str | None = "pokemon",
     chunk_index: int = 0,
     doc_id: str = "doc_0",
 ) -> RetrievedChunk:
@@ -18,7 +19,8 @@ def _make_chunk(
         text=text,
         score=score,
         source=source,
-        pokemon_name=pokemon_name,
+        entity_name=entity_name,
+        entity_type=entity_type,  # type: ignore[arg-type]
         chunk_index=chunk_index,
         original_doc_id=doc_id,
     )

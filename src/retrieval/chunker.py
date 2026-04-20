@@ -5,13 +5,12 @@ import logging
 import re
 from pathlib import Path
 
-from src.types import RetrievedChunk, Source
+from src.types import EntityType, RetrievedChunk, Source
 
 _LOG = logging.getLogger(__name__)
 
 _RE_SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
 _RE_SMOGON_NAME = re.compile(r"^([\w\s\-'.]+?)\s*\(")
-_RE_BULBA_NAME = re.compile(r"^(.+?)\s+\(Pokémon\)\s*$")
 _RE_POKEAPI_NAME = re.compile(r"^(.*?)\s+is\s+(?:a|an|the)\s+")
 _RE_BULBA_DOC_SPLIT = re.compile(r"\n(?=Title:)")
 
@@ -19,6 +18,20 @@ _SMOGON_TARGET_TOKENS = 400
 _BULBA_TARGET_TOKENS = 512
 _OVERLAP_RATIO = 0.1
 _WORDS_PER_TOKEN = 0.75  # rough approximation: 1 token ≈ 0.75 words
+
+_STEM_TO_ENTITY_TYPE: dict[str, EntityType] = {
+    "ability": "ability",
+    "item": "item",
+    "move": "move",
+    "pokemon": "pokemon",
+    "pokemon_species": "pokemon",
+    "format": "format",
+    "formats": "format",
+}
+
+
+def _entity_type_from_stem(stem: str) -> EntityType | None:
+    return _STEM_TO_ENTITY_TYPE.get(stem)
 
 
 def _approx_tokens(text: str) -> int:
@@ -85,15 +98,17 @@ def _recursive_split(text: str, target_tokens: int) -> list[str]:
 
 
 def _extract_smogon_name(line: str) -> str | None:
-    """Extract Pokémon name from 'Name (tier): ...' format."""
+    """Extract entity name from 'Name (tier): ...' format."""
     match = _RE_SMOGON_NAME.match(line)
     return match.group(1).strip() if match else None
 
 
 def _extract_bulbapedia_name(title: str) -> str | None:
-    """Extract name from 'Name (Pokémon)' title pattern."""
-    match = _RE_BULBA_NAME.match(title)
-    return match.group(1).strip() if match else None
+    """Extract entity name from bulbapedia title (everything before the first '(')."""
+    if "(" in title:
+        name = title[: title.index("(")].strip()
+        return name or None
+    return title.strip() or None
 
 
 def _extract_pokeapi_name(line: str) -> str | None:
@@ -102,7 +117,12 @@ def _extract_pokeapi_name(line: str) -> str | None:
     return match.group(1).strip() if match else None
 
 
-def chunk_pokeapi_line(line: str, *, doc_id: str) -> list[RetrievedChunk]:
+def chunk_pokeapi_line(
+    line: str,
+    *,
+    doc_id: str,
+    entity_type: EntityType | None = None,
+) -> list[RetrievedChunk]:
     """Each pokeapi line is already an atomic fact chunk."""
     stripped = line.strip()
     if not stripped:
@@ -112,20 +132,26 @@ def chunk_pokeapi_line(line: str, *, doc_id: str) -> list[RetrievedChunk]:
             text=stripped,
             score=0.0,
             source="pokeapi",
-            pokemon_name=_extract_pokeapi_name(stripped),
+            entity_name=_extract_pokeapi_name(stripped),
+            entity_type=entity_type,
             chunk_index=0,
             original_doc_id=doc_id,
         )
     ]
 
 
-def chunk_smogon_line(line: str, *, doc_id: str) -> list[RetrievedChunk]:
+def chunk_smogon_line(
+    line: str,
+    *,
+    doc_id: str,
+    entity_type: EntityType | None = None,
+) -> list[RetrievedChunk]:
     """Split one smogon entry (possibly long) into token-bounded chunks."""
     stripped = line.strip()
     if not stripped:
         return []
 
-    pokemon_name = _extract_smogon_name(stripped)
+    entity_name = _extract_smogon_name(stripped)
 
     colon_idx = stripped.find(":")
     body = stripped[colon_idx + 1:].strip() if colon_idx != -1 else stripped
@@ -139,7 +165,8 @@ def chunk_smogon_line(line: str, *, doc_id: str) -> list[RetrievedChunk]:
             text=chunk_text,
             score=0.0,
             source="smogon",
-            pokemon_name=pokemon_name,
+            entity_name=entity_name,
+            entity_type=entity_type,
             chunk_index=i,
             original_doc_id=doc_id,
         )
@@ -147,18 +174,23 @@ def chunk_smogon_line(line: str, *, doc_id: str) -> list[RetrievedChunk]:
     ]
 
 
-def chunk_bulbapedia_doc(doc: str, *, doc_id: str) -> list[RetrievedChunk]:
+def chunk_bulbapedia_doc(
+    doc: str,
+    *,
+    doc_id: str,
+    entity_type: EntityType | None = None,
+) -> list[RetrievedChunk]:
     """Split one bulbapedia document (Title: header + body) into chunks."""
     stripped = doc.strip()
     if not stripped:
         return []
 
     lines = stripped.split("\n")
-    pokemon_name: str | None = None
+    entity_name: str | None = None
 
     if lines[0].startswith("Title:"):
         title = lines[0][len("Title:"):].strip()
-        pokemon_name = _extract_bulbapedia_name(title)
+        entity_name = _extract_bulbapedia_name(title)
         body = "\n".join(lines[1:]).strip()
     else:
         body = stripped
@@ -169,7 +201,8 @@ def chunk_bulbapedia_doc(doc: str, *, doc_id: str) -> list[RetrievedChunk]:
                 text=stripped,
                 score=0.0,
                 source="bulbapedia",
-                pokemon_name=pokemon_name,
+                entity_name=entity_name,
+                entity_type=entity_type,
                 chunk_index=0,
                 original_doc_id=doc_id,
             )
@@ -184,7 +217,8 @@ def chunk_bulbapedia_doc(doc: str, *, doc_id: str) -> list[RetrievedChunk]:
             text=chunk_text,
             score=0.0,
             source="bulbapedia",
-            pokemon_name=pokemon_name,
+            entity_name=entity_name,
+            entity_type=entity_type,
             chunk_index=i,
             original_doc_id=doc_id,
         )
@@ -195,22 +229,23 @@ def chunk_bulbapedia_doc(doc: str, *, doc_id: str) -> list[RetrievedChunk]:
 def chunk_file(path: Path, *, source: Source) -> list[RetrievedChunk]:
     """Chunk an entire file according to its source format."""
     text = path.read_text(encoding="utf-8")
+    entity_type = _entity_type_from_stem(path.stem)
     chunks: list[RetrievedChunk] = []
 
     if source == "pokeapi":
         for i, line in enumerate(text.splitlines()):
-            chunks.extend(chunk_pokeapi_line(line, doc_id=f"{path.stem}_{i}"))
+            chunks.extend(chunk_pokeapi_line(line, doc_id=f"{path.stem}_{i}", entity_type=entity_type))
 
     elif source == "smogon":
         for i, line in enumerate(text.splitlines()):
-            chunks.extend(chunk_smogon_line(line, doc_id=f"{path.stem}_{i}"))
+            chunks.extend(chunk_smogon_line(line, doc_id=f"{path.stem}_{i}", entity_type=entity_type))
 
     elif source == "bulbapedia":
         docs = _RE_BULBA_DOC_SPLIT.split(text)
         for i, doc in enumerate(docs):
             doc = doc.strip()
             if doc:
-                chunks.extend(chunk_bulbapedia_doc(doc, doc_id=f"{path.stem}_{i}"))
+                chunks.extend(chunk_bulbapedia_doc(doc, doc_id=f"{path.stem}_{i}", entity_type=entity_type))
 
     _LOG.debug("Chunked '%s' (source=%s) → %d chunk(s)", path.name, source, len(chunks))
     return chunks

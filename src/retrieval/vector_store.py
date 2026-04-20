@@ -77,7 +77,8 @@ class QdrantVectorStore:
                 payload={
                     "text": doc.text,
                     "source": doc.source,
-                    "pokemon_name": doc.pokemon_name,
+                    "entity_name": doc.entity_name,
+                    "entity_type": doc.entity_type,
                     "chunk_index": doc.chunk_index,
                     "original_doc_id": doc.original_doc_id,
                 },
@@ -96,19 +97,19 @@ class QdrantVectorStore:
         query_dense: list[float],
         query_sparse: dict[int, float],
         top_k: int,
-        pokemon_name: str | None = None,
+        entity_name: str | None = None,
     ) -> list[RetrievedChunk]:
-        _LOG.debug("Searching '%s': top_k=%d, pokemon_name=%s", collection, top_k, pokemon_name)
+        _LOG.debug("Searching '%s': top_k=%d, entity_name=%s", collection, top_k, entity_name)
 
         query_filter = (
             Filter(
                 must=[
                     FieldCondition(
-                        key="pokemon_name", match=MatchValue(value=pokemon_name)
+                        key="entity_name", match=MatchValue(value=entity_name)
                     )
                 ]
             )
-            if pokemon_name is not None
+            if entity_name is not None
             else None
         )
 
@@ -144,7 +145,8 @@ class QdrantVectorStore:
                         text=p.payload["text"],
                         score=float(p.score),
                         source=p.payload["source"],
-                        pokemon_name=p.payload.get("pokemon_name"),
+                        entity_name=p.payload.get("entity_name"),
+                        entity_type=p.payload.get("entity_type"),
                         chunk_index=int(p.payload["chunk_index"]),
                         original_doc_id=p.payload["original_doc_id"],
                     )

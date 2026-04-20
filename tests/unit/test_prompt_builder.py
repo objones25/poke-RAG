@@ -8,7 +8,8 @@ def _chunk(
     text: str,
     score: float,
     source: str = "bulbapedia",
-    pokemon_name: str | None = "Charizard",
+    entity_name: str | None = "Charizard",
+    entity_type: str | None = "pokemon",
     chunk_index: int = 0,
     original_doc_id: str = "doc1",
 ) -> RetrievedChunk:
@@ -16,7 +17,8 @@ def _chunk(
         text=text,
         score=score,
         source=source,  # type: ignore[arg-type]
-        pokemon_name=pokemon_name,
+        entity_name=entity_name,
+        entity_type=entity_type,  # type: ignore[arg-type]
         chunk_index=chunk_index,
         original_doc_id=original_doc_id,
     )
@@ -57,12 +59,12 @@ class TestBuildPromptContent:
         assert "bulbapedia" in prompt.lower()
 
     def test_includes_pokemon_name_when_present(self) -> None:
-        chunk = _chunk("Charizard has 78 HP.", score=0.9, pokemon_name="Charizard")
+        chunk = _chunk("Charizard has 78 HP.", score=0.9, entity_name="Charizard")
         prompt = build_prompt("What is Charizard's HP?", (chunk,))
         assert "Charizard" in prompt
 
     def test_handles_none_pokemon_name(self) -> None:
-        chunk = _chunk("Some generic fact.", score=0.9, pokemon_name=None)
+        chunk = _chunk("Some generic fact.", score=0.9, entity_name=None)
         prompt = build_prompt("Tell me a fact.", (chunk,))
         assert "Some generic fact." in prompt
 

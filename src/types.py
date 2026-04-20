@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 Source = Literal["bulbapedia", "pokeapi", "smogon"]
+EntityType = Literal["pokemon", "move", "ability", "item", "format"]
 
 
 @dataclass(frozen=True)
@@ -11,7 +12,8 @@ class RetrievedChunk:
     text: str
     score: float
     source: Source
-    pokemon_name: str | None
+    entity_name: str | None
+    entity_type: EntityType | None
     chunk_index: int
     original_doc_id: str
 

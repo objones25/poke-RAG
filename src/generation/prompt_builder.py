@@ -19,8 +19,8 @@ def build_prompt(query: str, chunks: tuple[RetrievedChunk, ...]) -> str:
 
     context_parts: list[str] = []
     for chunk in sorted_chunks:
-        if chunk.pokemon_name:
-            header = f"[Source: {chunk.source} | Pokémon: {chunk.pokemon_name}]"
+        if chunk.entity_name:
+            header = f"[Source: {chunk.source} | Entity: {chunk.entity_name}]"
         else:
             header = f"[Source: {chunk.source}]"
         context_parts.append(f"{header}\n{chunk.text}")

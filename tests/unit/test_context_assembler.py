@@ -11,7 +11,8 @@ def _make_chunk(
     text: str = "sample text",
     score: float = 0.9,
     source: str = "pokeapi",
-    pokemon_name: str | None = "Bulbasaur",
+    entity_name: str | None = "Bulbasaur",
+    entity_type: str | None = "pokemon",
     chunk_index: int = 0,
     doc_id: str = "doc_0",
 ) -> RetrievedChunk:
@@ -19,7 +20,8 @@ def _make_chunk(
         text=text,
         score=score,
         source=source,  # type: ignore[arg-type]
-        pokemon_name=pokemon_name,
+        entity_name=entity_name,
+        entity_type=entity_type,  # type: ignore[arg-type]
         chunk_index=chunk_index,
         original_doc_id=doc_id,
     )
@@ -55,7 +57,7 @@ class TestContextAssemblerAssemble:
 
     def test_pokemon_name_in_output_when_present(self) -> None:
         assembler = ContextAssembler()
-        chunk = _make_chunk(text="Pikachu moves", pokemon_name="Pikachu")
+        chunk = _make_chunk(text="Pikachu moves", entity_name="Pikachu")
         result = assembler.assemble([chunk])
         assert "Pikachu" in result
 
@@ -133,7 +135,7 @@ class TestContextAssemblerAssemble:
 
     def test_none_pokemon_name_not_included_as_none_string(self) -> None:
         assembler = ContextAssembler()
-        chunk = _make_chunk(text="generic fact", pokemon_name=None)
+        chunk = _make_chunk(text="generic fact", entity_name=None)
         result = assembler.assemble([chunk])
         assert "None" not in result
 

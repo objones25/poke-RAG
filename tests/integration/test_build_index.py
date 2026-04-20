@@ -19,7 +19,8 @@ def _make_chunk(
         text=text,
         score=0.0,
         source=source,
-        pokemon_name=None,
+        entity_name=None,
+        entity_type=None,
         chunk_index=chunk_index,
         original_doc_id=f"doc_{chunk_index}",
     )

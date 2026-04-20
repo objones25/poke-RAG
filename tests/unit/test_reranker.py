@@ -14,7 +14,8 @@ def _make_chunk(text: str = "some text", score: float = 0.5, idx: int = 0) -> Re
         text=text,
         score=score,
         source="pokeapi",
-        pokemon_name="Bulbasaur",
+        entity_name="Bulbasaur",
+        entity_type="pokemon",
         chunk_index=idx,
         original_doc_id=f"doc_{idx}",
     )
@@ -104,13 +105,14 @@ class TestBGERerankerRerank:
             text="some text",
             score=0.0,
             source="smogon",
-            pokemon_name="Gyarados",
+            entity_name="Gyarados",
+            entity_type="pokemon",
             chunk_index=3,
             original_doc_id="smogon_42",
         )
         results = reranker.rerank("query", [chunk], top_k=1)
         assert results[0].source == "smogon"
-        assert results[0].pokemon_name == "Gyarados"
+        assert results[0].entity_name == "Gyarados"
         assert results[0].chunk_index == 3
         assert results[0].original_doc_id == "smogon_42"
 

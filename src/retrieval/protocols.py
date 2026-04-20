@@ -40,9 +40,9 @@ class VectorStoreProtocol(Protocol):
         query_dense: list[float],
         query_sparse: dict[int, float],
         top_k: int,
-        pokemon_name: str | None = None,
+        entity_name: str | None = None,
     ) -> list[RetrievedChunk]:
-        """Hybrid dense+sparse search with optional pokemon_name payload filter."""
+        """Hybrid dense+sparse search with optional entity_name payload filter."""
         ...
 
 

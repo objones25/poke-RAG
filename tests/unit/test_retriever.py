@@ -14,14 +14,16 @@ def _make_chunk(
     text: str = "some text",
     score: float = 0.9,
     source: str = "pokeapi",
-    pokemon_name: str | None = "Bulbasaur",
+    entity_name: str | None = "Bulbasaur",
+    entity_type: str | None = "pokemon",
     idx: int = 0,
 ) -> RetrievedChunk:
     return RetrievedChunk(
         text=text,
         score=score,
         source=source,  # type: ignore[arg-type]
-        pokemon_name=pokemon_name,
+        entity_name=entity_name,
+        entity_type=entity_type,  # type: ignore[arg-type]
         chunk_index=idx,
         original_doc_id=f"doc_{idx}",
     )

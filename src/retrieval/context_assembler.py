@@ -14,8 +14,8 @@ def _approx_tokens(text: str) -> int:
 
 def _format_chunk(chunk: RetrievedChunk) -> str:
     parts = [f"[Source: {chunk.source}"]
-    if chunk.pokemon_name is not None:
-        parts.append(f" | Pokemon: {chunk.pokemon_name}")
+    if chunk.entity_name is not None:
+        parts.append(f" | Entity: {chunk.entity_name}")
     parts.append("]\n")
     return "".join(parts) + chunk.text
 
