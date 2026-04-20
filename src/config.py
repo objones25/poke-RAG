@@ -4,6 +4,16 @@ import os
 from dataclasses import dataclass
 
 
+def _detect_device() -> str:
+    import torch
+
+    if torch.cuda.is_available():
+        return "cuda"
+    if torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
+
+
 @dataclass(frozen=True)
 class Settings:
     qdrant_url: str
@@ -18,6 +28,7 @@ class Settings:
     tokenizer_max_length: int
     return_tensors: str
     truncation: bool
+    device: str
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -34,4 +45,5 @@ class Settings:
             tokenizer_max_length=int(os.getenv("TOKENIZER_MAX_LENGTH", "8192")),
             return_tensors=os.getenv("RETURN_TENSORS", "pt"),
             truncation=os.getenv("TRUNCATION", "true").lower() == "true",
+            device=os.getenv("DEVICE", _detect_device()),
         )
