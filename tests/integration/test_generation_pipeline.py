@@ -18,7 +18,7 @@ from src.types import GenerationResult, RetrievedChunk
 
 @pytest.fixture()
 def config() -> GenerationConfig:
-    return GenerationConfig()
+    return GenerationConfig(model_id="google/gemma-4-E4B-it")
 
 
 @pytest.fixture()

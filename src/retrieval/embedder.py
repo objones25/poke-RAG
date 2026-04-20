@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import warnings
 from typing import Any
 
 from src.retrieval.types import EmbeddingOutput
@@ -23,6 +24,11 @@ class BGEEmbedder:
     def from_pretrained(cls, *, model_name: str, use_fp16: bool) -> BGEEmbedder:
         from FlagEmbedding import BGEM3FlagModel  # type: ignore[import-untyped]
 
+        warnings.filterwarnings(
+            "ignore",
+            message=".*fast tokenizer.*`__call__`.*",
+            category=UserWarning,
+        )
         _LOG.info("Loading BGE-M3 embedder '%s' (fp16=%s)", model_name, use_fp16)
         instance = cls(BGEM3FlagModel(model_name_or_path=model_name, use_fp16=use_fp16))
         _LOG.info("BGE-M3 embedder '%s' ready", model_name)

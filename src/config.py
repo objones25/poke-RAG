@@ -7,6 +7,7 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class Settings:
     qdrant_url: str
+    qdrant_api_key: str | None
     embed_model: str
     rerank_model: str
     gen_model: str
@@ -22,6 +23,7 @@ class Settings:
     def from_env(cls) -> Settings:
         return cls(
             qdrant_url=os.environ["QDRANT_URL"],
+            qdrant_api_key=os.getenv("QDRANT_API_KEY"),
             embed_model=os.getenv("EMBED_MODEL", "BAAI/bge-m3"),
             rerank_model=os.getenv("RERANK_MODEL", "BAAI/bge-reranker-v2-m3"),
             gen_model=os.getenv("GEN_MODEL", "google/gemma-4-E4B-it"),

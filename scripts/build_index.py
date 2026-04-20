@@ -169,7 +169,7 @@ def main() -> None:
 
     use_fp16 = torch.cuda.is_available()
     embedder = BGEEmbedder.from_pretrained(model_name=settings.embed_model, use_fp16=use_fp16)
-    client = QdrantClient(url=settings.qdrant_url)
+    client = QdrantClient(url=settings.qdrant_url, api_key=settings.qdrant_api_key)
     vector_store = QdrantVectorStore(client)
 
     run(

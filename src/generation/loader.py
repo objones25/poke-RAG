@@ -31,7 +31,7 @@ class ModelLoader:
         dtype = torch.bfloat16 if device == "cuda" else torch.float32
         _LOG.info("Loading '%s' on %s (dtype=%s)", self._model_id, device, dtype)
 
-        self._tokenizer = AutoTokenizer.from_pretrained(self._model_id)
+        self._tokenizer = AutoTokenizer.from_pretrained(self._model_id)  # type: ignore[no-untyped-call]
         self._tokenizer.pad_token = self._tokenizer.eos_token
         _LOG.debug("Tokenizer for '%s' ready", self._model_id)
 
