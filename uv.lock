@@ -837,6 +837,21 @@ wheels = [
 ]
 
 [[package]]
+name = "hatchling"
+version = "1.29.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "packaging" },
+    { name = "pathspec" },
+    { name = "pluggy" },
+    { name = "trove-classifiers" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/cf/9c/b4cfe330cd4f49cff17fd771154730555fa4123beb7f292cf0098b4e6c20/hatchling-1.29.0.tar.gz", hash = "sha256:793c31816d952cee405b83488ce001c719f325d9cda69f1fc4cd750527640ea6", size = 55656 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d3/8a/44032265776062a89171285ede55a0bdaadc8ac00f27f0512a71a9e3e1c8/hatchling-1.29.0-py3-none-any.whl", hash = "sha256:50af9343281f34785fab12da82e445ed987a6efb34fd8c2fc0f6e6630dbcc1b0", size = 76356 },
+]
+
+[[package]]
 name = "hf-transfer"
 version = "0.1.9"
 source = { registry = "https://pypi.org/simple" }
@@ -2157,7 +2172,7 @@ wheels = [
 [[package]]
 name = "poke-rag"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "accelerate" },
     { name = "flagembedding" },
@@ -2189,6 +2204,11 @@ train = [
     { name = "unsloth" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "hatchling" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "accelerate", specifier = ">=1.13.0" },
@@ -2213,6 +2233,9 @@ requires-dist = [
     { name = "uvicorn", extras = ["standard"], marker = "extra == 'api'", specifier = ">=0.44.0" },
 ]
 provides-extras = ["api", "dev", "train"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "hatchling", specifier = ">=1.29.0" }]
 
 [[package]]
 name = "portalocker"
@@ -3375,6 +3398,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/3f/01/87b09019a9be4c73f8fb07ac9db1dccbeb78743fc17b6f3175ebe0a31a70/trl-0.29.1.tar.gz", hash = "sha256:12df5aa22d1deb26942cafdf4cfd75f53d7141942e70c4dc0966687a3617813b", size = 453604 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c7/3b/33226ae50a36f718e1107ece0c91b016457bb4b956d1cb5bd7078c04de9c/trl-0.29.1-py3-none-any.whl", hash = "sha256:f9490cd1af93f3dce1cfdfe0fa1de108dbc46a2f6c2f90485cc2b4021c43eef3", size = 530959 },
+]
+
+[[package]]
+name = "trove-classifiers"
+version = "2026.1.14.14"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/d8/43/7935f8ea93fcb6680bc10a6fdbf534075c198eeead59150dd5ed68449642/trove_classifiers-2026.1.14.14.tar.gz", hash = "sha256:00492545a1402b09d4858605ba190ea33243d361e2b01c9c296ce06b5c3325f3", size = 16997 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/bb/4a/2e5583e544bc437d5e8e54b47db87430df9031b29b48d17f26d129fa60c0/trove_classifiers-2026.1.14.14-py3-none-any.whl", hash = "sha256:1f9553927f18d0513d8e5ff80ab8980b8202ce37ecae0e3274ed2ef11880e74d", size = 14197 },
 ]
 
 [[package]]
