@@ -9,7 +9,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from src.generation.models import GenerationConfig
 from src.types import GenerationResult, RetrievedChunk, Source
+
+_GEMMA_ID = "google/gemma-4-E4B-it"
 
 
 def _chunk(
@@ -40,14 +43,14 @@ class TestModelLoader:
     def test_get_model_raises_before_load(self) -> None:
         from src.generation.loader import ModelLoader
 
-        loader = ModelLoader()
+        loader = ModelLoader(config=GenerationConfig(model_id=_GEMMA_ID))
         with pytest.raises(RuntimeError, match="load"):
             loader.get_model()
 
     def test_get_tokenizer_raises_before_load(self) -> None:
         from src.generation.loader import ModelLoader
 
-        loader = ModelLoader()
+        loader = ModelLoader(config=GenerationConfig(model_id=_GEMMA_ID))
         with pytest.raises(RuntimeError, match="load"):
             loader.get_tokenizer()
 
@@ -57,7 +60,7 @@ class TestModelLoader:
         fake_model = MagicMock()
         fake_tokenizer = MagicMock()
 
-        loader = ModelLoader()
+        loader = ModelLoader(config=GenerationConfig(model_id=_GEMMA_ID))
         with (
             patch(
                 "src.generation.loader.AutoModelForImageTextToText.from_pretrained",
@@ -80,7 +83,7 @@ class TestModelLoader:
         fake_model = MagicMock()
         fake_tokenizer = MagicMock()
 
-        loader = ModelLoader()
+        loader = ModelLoader(config=GenerationConfig(model_id=_GEMMA_ID))
         with (
             patch(
                 "src.generation.loader.AutoModelForImageTextToText.from_pretrained",
@@ -101,7 +104,7 @@ class TestModelLoader:
         fake_model = MagicMock()
         fake_tokenizer = MagicMock()
 
-        loader = ModelLoader()
+        loader = ModelLoader(config=GenerationConfig(model_id=_GEMMA_ID))
         with (
             patch(
                 "src.generation.loader.AutoModelForImageTextToText.from_pretrained",
@@ -163,14 +166,14 @@ class TestInferencer:
         fake_model.generate.return_value = output_ids
         fake_tokenizer.decode.return_value = "  Generated answer.  "
 
-        config = GenerationConfig()
+        config = GenerationConfig(model_id=_GEMMA_ID)
         return Inferencer(fake_model, fake_tokenizer, config), fake_model, fake_tokenizer
 
     def test_raises_on_empty_prompt(self) -> None:
         from src.generation.inference import Inferencer
         from src.generation.models import GenerationConfig
 
-        inferencer = Inferencer(MagicMock(), MagicMock(), GenerationConfig())
+        inferencer = Inferencer(MagicMock(), MagicMock(), GenerationConfig(model_id=_GEMMA_ID))
         with pytest.raises(ValueError, match="prompt"):
             inferencer.infer("")
 
@@ -178,7 +181,7 @@ class TestInferencer:
         from src.generation.inference import Inferencer
         from src.generation.models import GenerationConfig
 
-        inferencer = Inferencer(MagicMock(), MagicMock(), GenerationConfig())
+        inferencer = Inferencer(MagicMock(), MagicMock(), GenerationConfig(model_id=_GEMMA_ID))
         with pytest.raises(ValueError, match="prompt"):
             inferencer.infer("   ")
 
@@ -211,7 +214,9 @@ class TestInferencer:
         fake_model.device = "cpu"
         fake_tokenizer.decode.return_value = "answer"
 
-        config = GenerationConfig(temperature=0.3, max_new_tokens=256, top_p=0.8)
+        config = GenerationConfig(
+            model_id=_GEMMA_ID, temperature=0.3, max_new_tokens=256, top_p=0.8
+        )
         inferencer = Inferencer(fake_model, fake_tokenizer, config)
         inferencer.infer("Some prompt.")
 
@@ -234,7 +239,10 @@ class TestInferencer:
 
         tok_config = TokenizerConfig(max_length=512, truncation=True, return_tensors="pt")
         inferencer = Inferencer(
-            fake_model, fake_tokenizer, GenerationConfig(), tokenizer_config=tok_config
+            fake_model,
+            fake_tokenizer,
+            GenerationConfig(model_id=_GEMMA_ID),
+            tokenizer_config=tok_config,
         )
         inferencer.infer("Some prompt.")
 
@@ -266,7 +274,7 @@ class TestGenerator:
         mock_inferencer = MagicMock()
         mock_inferencer.infer.return_value = answer
 
-        config = GenerationConfig()
+        config = GenerationConfig(model_id=_GEMMA_ID)
         gen = Generator(
             loader=mock_loader,
             prompt_builder=mock_prompt_builder,

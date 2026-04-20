@@ -16,8 +16,8 @@ _LOG = logging.getLogger(__name__)
 
 
 class ModelLoader:
-    def __init__(self, config: GenerationConfig | None = None) -> None:
-        self._config = config or GenerationConfig()
+    def __init__(self, config: GenerationConfig) -> None:
+        self._config = config
         self._model_id = self._config.model_id
         self._model: PreTrainedModel | None = None
         self._tokenizer: PreTrainedTokenizerBase | None = None

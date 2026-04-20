@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from src.api.dependencies import build_pipeline, get_pipeline
@@ -27,12 +27,12 @@ app = FastAPI(title="poke-RAG", lifespan=lifespan)
 
 
 @app.exception_handler(RetrievalError)
-async def retrieval_error_handler(request, exc: RetrievalError) -> JSONResponse:
+async def retrieval_error_handler(request: Request, exc: RetrievalError) -> JSONResponse:
     return JSONResponse(status_code=503, content={"detail": str(exc)})
 
 
 @app.exception_handler(ValueError)
-async def value_error_handler(request, exc: ValueError) -> JSONResponse:
+async def value_error_handler(request: Request, exc: ValueError) -> JSONResponse:
     return JSONResponse(status_code=422, content={"detail": str(exc)})
 
 
@@ -44,7 +44,7 @@ def health() -> dict[str, str]:
 @app.post("/query", response_model=QueryResponse)
 def query(
     body: QueryRequest,
-    pipeline: RAGPipeline = Depends(get_pipeline),
+    pipeline: RAGPipeline = Depends(get_pipeline),  # noqa: B008
 ) -> QueryResponse:
     result = pipeline.query(body.query, sources=body.sources)
     return QueryResponse(

@@ -19,12 +19,12 @@ class Generator:
         loader: ModelLoader,
         prompt_builder: PromptBuilderProtocol,
         inferencer: Inferencer,
-        config: GenerationConfig | None = None,
+        config: GenerationConfig,
     ) -> None:
         self._loader = loader
         self._prompt_builder = prompt_builder
         self._inferencer = inferencer
-        self._config = config or GenerationConfig()
+        self._config = config
 
     def generate(self, query: str, chunks: tuple[RetrievedChunk, ...]) -> GenerationResult:
         if not chunks:
