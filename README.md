@@ -289,10 +289,10 @@ QDRANT_API_KEY=                            # Optional, for cloud
 
 # Embedding & generation models
 EMBED_MODEL=BAAI/bge-m3                    # BGE-M3, don't change
-GENERATE_MODEL=google/gemma-2-2b-it       # Gemma 4, don't change
+GEN_MODEL=google/gemma-2-2b-it             # Gemma 2, don't change
 
 # Device / GPU
-DEVICE=cuda                                # cpu or cuda
+DEVICE=cuda                                # cpu, cuda, or mps
 
 # API settings
 RATE_LIMIT_ENABLED=true                    # Enable/disable rate limiting
@@ -375,7 +375,6 @@ model = AutoModelForCausalLM.from_pretrained(
 )
 ```
 
-The model accepts both text and images. For text-only RAG, call `generate()` with text tokens only.
 
 ## Non-Negotiable Rules
 
@@ -487,5 +486,5 @@ See `CONTRIBUTING.md` for full RunPod workflow.
 
 ---
 
-**Last updated**: 2025-04-20  
+**Last updated**: 2026-04-20  
 **Status**: Active development
