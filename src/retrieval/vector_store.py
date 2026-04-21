@@ -13,6 +13,7 @@ from qdrant_client.models import (
     FieldCondition,
     Filter,
     Fusion,
+    FusionQuery,
     MatchValue,
     PointStruct,
     Prefetch,
@@ -133,7 +134,7 @@ class QdrantVectorStore:
                     limit=top_k * 2,
                 ),
             ],
-            query=Fusion.RRF,
+            query=FusionQuery(fusion=Fusion.RRF),
             limit=top_k,
             query_filter=query_filter,
         )
