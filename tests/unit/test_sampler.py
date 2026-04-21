@@ -26,8 +26,7 @@ class TestExtractEntityName:
 
     def test_returns_none_for_no_match(self) -> None:
         assert (
-            extract_entity_name("some random text with no patterns here at all", "pokeapi")
-            is None
+            extract_entity_name("some random text with no patterns here at all", "pokeapi") is None
         )
 
     def test_ignores_separator_too_far_in(self) -> None:

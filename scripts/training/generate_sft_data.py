@@ -83,9 +83,7 @@ def run(
         while generated < goal:
             result = sampler.sample()
             if result is None:
-                logger.warning(
-                    "Sampler exhausted all available lines at %d pairs.", generated
-                )
+                logger.warning("Sampler exhausted all available lines at %d pairs.", generated)
                 break
             chunk, source = result
 

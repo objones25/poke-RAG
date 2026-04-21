@@ -132,9 +132,7 @@ def main() -> None:
     )
     parser.add_argument("input", type=Path, help="Input JSONL file")
     output_group = parser.add_mutually_exclusive_group()
-    output_group.add_argument(
-        "--inplace", action="store_true", help="Overwrite the input file"
-    )
+    output_group.add_argument("--inplace", action="store_true", help="Overwrite the input file")
     output_group.add_argument(
         "--output", type=Path, default=None, help="Write cleaned data to this path"
     )

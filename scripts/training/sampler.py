@@ -45,10 +45,7 @@ class ChunkSampler:
         self._weights = {k: v for k, v in weights.items() if k in self._lines}
 
     def total_available(self) -> dict[str, int]:
-        return {
-            src: len(self._lines[src]) - self._indices.get(src, 0)
-            for src in self._lines
-        }
+        return {src: len(self._lines[src]) - self._indices.get(src, 0) for src in self._lines}
 
     def sample(self) -> tuple[str, str] | None:
         available = {

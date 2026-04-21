@@ -63,9 +63,7 @@ _BAD_ANSWER_PATTERNS: list[re.Pattern[str]] = [
 ]
 
 # Bare "X is a Pokémon." answer with no real content
-_BARE_POKEMON_RE = re.compile(
-    r"^[\w][\w\s\-']+\s+is an? [Pp]ok[eé]mon\.?\s*$"
-)
+_BARE_POKEMON_RE = re.compile(r"^[\w][\w\s\-']+\s+is an? [Pp]ok[eé]mon\.?\s*$")
 
 _MIN_ANSWER_LEN = 40
 

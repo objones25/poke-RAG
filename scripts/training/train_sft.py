@@ -37,6 +37,7 @@ log = logging.getLogger(__name__)
 # Argument parsing
 # ---------------------------------------------------------------------------
 
+
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         description="QLoRA SFT fine-tuning of gemma-4-E4B-it via Unsloth + TRL"
@@ -90,6 +91,7 @@ def _build_parser() -> argparse.ArgumentParser:
 # Dataset helpers
 # ---------------------------------------------------------------------------
 
+
 def _load_jsonl(path: Path) -> list[dict[str, Any]]:
     records = []
     with path.open() as f:
@@ -117,6 +119,7 @@ def _apply_chat_template(example: dict[str, Any], tokenizer: Any) -> dict[str, s
 # ---------------------------------------------------------------------------
 # GPU / environment checks
 # ---------------------------------------------------------------------------
+
 
 def _check_environment() -> None:
     if not torch.cuda.is_available():
@@ -148,6 +151,7 @@ def _check_environment() -> None:
 # ---------------------------------------------------------------------------
 # Main training entry point
 # ---------------------------------------------------------------------------
+
 
 def train(args: argparse.Namespace) -> None:
     _check_environment()
@@ -202,7 +206,7 @@ def train(args: argparse.Namespace) -> None:
     model, tokenizer = FastModel.from_pretrained(
         model_name=args.model,
         max_seq_length=args.max_seq_length,
-        dtype=None,             # auto-detect; bfloat16 on A100/H100
+        dtype=None,  # auto-detect; bfloat16 on A100/H100
         load_in_4bit=not args.no_4bit,
         full_finetuning=False,
     )
@@ -274,7 +278,7 @@ def train(args: argparse.Namespace) -> None:
         # Sequence length
         max_seq_length=args.max_seq_length,
         dataset_text_field="text",
-        packing=True,           # pack short samples for efficiency
+        packing=True,  # pack short samples for efficiency
         # Optimization
         num_train_epochs=args.epochs,
         learning_rate=args.lr,
@@ -307,7 +311,7 @@ def train(args: argparse.Namespace) -> None:
     # ------------------------------------------------------------------
     trainer = SFTTrainer(
         model=model,
-        processing_class=tokenizer,     # trl >= 0.12 uses processing_class
+        processing_class=tokenizer,  # trl >= 0.12 uses processing_class
         args=sft_config,
         train_dataset=train_ds,
         eval_dataset=val_ds,
@@ -328,6 +332,7 @@ def train(args: argparse.Namespace) -> None:
 
 
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     parser = _build_parser()
