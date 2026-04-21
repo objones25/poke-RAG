@@ -1,6 +1,6 @@
 # poke-RAG
 
-Agentic retrieval-augmented generation (RAG) system for Pokémon knowledge, powered by `google/gemma-2-2b-it` and grounded in three authoritative sources: Bulbapedia, PokéAPI, and Smogon.
+Agentic retrieval-augmented generation (RAG) system for Pokémon knowledge, powered by `google/gemma-4-E4B-it` and grounded in three authoritative sources: Bulbapedia, PokéAPI, and Smogon.
 
 ## Overview
 
@@ -26,7 +26,7 @@ bulbapedia     pokeapi        smogon
     ↓
 [Context Assembler] — token-bounded context
     ↓
-[Gemma 2 Generator] — answer + attribution
+[Gemma 4 Generator] — answer + attribution
     ↓
 QueryResponse (answer, sources, chunks_used, confidence_score, model_name)
 ```
@@ -155,7 +155,7 @@ print(f"Confidence: {result.get('confidence_score')}")
   "sources_used": ["pokeapi"],
   "num_chunks_used": 3,
   "confidence_score": 0.87,
-  "model_name": "google/gemma-2-2b-it",
+  "model_name": "google/gemma-4-E4B-it",
   "query": "What are Charizard's base stats?"
 }
 ```
@@ -219,7 +219,7 @@ poke-RAG/
 │   │   └── protocols.py        # Interfaces (RetrieverProtocol, etc.)
 │   │
 │   ├── generation/             # Model inference
-│   │   ├── generator.py        # Gemma 2 generation wrapper
+│   │   ├── generator.py        # Gemma 4 generation wrapper
 │   │   ├── protocols.py        # GeneratorProtocol, PromptBuilderProtocol
 │   │   └── prompts.py          # System prompts, context assembly
 │   │
@@ -289,7 +289,7 @@ QDRANT_API_KEY=                            # Optional, for cloud
 
 # Embedding & generation models
 EMBED_MODEL=BAAI/bge-m3                    # BGE-M3, don't change
-GEN_MODEL=google/gemma-2-2b-it             # Gemma 2, don't change
+GEN_MODEL=google/gemma-4-E4B-it            # Gemma 4, don't change
 
 # Device / GPU
 DEVICE=cuda                                # cpu, cuda, or mps
@@ -342,6 +342,10 @@ output = model.encode(
 # output["colbert_vecs"]    — multi-vector (not indexed yet)
 ```
 
+#### Compatibility Notes
+
+**FlagEmbedding 1.3.5 + transformers 5.x**: `src/retrieval/_compat.py` patches three APIs removed in transformers 5.x that FlagEmbedding still calls: `is_torch_fx_available`, `PreTrainedTokenizerBase.prepare_for_model`, and `build_inputs_with_special_tokens`. This file must be imported before FlagEmbedding — `embedder.py` and `reranker.py` do this automatically. Do not remove this import.
+
 ### Vector DB: Qdrant
 
 Three separate collections — one per source:
@@ -360,19 +364,20 @@ Each collection stores both `vectors_config` (dense, 1024-dim, cosine) and `spar
 4. **Assemble context** — Chunks truncated to token budget, ordered by score
 5. **Generate** — Gemma 2 answers with retrieved context
 
-## Generation: Gemma 2 2B-it
+## Generation: Gemma 4 4B-it
 
-**Important**: Load Gemma 2 via `AutoModelForCausalLM`, causal LM (not a multimodal model):
+**Important**: Load Gemma 4 via `AutoModelForImageTextToText` with `AutoProcessor` (not `AutoModelForCausalLM`):
 
 ```python
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForImageTextToText, AutoProcessor
 
-tokenizer = AutoTokenizer.from_pretrained("google/gemma-2-2b-it")
-model = AutoModelForCausalLM.from_pretrained(
-    "google/gemma-2-2b-it",
-    device_map="auto",
-    torch_dtype="auto",
+processor = AutoProcessor.from_pretrained("google/gemma-4-E4B-it")
+model = AutoModelForImageTextToText.from_pretrained(
+    "google/gemma-4-E4B-it",
+    attn_implementation="sdpa",
+    dtype="float16",
 )
+# For MPS: omit device_map, load on CPU, then call .to("mps")
 ```
 
 ## Non-Negotiable Rules
@@ -456,7 +461,7 @@ Test organization:
 
 - **unit/** — No I/O, no model, fast (~<1s each)
 - **integration/** — Real Qdrant, real embedder, fixture data (~1-10s each)
-- **e2e/** — Real Gemma 2 model, requires GPU (~10-60s each)
+- **e2e/** — Real Gemma 4 model, requires GPU (~10-60s each)
 
 See `TESTING.md` for mocking patterns (embedder, generator), the no-fallback invariant test, and fixtures.
 
@@ -464,7 +469,7 @@ See `TESTING.md` for mocking patterns (embedder, generator), the no-fallback inv
 
 LoRA adapter scripts are in `scripts/training/` (isolated from `src/`). The serving API works with or without an adapter.
 
-Recommended GPU: **RTX 4090 (24GB)** on RunPod community (~$0.35–$0.69/hr). Gemma 2 2B requires ~17GB VRAM with 4-bit quantization via Unsloth.
+Recommended GPU: **RTX 4090 (24GB)** on RunPod community (~$0.35–$0.69/hr). Gemma 4 4B requires ~8–10 GB VRAM with 4-bit quantization via Unsloth.
 
 Steps:
 

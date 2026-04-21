@@ -6,6 +6,7 @@ import logging
 import warnings
 from typing import Any
 
+import src.retrieval._compat  # noqa: F401
 from src.retrieval.types import EmbeddingOutput
 
 _LOG = logging.getLogger(__name__)

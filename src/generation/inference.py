@@ -1,50 +1,42 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
-import torch
-from transformers import PreTrainedModel, PreTrainedTokenizerBase
+from transformers import PreTrainedModel
 
-from src.generation.models import GenerationConfig, TokenizerConfig
+from src.generation.models import GenerationConfig
 
 _LOG = logging.getLogger(__name__)
 
 
 class Inferencer:
-    def __init__(
-        self,
-        model: PreTrainedModel,
-        tokenizer: PreTrainedTokenizerBase,
-        config: GenerationConfig,
-        tokenizer_config: TokenizerConfig | None = None,
-    ) -> None:
+    def __init__(self, model: PreTrainedModel, processor: Any, config: GenerationConfig) -> None:
         self._model = model
-        self._tokenizer = tokenizer
+        self._processor = processor
         self._config = config
-        self._tokenizer_config = tokenizer_config or TokenizerConfig()
 
     def infer(self, prompt: str) -> str:
         if not prompt.strip():
             raise ValueError("prompt must not be empty")
 
-        inputs = self._tokenizer(
-            prompt,
-            return_tensors=self._tokenizer_config.return_tensors,
-            max_length=self._tokenizer_config.max_length,
-            truncation=self._tokenizer_config.truncation,
+        messages = [{"role": "user", "content": prompt}]
+        text: str = self._processor.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+            enable_thinking=False,
         )
-        inputs = inputs.to(self._model.device)
-
-        input_ids: torch.Tensor = inputs["input_ids"]
-        attention_mask: torch.Tensor = inputs["attention_mask"]
-        prompt_len = input_ids.shape[-1]
+        inputs = self._processor(text=text, return_tensors="pt").to(self._model.device)
+        input_len: int = inputs["input_ids"].shape[-1]
         _LOG.debug(
-            "Inferring: prompt_len=%d tokens, max_new=%d", prompt_len, self._config.max_new_tokens
+            "Inferring: prompt_len=%d tokens, max_new=%d",
+            input_len,
+            self._config.max_new_tokens,
         )
 
         output_ids = self._model.generate(  # type: ignore[operator]
-            input_ids=input_ids,
-            attention_mask=attention_mask,
+            **inputs,
             max_new_tokens=self._config.max_new_tokens,
             temperature=self._config.temperature,
             top_p=self._config.top_p,
@@ -55,10 +47,10 @@ class Inferencer:
             raise RuntimeError(
                 f"Model generate() returned no sequences (shape={output_ids.shape!r})"
             )
-        generated: torch.Tensor = output_ids[0][prompt_len:]
-        _LOG.debug("Generated %d new tokens", generated.shape[-1])
 
-        decoded = self._tokenizer.decode(generated, skip_special_tokens=True)
-        if not isinstance(decoded, str):
-            raise TypeError(f"Tokenizer returned {type(decoded).__name__}, expected str")
-        return decoded.strip()
+        response: str = self._processor.decode(output_ids[0][input_len:], skip_special_tokens=True)
+        if not isinstance(response, str):
+            raise TypeError(f"Processor returned {type(response).__name__}, expected str")
+
+        _LOG.debug("Generated %d chars", len(response))
+        return response.strip()

@@ -7,6 +7,30 @@
 
 The retrieval subsystem implements a hybrid semantic + lexical RAG pipeline. It breaks data into semantically coherent chunks, encodes them with `BAAI/bge-m3` (dense 1024-dim + sparse token-id vectors), stores them in Qdrant across three source-specific collections, retrieves candidates via RRF fusion, reranks with `BAAI/bge-reranker-v2-m3`, and assembles a formatted context string for the LLM.
 
+## Compatibility Layer
+
+`src/retrieval/_compat.py` patches three APIs removed in **transformers 5.x** that **FlagEmbedding 1.3.5** still calls at import time. Without these shims, both `BGEEmbedder` and `BGEReranker` fail to import.
+
+### Patched APIs
+
+| API removed in transformers 5.x | Where FlagEmbedding calls it | Shim strategy |
+|---|---|---|
+| `transformers.utils.import_utils.is_torch_fx_available` | FlagEmbedding model initialization | Probe `torch.fx` import; return `True`/`False` |
+| `PreTrainedTokenizerBase.prepare_for_model` | BGE-M3 tokenizer pipeline | Re-implement: combine IDs with special tokens, optionally truncate |
+| `build_inputs_with_special_tokens` | Called inside `prepare_for_model` shim | Inlined into `prepare_for_model` using XLMRobertaTokenizer RoBERTa pair pattern |
+
+### XLMRobertaTokenizer special-token pattern
+
+BGE-M3's reranker uses `XLMRobertaTokenizer` which follows the **RoBERTa pair encoding** convention:
+- **Single sequence**: `[BOS(0)] + ids + [EOS(2)]`
+- **Pair sequence**: `[BOS(0)] + ids1 + [EOS(2), EOS(2)] + ids2 + [EOS(2)]`
+
+The shim reconstructs this pattern using `bos_token_id` and `eos_token_id` from the tokenizer instance.
+
+### Import order
+
+`_compat.py` must be imported **before** any FlagEmbedding import. `embedder.py` and `reranker.py` each start with `import src.retrieval._compat` to guarantee this. Do not remove these imports.
+
 ## Architecture
 
 ```text

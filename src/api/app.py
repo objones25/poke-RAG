@@ -66,8 +66,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     ) -> None:
         super().__init__(app)
         self.requests_per_minute = requests_per_minute
-        self.trusted_proxy_count = trusted_proxy_count if trusted_proxy_count is not None else int(
-            os.getenv("TRUSTED_PROXY_COUNT", "0")
+        self.trusted_proxy_count = (
+            trusted_proxy_count
+            if trusted_proxy_count is not None
+            else int(os.getenv("TRUSTED_PROXY_COUNT", "0"))
         )
         self.request_times: OrderedDict[str, list[float]] = OrderedDict()
         self._lock = asyncio.Lock()

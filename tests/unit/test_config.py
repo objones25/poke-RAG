@@ -109,7 +109,7 @@ class TestSettingsFromEnv:
         monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
         monkeypatch.delenv("GEN_MODEL", raising=False)
         settings = Settings.from_env()
-        assert settings.gen_model == "google/gemma-2-2b-it"
+        assert settings.gen_model == "google/gemma-4-E4B-it"
 
     def test_reads_temperature_with_default(self, monkeypatch) -> None:
         from src.config import Settings

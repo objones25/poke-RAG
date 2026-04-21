@@ -5,7 +5,7 @@ Run with: uv run pytest -m "e2e and gpu" -v
 Requirements:
   - Qdrant running at $QDRANT_URL (default: http://localhost:6333)
   - BAAI/bge-m3 and BAAI/bge-reranker-v2-m3 downloaded
-  - google/gemma-2-2b-it downloaded (or GEN_MODEL env var pointing to another model)
+  - google/gemma-4-E4B-it downloaded (or GEN_MODEL env var pointing to another model)
   - CUDA-capable GPU (or DEVICE=cpu for slow CPU inference)
 
 Set PYTEST_E2E_CLEANUP=1 to delete the e2e Qdrant collections after the run.
@@ -103,25 +103,23 @@ def generator():
         from src.generation.generator import Generator
         from src.generation.inference import Inferencer
         from src.generation.loader import ModelLoader
-        from src.generation.models import GenerationConfig, TokenizerConfig
+        from src.generation.models import GenerationConfig
         from src.generation.prompt_builder import build_prompt
 
         device = os.getenv("DEVICE", "cpu")
         config = GenerationConfig(
-            model_id=os.getenv("GEN_MODEL", "google/gemma-2-2b-it"),
+            model_id=os.getenv("GEN_MODEL", "google/gemma-4-E4B-it"),
             temperature=0.1,
             max_new_tokens=256,
             top_p=0.9,
             do_sample=False,
         )
-        tok_config = TokenizerConfig(max_length=4096, return_tensors="pt", truncation=True)
         loader = ModelLoader(config=config, device=device)
         loader.load()
         inferencer = Inferencer(
             model=loader.get_model(),
-            tokenizer=loader.get_tokenizer(),
+            processor=loader.get_tokenizer(),
             config=config,
-            tokenizer_config=tok_config,
         )
         gen = Generator(
             loader=loader,

@@ -6,6 +6,7 @@ import logging
 from dataclasses import replace
 from typing import Any
 
+import src.retrieval._compat  # noqa: F401
 from src.types import RetrievedChunk
 
 _LOG = logging.getLogger(__name__)

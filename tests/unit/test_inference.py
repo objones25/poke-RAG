@@ -1,4 +1,4 @@
-"""Unit tests for src/generation/inference.py — Inferencer and inference orchestration."""
+"""Unit tests for src/generation/inference.py — Inferencer."""
 
 from __future__ import annotations
 
@@ -8,75 +8,77 @@ import pytest
 import torch
 
 
+class _FakeInputs(dict):
+    """Dict-like batch that supports .to(device), mirrors BatchFeature."""
+
+
+def _make_fake_inputs(input_len: int = 3) -> _FakeInputs:
+    input_ids = torch.arange(input_len).unsqueeze(0)
+    fi = _FakeInputs({"input_ids": input_ids, "attention_mask": torch.ones_like(input_ids)})
+    fi.to = MagicMock(return_value=fi)  # type: ignore[attr-defined]
+    return fi
+
+
+def _make_inferencer(
+    *,
+    prompt_len: int = 3,
+    decoded: str = "  parsed answer  ",
+    device: str = "cpu",
+) -> tuple:
+    from src.generation.inference import Inferencer
+    from src.generation.models import GenerationConfig
+
+    fake_model = MagicMock()
+    fake_model.device = device
+    fake_processor = MagicMock()
+
+    fake_inputs = _make_fake_inputs(prompt_len)
+    fake_processor.apply_chat_template.return_value = "formatted text"
+    fake_processor.return_value = fake_inputs
+    fake_model.generate.return_value = torch.arange(prompt_len + 2).unsqueeze(0)
+    fake_processor.decode.return_value = decoded
+
+    config = GenerationConfig(model_id="test/model")
+    return Inferencer(fake_model, fake_processor, config), fake_model, fake_processor, fake_inputs
+
+
 @pytest.mark.unit
 class TestInferencerInfer:
-    def test_calls_tokenizer_with_prompt(self) -> None:
-        from src.generation.inference import Inferencer
-        from src.generation.models import GenerationConfig
-
-        fake_model = MagicMock()
-        fake_tokenizer = MagicMock()
-        fake_model.device = "cpu"
-
-        encoded = MagicMock()
-        encoded.to = MagicMock(return_value=encoded)
-        encoded.__getitem__ = MagicMock(return_value=torch.tensor([[1, 2, 3]]))
-        fake_tokenizer.return_value = encoded
-        fake_model.generate.return_value = torch.tensor([[1, 2, 3, 4, 5]])
-        fake_tokenizer.decode.return_value = "answer"
-
-        inferencer = Inferencer(fake_model, fake_tokenizer, GenerationConfig(model_id="test/model"))
+    def test_apply_chat_template_called_with_prompt(self) -> None:
+        inferencer, _, fake_processor, _ = _make_inferencer()
         inferencer.infer("What is Pikachu?")
 
-        fake_tokenizer.assert_called_once()
-        call_args = fake_tokenizer.call_args
-        assert "What is Pikachu?" in call_args[0]
+        fake_processor.apply_chat_template.assert_called_once()
+        args, _ = fake_processor.apply_chat_template.call_args
+        messages = args[0]
+        assert messages == [{"role": "user", "content": "What is Pikachu?"}]
 
-    def test_passes_tokenizer_config_to_tokenizer(self) -> None:
-        from src.generation.inference import Inferencer
-        from src.generation.models import GenerationConfig, TokenizerConfig
-
-        fake_model = MagicMock()
-        fake_tokenizer = MagicMock()
-        fake_model.device = "cpu"
-
-        encoded = MagicMock()
-        encoded.to = MagicMock(return_value=encoded)
-        encoded.__getitem__ = MagicMock(return_value=torch.tensor([[1, 2, 3]]))
-        fake_tokenizer.return_value = encoded
-        fake_model.generate.return_value = torch.tensor([[1, 2, 3, 4, 5]])
-        fake_tokenizer.decode.return_value = "answer"
-
-        tok_config = TokenizerConfig(max_length=512, return_tensors="pt", truncation=True)
-        inferencer = Inferencer(
-            fake_model,
-            fake_tokenizer,
-            GenerationConfig(model_id="test/model"),
-            tokenizer_config=tok_config,
-        )
+    def test_apply_chat_template_kwargs(self) -> None:
+        inferencer, _, fake_processor, _ = _make_inferencer()
         inferencer.infer("prompt")
 
-        _, kwargs = fake_tokenizer.call_args
-        assert kwargs["max_length"] == 512
+        _, kwargs = fake_processor.apply_chat_template.call_args
+        assert kwargs["tokenize"] is False
+        assert kwargs["add_generation_prompt"] is True
+        assert kwargs["enable_thinking"] is False
+
+    def test_processor_called_with_text_and_return_tensors(self) -> None:
+        inferencer, _, fake_processor, _ = _make_inferencer()
+        inferencer.infer("prompt")
+
+        fake_processor.assert_called_once()
+        _, kwargs = fake_processor.call_args
+        assert kwargs["text"] == "formatted text"
         assert kwargs["return_tensors"] == "pt"
-        assert kwargs["truncation"] is True
 
-    def test_calls_model_generate_with_correct_args(self) -> None:
-        from src.generation.inference import Inferencer
-        from src.generation.models import GenerationConfig
+    def test_moves_inputs_to_model_device(self) -> None:
+        inferencer, _, _, fake_inputs = _make_inferencer(device="cuda")
+        inferencer.infer("prompt")
 
-        fake_model = MagicMock()
-        fake_tokenizer = MagicMock()
-        fake_model.device = "cpu"
+        fake_inputs.to.assert_called_once_with("cuda")
 
-        encoded = MagicMock()
-        encoded.to = MagicMock(return_value=encoded)
-        encoded.__getitem__ = MagicMock(return_value=torch.tensor([[1, 2, 3]]))
-        fake_tokenizer.return_value = encoded
-        fake_model.generate.return_value = torch.tensor([[1, 2, 3, 4, 5]])
-        fake_tokenizer.decode.return_value = "answer"
-
-        inferencer = Inferencer(fake_model, fake_tokenizer, GenerationConfig(model_id="test/model"))
+    def test_calls_model_generate(self) -> None:
+        inferencer, fake_model, _, _ = _make_inferencer()
         inferencer.infer("prompt")
 
         fake_model.generate.assert_called_once()
@@ -86,15 +88,13 @@ class TestInferencerInfer:
         from src.generation.models import GenerationConfig
 
         fake_model = MagicMock()
-        fake_tokenizer = MagicMock()
         fake_model.device = "cpu"
-
-        encoded = MagicMock()
-        encoded.to = MagicMock(return_value=encoded)
-        encoded.__getitem__ = MagicMock(return_value=torch.tensor([[1, 2, 3]]))
-        fake_tokenizer.return_value = encoded
-        fake_model.generate.return_value = torch.tensor([[1, 2, 3, 4, 5]])
-        fake_tokenizer.decode.return_value = "answer"
+        fake_processor = MagicMock()
+        fake_inputs = _make_fake_inputs(3)
+        fake_processor.apply_chat_template.return_value = "text"
+        fake_processor.return_value = fake_inputs
+        fake_model.generate.return_value = torch.arange(5).unsqueeze(0)
+        fake_processor.decode.return_value = "answer"
 
         config = GenerationConfig(
             model_id="test/model",
@@ -103,7 +103,7 @@ class TestInferencerInfer:
             top_p=0.8,
             do_sample=True,
         )
-        inferencer = Inferencer(fake_model, fake_tokenizer, config)
+        inferencer = Inferencer(fake_model, fake_processor, config)
         inferencer.infer("prompt")
 
         _, kwargs = fake_model.generate.call_args
@@ -113,79 +113,39 @@ class TestInferencerInfer:
         assert kwargs["do_sample"] is True
 
     def test_skips_prompt_tokens_in_output(self) -> None:
-        from src.generation.inference import Inferencer
-        from src.generation.models import GenerationConfig
-
-        fake_model = MagicMock()
-        fake_tokenizer = MagicMock()
-        fake_model.device = "cpu"
-
-        encoded = MagicMock()
-        encoded.to = MagicMock(return_value=encoded)
-        input_ids = torch.tensor([[10, 11, 12]])  # 3 input tokens
-        encoded.__getitem__ = MagicMock(return_value=input_ids)
-        fake_tokenizer.return_value = encoded
-
-        output_ids = torch.tensor([[10, 11, 12, 20, 21, 22]])  # 6 total tokens
-        fake_model.generate.return_value = output_ids
-        fake_tokenizer.decode.return_value = "generated text"
-
-        inferencer = Inferencer(fake_model, fake_tokenizer, GenerationConfig(model_id="test/model"))
+        prompt_len = 3
+        inferencer, _, fake_processor, _ = _make_inferencer(prompt_len=prompt_len)
         inferencer.infer("prompt")
 
-        call_args = fake_tokenizer.decode.call_args[0]
-        decoded_tensor = call_args[0]
-        assert decoded_tensor.shape[-1] == 3  # Only new tokens (6 - 3 = 3)
+        args, _ = fake_processor.decode.call_args
+        decoded_tensor = args[0]
+        # output_ids has prompt_len + 2 total tokens; slice skips prompt_len
+        assert decoded_tensor.shape[-1] == 2
 
-    def test_returns_stripped_string(self) -> None:
-        from src.generation.inference import Inferencer
-        from src.generation.models import GenerationConfig
+    def test_decode_called_with_skip_special_tokens_true(self) -> None:
+        inferencer, _, fake_processor, _ = _make_inferencer()
+        inferencer.infer("prompt")
 
-        fake_model = MagicMock()
-        fake_tokenizer = MagicMock()
-        fake_model.device = "cpu"
+        _, kwargs = fake_processor.decode.call_args
+        assert kwargs.get("skip_special_tokens") is True
 
-        encoded = MagicMock()
-        encoded.to = MagicMock(return_value=encoded)
-        encoded.__getitem__ = MagicMock(return_value=torch.tensor([[1, 2, 3]]))
-        fake_tokenizer.return_value = encoded
-        fake_model.generate.return_value = torch.tensor([[1, 2, 3, 4, 5]])
-        fake_tokenizer.decode.return_value = "  some answer  "
-
-        inferencer = Inferencer(fake_model, fake_tokenizer, GenerationConfig(model_id="test/model"))
+    def test_returns_decoded_and_stripped_result(self) -> None:
+        inferencer, _, _, _ = _make_inferencer(decoded="  parsed answer  ")
         result = inferencer.infer("prompt")
 
-        assert result == "some answer"
+        assert result == "parsed answer"
 
-    def test_calls_decode_with_skip_special_tokens(self) -> None:
-        from src.generation.inference import Inferencer
-        from src.generation.models import GenerationConfig
+    def test_returns_string_type(self) -> None:
+        inferencer, _, _, _ = _make_inferencer()
+        result = inferencer.infer("prompt")
 
-        fake_model = MagicMock()
-        fake_tokenizer = MagicMock()
-        fake_model.device = "cpu"
-
-        encoded = MagicMock()
-        encoded.to = MagicMock(return_value=encoded)
-        encoded.__getitem__ = MagicMock(return_value=torch.tensor([[1, 2, 3]]))
-        fake_tokenizer.return_value = encoded
-        fake_model.generate.return_value = torch.tensor([[1, 2, 3, 4, 5]])
-        fake_tokenizer.decode.return_value = "answer"
-
-        inferencer = Inferencer(fake_model, fake_tokenizer, GenerationConfig(model_id="test/model"))
-        inferencer.infer("prompt")
-
-        _, kwargs = fake_tokenizer.decode.call_args
-        assert kwargs.get("skip_special_tokens") is True
+        assert isinstance(result, str)
 
     def test_raises_on_empty_prompt(self) -> None:
         from src.generation.inference import Inferencer
         from src.generation.models import GenerationConfig
 
-        fake_model = MagicMock()
-        fake_tokenizer = MagicMock()
-
-        inferencer = Inferencer(fake_model, fake_tokenizer, GenerationConfig(model_id="test/model"))
+        inferencer = Inferencer(MagicMock(), MagicMock(), GenerationConfig(model_id="test/model"))
         with pytest.raises(ValueError, match="prompt"):
             inferencer.infer("")
 
@@ -193,69 +153,13 @@ class TestInferencerInfer:
         from src.generation.inference import Inferencer
         from src.generation.models import GenerationConfig
 
-        fake_model = MagicMock()
-        fake_tokenizer = MagicMock()
-
-        inferencer = Inferencer(fake_model, fake_tokenizer, GenerationConfig(model_id="test/model"))
+        inferencer = Inferencer(MagicMock(), MagicMock(), GenerationConfig(model_id="test/model"))
         with pytest.raises(ValueError, match="prompt"):
             inferencer.infer("   \n\t  ")
 
-    def test_moves_inputs_to_model_device(self) -> None:
-        from src.generation.inference import Inferencer
-        from src.generation.models import GenerationConfig
-
-        fake_model = MagicMock()
-        fake_model.device = "cuda"
-        fake_tokenizer = MagicMock()
-
-        encoded = MagicMock()
-        moved_encoded = MagicMock()
-        encoded.to = MagicMock(return_value=moved_encoded)
-        moved_encoded.__getitem__ = MagicMock(return_value=torch.tensor([[1, 2, 3]]))
-        fake_tokenizer.return_value = encoded
-        fake_model.generate.return_value = torch.tensor([[1, 2, 3, 4, 5]])
-        fake_tokenizer.decode.return_value = "answer"
-
-        inferencer = Inferencer(fake_model, fake_tokenizer, GenerationConfig(model_id="test/model"))
-        inferencer.infer("prompt")
-
-        encoded.to.assert_called_once_with("cuda")
-
-    def test_returns_string_type(self) -> None:
-        from src.generation.inference import Inferencer
-        from src.generation.models import GenerationConfig
-
-        fake_model = MagicMock()
-        fake_tokenizer = MagicMock()
-        fake_model.device = "cpu"
-
-        encoded = MagicMock()
-        encoded.to = MagicMock(return_value=encoded)
-        encoded.__getitem__ = MagicMock(return_value=torch.tensor([[1, 2, 3]]))
-        fake_tokenizer.return_value = encoded
-        fake_model.generate.return_value = torch.tensor([[1, 2, 3, 4, 5]])
-        fake_tokenizer.decode.return_value = "test answer"
-
-        inferencer = Inferencer(fake_model, fake_tokenizer, GenerationConfig(model_id="test/model"))
-        result = inferencer.infer("prompt")
-
-        assert isinstance(result, str)
-
     def test_raises_on_non_string_decode_output(self) -> None:
-        from src.generation.inference import Inferencer
-        from src.generation.models import GenerationConfig
+        inferencer, _, fake_processor, _ = _make_inferencer()
+        fake_processor.decode.return_value = 123
 
-        fake_model = MagicMock()
-        fake_tokenizer = MagicMock()
-        fake_model.device = "cpu"
-
-        encoded = MagicMock()
-        encoded.to = MagicMock(return_value=encoded)
-        encoded.__getitem__ = MagicMock(return_value=torch.tensor([[1, 2, 3]]))
-        fake_tokenizer.return_value = encoded
-        fake_model.generate.return_value = torch.tensor([[1, 2, 3, 4, 5]])
-        fake_tokenizer.decode.return_value = 123  # Not a string
-
-        inferencer = Inferencer(fake_model, fake_tokenizer, GenerationConfig(model_id="test/model"))
         with pytest.raises(TypeError, match="str"):
             inferencer.infer("prompt")

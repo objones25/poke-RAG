@@ -33,101 +33,99 @@ class TestModelLoaderLoad:
         from src.generation.models import GenerationConfig
 
         fake_model = MagicMock()
-        fake_tokenizer = MagicMock()
-        fake_tokenizer.eos_token = "<eos>"
+        fake_processor = MagicMock()
 
         with (
             patch(
-                "src.generation.loader.AutoModelForCausalLM.from_pretrained",
+                "src.generation.loader.AutoModelForImageTextToText.from_pretrained",
                 return_value=fake_model,
             ) as mock_model_load,
             patch(
-                "src.generation.loader.AutoTokenizer.from_pretrained",
-                return_value=fake_tokenizer,
+                "src.generation.loader.AutoProcessor.from_pretrained",
+                return_value=fake_processor,
             ),
         ):
             loader = ModelLoader(
-                config=GenerationConfig(model_id="google/gemma-2-2b-it"), device="cpu"
+                config=GenerationConfig(model_id="google/gemma-4-E4B-it"), device="cpu"
             )
             loader.load()
 
             mock_model_load.assert_called_once()
             call_args = mock_model_load.call_args
-            assert call_args[0][0] == "google/gemma-2-2b-it"
+            assert call_args[0][0] == "google/gemma-4-E4B-it"
 
-    def test_calls_auto_tokenizer_from_pretrained(self) -> None:
+    def test_calls_auto_processor_from_pretrained(self) -> None:
         from src.generation.loader import ModelLoader
         from src.generation.models import GenerationConfig
 
         fake_model = MagicMock()
-        fake_tokenizer = MagicMock()
-        fake_tokenizer.eos_token = "<eos>"
+        fake_processor = MagicMock()
 
         with (
             patch(
-                "src.generation.loader.AutoModelForCausalLM.from_pretrained",
+                "src.generation.loader.AutoModelForImageTextToText.from_pretrained",
                 return_value=fake_model,
             ),
             patch(
-                "src.generation.loader.AutoTokenizer.from_pretrained",
-                return_value=fake_tokenizer,
-            ) as mock_tok_load,
+                "src.generation.loader.AutoProcessor.from_pretrained",
+                return_value=fake_processor,
+            ) as mock_proc_load,
         ):
             loader = ModelLoader(
-                config=GenerationConfig(model_id="google/gemma-2-2b-it"), device="cpu"
+                config=GenerationConfig(model_id="google/gemma-4-E4B-it"), device="cpu"
             )
             loader.load()
 
-            mock_tok_load.assert_called_once()
-            call_args = mock_tok_load.call_args
-            assert call_args[0][0] == "google/gemma-2-2b-it"
+            mock_proc_load.assert_called_once()
+            call_args = mock_proc_load.call_args
+            assert call_args[0][0] == "google/gemma-4-E4B-it"
 
-    def test_passes_device_to_model_load(self) -> None:
+    def test_mps_loads_without_device_map_then_moves(self) -> None:
         from src.generation.loader import ModelLoader
         from src.generation.models import GenerationConfig
 
         fake_model = MagicMock()
-        fake_tokenizer = MagicMock()
-        fake_tokenizer.eos_token = "<eos>"
+        fake_processor = MagicMock()
+        fake_model.to.return_value = fake_model
 
         with (
             patch(
-                "src.generation.loader.AutoModelForCausalLM.from_pretrained",
+                "src.generation.loader.AutoModelForImageTextToText.from_pretrained",
                 return_value=fake_model,
             ) as mock_model_load,
             patch(
-                "src.generation.loader.AutoTokenizer.from_pretrained",
-                return_value=fake_tokenizer,
+                "src.generation.loader.AutoProcessor.from_pretrained",
+                return_value=fake_processor,
             ),
         ):
             loader = ModelLoader(
-                config=GenerationConfig(model_id="google/gemma-2-2b-it"), device="mps"
+                config=GenerationConfig(model_id="google/gemma-4-E4B-it"), device="mps"
             )
             loader.load()
 
             _, kwargs = mock_model_load.call_args
-            assert kwargs["device_map"] == "mps"
+            assert "device_map" not in kwargs
+            fake_model.to.assert_called_once_with("mps")
 
     def test_passes_correct_dtype_for_cuda(self) -> None:
         from src.generation.loader import ModelLoader
         from src.generation.models import GenerationConfig
 
         fake_model = MagicMock()
-        fake_tokenizer = MagicMock()
-        fake_tokenizer.eos_token = "<eos>"
+        fake_processor = MagicMock()
 
         with (
             patch(
-                "src.generation.loader.AutoModelForCausalLM.from_pretrained",
+                "src.generation.loader.AutoModelForImageTextToText.from_pretrained",
                 return_value=fake_model,
             ) as mock_model_load,
             patch(
-                "src.generation.loader.AutoTokenizer.from_pretrained",
-                return_value=fake_tokenizer,
+                "src.generation.loader.AutoProcessor.from_pretrained",
+                return_value=fake_processor,
             ),
         ):
             loader = ModelLoader(
-                config=GenerationConfig(model_id="google/gemma-2-2b-it"), device="cuda"
+                config=GenerationConfig(model_id="google/gemma-4-E4B-it"), device="cuda"
             )
             loader.load()
 
@@ -139,78 +137,51 @@ class TestModelLoaderLoad:
         from src.generation.models import GenerationConfig
 
         fake_model = MagicMock()
-        fake_tokenizer = MagicMock()
-        fake_tokenizer.eos_token = "<eos>"
+        fake_processor = MagicMock()
 
         with (
             patch(
-                "src.generation.loader.AutoModelForCausalLM.from_pretrained",
+                "src.generation.loader.AutoModelForImageTextToText.from_pretrained",
                 return_value=fake_model,
             ) as mock_model_load,
             patch(
-                "src.generation.loader.AutoTokenizer.from_pretrained",
-                return_value=fake_tokenizer,
+                "src.generation.loader.AutoProcessor.from_pretrained",
+                return_value=fake_processor,
             ),
         ):
             loader = ModelLoader(
-                config=GenerationConfig(model_id="google/gemma-2-2b-it"), device="cpu"
+                config=GenerationConfig(model_id="google/gemma-4-E4B-it"), device="cpu"
             )
             loader.load()
 
             _, kwargs = mock_model_load.call_args
             assert kwargs["dtype"] == torch.float32
 
-    def test_sets_tokenizer_pad_token_to_eos_token(self) -> None:
-        from src.generation.loader import ModelLoader
-        from src.generation.models import GenerationConfig
-
-        fake_model = MagicMock()
-        fake_tokenizer = MagicMock()
-        fake_tokenizer.eos_token = "<eos>"
-
-        with (
-            patch(
-                "src.generation.loader.AutoModelForCausalLM.from_pretrained",
-                return_value=fake_model,
-            ),
-            patch(
-                "src.generation.loader.AutoTokenizer.from_pretrained",
-                return_value=fake_tokenizer,
-            ),
-        ):
-            loader = ModelLoader(
-                config=GenerationConfig(model_id="google/gemma-2-2b-it"), device="cpu"
-            )
-            loader.load()
-
-            assert fake_tokenizer.pad_token == "<eos>"
-
     def test_load_is_idempotent(self) -> None:
         from src.generation.loader import ModelLoader
         from src.generation.models import GenerationConfig
 
         fake_model = MagicMock()
-        fake_tokenizer = MagicMock()
-        fake_tokenizer.eos_token = "<eos>"
+        fake_processor = MagicMock()
 
         with (
             patch(
-                "src.generation.loader.AutoModelForCausalLM.from_pretrained",
+                "src.generation.loader.AutoModelForImageTextToText.from_pretrained",
                 return_value=fake_model,
             ) as mock_model_load,
             patch(
-                "src.generation.loader.AutoTokenizer.from_pretrained",
-                return_value=fake_tokenizer,
-            ) as mock_tok_load,
+                "src.generation.loader.AutoProcessor.from_pretrained",
+                return_value=fake_processor,
+            ) as mock_proc_load,
         ):
             loader = ModelLoader(
-                config=GenerationConfig(model_id="google/gemma-2-2b-it"), device="cpu"
+                config=GenerationConfig(model_id="google/gemma-4-E4B-it"), device="cpu"
             )
             loader.load()
             loader.load()
 
             mock_model_load.assert_called_once()
-            mock_tok_load.assert_called_once()
+            mock_proc_load.assert_called_once()
 
 
 @pytest.mark.unit
@@ -219,7 +190,9 @@ class TestModelLoaderGetters:
         from src.generation.loader import ModelLoader
         from src.generation.models import GenerationConfig
 
-        loader = ModelLoader(config=GenerationConfig(model_id="google/gemma-2-2b-it"), device="cpu")
+        loader = ModelLoader(
+            config=GenerationConfig(model_id="google/gemma-4-E4B-it"), device="cpu"
+        )
         with pytest.raises(RuntimeError, match="load"):
             loader.get_model()
 
@@ -227,7 +200,9 @@ class TestModelLoaderGetters:
         from src.generation.loader import ModelLoader
         from src.generation.models import GenerationConfig
 
-        loader = ModelLoader(config=GenerationConfig(model_id="google/gemma-2-2b-it"), device="cpu")
+        loader = ModelLoader(
+            config=GenerationConfig(model_id="google/gemma-4-E4B-it"), device="cpu"
+        )
         with pytest.raises(RuntimeError, match="load"):
             loader.get_tokenizer()
 
@@ -236,50 +211,48 @@ class TestModelLoaderGetters:
         from src.generation.models import GenerationConfig
 
         fake_model = MagicMock()
-        fake_tokenizer = MagicMock()
-        fake_tokenizer.eos_token = "<eos>"
+        fake_processor = MagicMock()
 
         with (
             patch(
-                "src.generation.loader.AutoModelForCausalLM.from_pretrained",
+                "src.generation.loader.AutoModelForImageTextToText.from_pretrained",
                 return_value=fake_model,
             ),
             patch(
-                "src.generation.loader.AutoTokenizer.from_pretrained",
-                return_value=fake_tokenizer,
+                "src.generation.loader.AutoProcessor.from_pretrained",
+                return_value=fake_processor,
             ),
         ):
             loader = ModelLoader(
-                config=GenerationConfig(model_id="google/gemma-2-2b-it"), device="cpu"
+                config=GenerationConfig(model_id="google/gemma-4-E4B-it"), device="cpu"
             )
             loader.load()
 
             assert loader.get_model() is fake_model
 
-    def test_get_tokenizer_returns_loaded_tokenizer(self) -> None:
+    def test_get_tokenizer_returns_loaded_processor(self) -> None:
         from src.generation.loader import ModelLoader
         from src.generation.models import GenerationConfig
 
         fake_model = MagicMock()
-        fake_tokenizer = MagicMock()
-        fake_tokenizer.eos_token = "<eos>"
+        fake_processor = MagicMock()
 
         with (
             patch(
-                "src.generation.loader.AutoModelForCausalLM.from_pretrained",
+                "src.generation.loader.AutoModelForImageTextToText.from_pretrained",
                 return_value=fake_model,
             ),
             patch(
-                "src.generation.loader.AutoTokenizer.from_pretrained",
-                return_value=fake_tokenizer,
+                "src.generation.loader.AutoProcessor.from_pretrained",
+                return_value=fake_processor,
             ),
         ):
             loader = ModelLoader(
-                config=GenerationConfig(model_id="google/gemma-2-2b-it"), device="cpu"
+                config=GenerationConfig(model_id="google/gemma-4-E4B-it"), device="cpu"
             )
             loader.load()
 
-            assert loader.get_tokenizer() is fake_tokenizer
+            assert loader.get_tokenizer() is fake_processor
 
 
 @pytest.mark.unit
@@ -289,21 +262,20 @@ class TestModelLoaderUnload:
         from src.generation.models import GenerationConfig
 
         fake_model = MagicMock()
-        fake_tokenizer = MagicMock()
-        fake_tokenizer.eos_token = "<eos>"
+        fake_processor = MagicMock()
 
         with (
             patch(
-                "src.generation.loader.AutoModelForCausalLM.from_pretrained",
+                "src.generation.loader.AutoModelForImageTextToText.from_pretrained",
                 return_value=fake_model,
             ),
             patch(
-                "src.generation.loader.AutoTokenizer.from_pretrained",
-                return_value=fake_tokenizer,
+                "src.generation.loader.AutoProcessor.from_pretrained",
+                return_value=fake_processor,
             ),
         ):
             loader = ModelLoader(
-                config=GenerationConfig(model_id="google/gemma-2-2b-it"), device="cpu"
+                config=GenerationConfig(model_id="google/gemma-4-E4B-it"), device="cpu"
             )
             loader.load()
             loader.unload()
@@ -318,23 +290,22 @@ class TestModelLoaderUnload:
         from src.generation.models import GenerationConfig
 
         fake_model = MagicMock()
-        fake_tokenizer = MagicMock()
-        fake_tokenizer.eos_token = "<eos>"
+        fake_processor = MagicMock()
 
         with (
             patch(
-                "src.generation.loader.AutoModelForCausalLM.from_pretrained",
+                "src.generation.loader.AutoModelForImageTextToText.from_pretrained",
                 return_value=fake_model,
             ),
             patch(
-                "src.generation.loader.AutoTokenizer.from_pretrained",
-                return_value=fake_tokenizer,
+                "src.generation.loader.AutoProcessor.from_pretrained",
+                return_value=fake_processor,
             ),
             patch("src.generation.loader.torch.cuda.is_available", return_value=True),
             patch("src.generation.loader.torch.cuda.empty_cache") as mock_empty_cache,
         ):
             loader = ModelLoader(
-                config=GenerationConfig(model_id="google/gemma-2-2b-it"), device="cuda"
+                config=GenerationConfig(model_id="google/gemma-4-E4B-it"), device="cuda"
             )
             loader.load()
             loader.unload()
@@ -346,23 +317,22 @@ class TestModelLoaderUnload:
         from src.generation.models import GenerationConfig
 
         fake_model = MagicMock()
-        fake_tokenizer = MagicMock()
-        fake_tokenizer.eos_token = "<eos>"
+        fake_processor = MagicMock()
 
         with (
             patch(
-                "src.generation.loader.AutoModelForCausalLM.from_pretrained",
+                "src.generation.loader.AutoModelForImageTextToText.from_pretrained",
                 return_value=fake_model,
             ),
             patch(
-                "src.generation.loader.AutoTokenizer.from_pretrained",
-                return_value=fake_tokenizer,
+                "src.generation.loader.AutoProcessor.from_pretrained",
+                return_value=fake_processor,
             ),
             patch("src.generation.loader.torch.cuda.is_available", return_value=False),
             patch("src.generation.loader.torch.cuda.empty_cache") as mock_empty_cache,
         ):
             loader = ModelLoader(
-                config=GenerationConfig(model_id="google/gemma-2-2b-it"), device="cpu"
+                config=GenerationConfig(model_id="google/gemma-4-E4B-it"), device="cpu"
             )
             loader.load()
             loader.unload()
@@ -373,5 +343,7 @@ class TestModelLoaderUnload:
         from src.generation.loader import ModelLoader
         from src.generation.models import GenerationConfig
 
-        loader = ModelLoader(config=GenerationConfig(model_id="google/gemma-2-2b-it"), device="cpu")
+        loader = ModelLoader(
+            config=GenerationConfig(model_id="google/gemma-4-E4B-it"), device="cpu"
+        )
         loader.unload()

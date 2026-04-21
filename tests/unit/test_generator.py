@@ -1,6 +1,6 @@
 """Unit tests for loader, inference, and generator orchestration.
 
-All external model/tokenizer dependencies are mocked — no GPU required.
+All external model/processor dependencies are mocked — no GPU required.
 """
 
 from __future__ import annotations
@@ -9,12 +9,24 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+import torch
 
 from src.generation.models import GenerationConfig
 from src.types import GenerationResult
 from tests.conftest import make_chunk as _chunk
 
-_GEMMA_ID = "google/gemma-2-2b-it"
+_GEMMA_ID = "google/gemma-4-E4B-it"
+
+
+class _FakeInputs(dict):
+    """Dict-like batch that supports .to(device), mirrors BatchFeature."""
+
+
+def _make_fake_inputs(input_len: int = 3) -> _FakeInputs:
+    input_ids = torch.arange(input_len).unsqueeze(0)
+    fi = _FakeInputs({"input_ids": input_ids, "attention_mask": torch.ones_like(input_ids)})
+    fi.to = MagicMock(return_value=fi)  # type: ignore[attr-defined]
+    return fi
 
 
 # ---------------------------------------------------------------------------
@@ -42,79 +54,79 @@ class TestModelLoader:
         from src.generation.loader import ModelLoader
 
         fake_model = MagicMock()
-        fake_tokenizer = MagicMock()
+        fake_processor = MagicMock()
 
         loader = ModelLoader(config=GenerationConfig(model_id=_GEMMA_ID), device="cpu")
         with (
             patch(
-                "src.generation.loader.AutoModelForCausalLM.from_pretrained",
+                "src.generation.loader.AutoModelForImageTextToText.from_pretrained",
                 return_value=fake_model,
             ) as mock_model,
             patch(
-                "src.generation.loader.AutoTokenizer.from_pretrained",
-                return_value=fake_tokenizer,
-            ) as mock_tok,
+                "src.generation.loader.AutoProcessor.from_pretrained",
+                return_value=fake_processor,
+            ) as mock_proc,
         ):
             loader.load()
             loader.load()
 
         mock_model.assert_called_once()
-        mock_tok.assert_called_once()
+        mock_proc.assert_called_once()
 
     def test_get_model_returns_loaded_model(self) -> None:
         from src.generation.loader import ModelLoader
 
         fake_model = MagicMock()
-        fake_tokenizer = MagicMock()
+        fake_processor = MagicMock()
 
         loader = ModelLoader(config=GenerationConfig(model_id=_GEMMA_ID), device="cpu")
         with (
             patch(
-                "src.generation.loader.AutoModelForCausalLM.from_pretrained",
+                "src.generation.loader.AutoModelForImageTextToText.from_pretrained",
                 return_value=fake_model,
             ),
             patch(
-                "src.generation.loader.AutoTokenizer.from_pretrained",
-                return_value=fake_tokenizer,
+                "src.generation.loader.AutoProcessor.from_pretrained",
+                return_value=fake_processor,
             ),
         ):
             loader.load()
 
         assert loader.get_model() is fake_model
 
-    def test_get_tokenizer_returns_loaded_tokenizer(self) -> None:
+    def test_get_tokenizer_returns_loaded_processor(self) -> None:
         from src.generation.loader import ModelLoader
 
         fake_model = MagicMock()
-        fake_tokenizer = MagicMock()
+        fake_processor = MagicMock()
 
         loader = ModelLoader(config=GenerationConfig(model_id=_GEMMA_ID), device="cpu")
         with (
             patch(
-                "src.generation.loader.AutoModelForCausalLM.from_pretrained",
+                "src.generation.loader.AutoModelForImageTextToText.from_pretrained",
                 return_value=fake_model,
             ),
             patch(
-                "src.generation.loader.AutoTokenizer.from_pretrained",
-                return_value=fake_tokenizer,
+                "src.generation.loader.AutoProcessor.from_pretrained",
+                return_value=fake_processor,
             ),
         ):
             loader.load()
 
-        assert loader.get_tokenizer() is fake_tokenizer
+        assert loader.get_tokenizer() is fake_processor
 
     def test_load_passes_model_id(self) -> None:
         from src.generation.loader import ModelLoader
         from src.generation.models import GenerationConfig
 
-        loader = ModelLoader(config=GenerationConfig(model_id="google/gemma-2-2b-it"), device="cpu")
+        loader = ModelLoader(config=GenerationConfig(model_id=_GEMMA_ID), device="cpu")
         with (
             patch(
-                "src.generation.loader.AutoModelForCausalLM.from_pretrained",
+                "src.generation.loader.AutoModelForImageTextToText.from_pretrained",
                 return_value=MagicMock(),
             ) as mock_model,
             patch(
-                "src.generation.loader.AutoTokenizer.from_pretrained",
+                "src.generation.loader.AutoProcessor.from_pretrained",
                 return_value=MagicMock(),
             ),
             patch("src.generation.loader.torch.cuda.is_available", return_value=False),
@@ -122,7 +134,7 @@ class TestModelLoader:
             loader.load()
 
         mock_model.assert_called_once()
-        assert mock_model.call_args[0][0] == "google/gemma-2-2b-it"
+        assert mock_model.call_args[0][0] == _GEMMA_ID
 
 
 # ---------------------------------------------------------------------------
@@ -137,21 +149,17 @@ class TestInferencer:
         from src.generation.models import GenerationConfig
 
         fake_model = MagicMock()
-        fake_tokenizer = MagicMock()
-
-        # tokenizer returns a dict-like object; model.generate returns token ids
-        encoded = MagicMock()
-        encoded.__getitem__ = MagicMock(return_value=MagicMock())
-        encoded.to = MagicMock(return_value=encoded)
-        fake_tokenizer.return_value = encoded
+        fake_processor = MagicMock()
         fake_model.device = "cpu"
 
-        output_ids = MagicMock()
-        fake_model.generate.return_value = output_ids
-        fake_tokenizer.decode.return_value = "  Generated answer.  "
+        fake_inputs = _make_fake_inputs(3)
+        fake_processor.apply_chat_template.return_value = "formatted text"
+        fake_processor.return_value = fake_inputs
+        fake_model.generate.return_value = torch.arange(5).unsqueeze(0)
+        fake_processor.decode.return_value = "  Generated answer.  "
 
         config = GenerationConfig(model_id=_GEMMA_ID)
-        return Inferencer(fake_model, fake_tokenizer, config), fake_model, fake_tokenizer
+        return Inferencer(fake_model, fake_processor, config), fake_model, fake_processor
 
     def test_raises_on_empty_prompt(self) -> None:
         from src.generation.inference import Inferencer
@@ -170,15 +178,15 @@ class TestInferencer:
             inferencer.infer("   ")
 
     def test_calls_model_generate(self) -> None:
-        inferencer, fake_model, fake_tokenizer = self._make_inferencer()
+        inferencer, fake_model, _ = self._make_inferencer()
         inferencer.infer("Tell me about Pikachu.")
         fake_model.generate.assert_called_once()
 
-    def test_decode_called_with_skip_special_tokens(self) -> None:
-        inferencer, fake_model, fake_tokenizer = self._make_inferencer()
+    def test_decode_called_with_skip_special_tokens_true(self) -> None:
+        inferencer, _, fake_processor = self._make_inferencer()
         inferencer.infer("Tell me about Pikachu.")
-        fake_tokenizer.decode.assert_called_once()
-        _, kwargs = fake_tokenizer.decode.call_args
+        fake_processor.decode.assert_called_once()
+        _, kwargs = fake_processor.decode.call_args
         assert kwargs.get("skip_special_tokens") is True
 
     def test_result_is_stripped_string(self) -> None:
@@ -191,49 +199,24 @@ class TestInferencer:
         from src.generation.models import GenerationConfig
 
         fake_model = MagicMock()
-        fake_tokenizer = MagicMock()
-        encoded = MagicMock()
-        encoded.to = MagicMock(return_value=encoded)
-        fake_tokenizer.return_value = encoded
+        fake_processor = MagicMock()
+        fake_inputs = _make_fake_inputs(3)
+        fake_processor.apply_chat_template.return_value = "text"
+        fake_processor.return_value = fake_inputs
         fake_model.device = "cpu"
-        fake_tokenizer.decode.return_value = "answer"
+        fake_model.generate.return_value = torch.arange(5).unsqueeze(0)
+        fake_processor.decode.return_value = "answer"
 
         config = GenerationConfig(
             model_id=_GEMMA_ID, temperature=0.3, max_new_tokens=256, top_p=0.8
         )
-        inferencer = Inferencer(fake_model, fake_tokenizer, config)
+        inferencer = Inferencer(fake_model, fake_processor, config)
         inferencer.infer("Some prompt.")
 
         _, kwargs = fake_model.generate.call_args
         assert kwargs["temperature"] == 0.3
         assert kwargs["max_new_tokens"] == 256
         assert kwargs["top_p"] == 0.8
-
-    def test_tokenizer_called_with_tokenizer_config_params(self) -> None:
-        from src.generation.inference import Inferencer
-        from src.generation.models import GenerationConfig, TokenizerConfig
-
-        fake_model = MagicMock()
-        fake_tokenizer = MagicMock()
-        encoded = MagicMock()
-        encoded.to = MagicMock(return_value=encoded)
-        fake_tokenizer.return_value = encoded
-        fake_model.device = "cpu"
-        fake_tokenizer.decode.return_value = "answer"
-
-        tok_config = TokenizerConfig(max_length=512, truncation=True, return_tensors="pt")
-        inferencer = Inferencer(
-            fake_model,
-            fake_tokenizer,
-            GenerationConfig(model_id=_GEMMA_ID),
-            tokenizer_config=tok_config,
-        )
-        inferencer.infer("Some prompt.")
-
-        _, kwargs = fake_tokenizer.call_args
-        assert kwargs["max_length"] == 512
-        assert kwargs["truncation"] is True
-        assert kwargs["return_tensors"] == "pt"
 
 
 # ---------------------------------------------------------------------------
@@ -313,7 +296,7 @@ class TestGenerator:
     def test_model_name_is_gemma_4(self) -> None:
         gen, _, _, _ = self._make_generator()
         result = gen.generate("Question?", (_chunk(),))
-        assert result.model_name == "google/gemma-2-2b-it"
+        assert result.model_name == "google/gemma-4-E4B-it"
 
     def test_sources_used_are_sorted_alphabetically(self) -> None:
         gen, _, _, _ = self._make_generator()

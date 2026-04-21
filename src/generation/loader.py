@@ -1,14 +1,10 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 import torch
-from transformers import (
-    AutoModelForCausalLM,
-    AutoTokenizer,
-    PreTrainedModel,
-    PreTrainedTokenizerBase,
-)
+from transformers import AutoModelForImageTextToText, AutoProcessor, PreTrainedModel
 
 from src.generation.models import GenerationConfig
 
@@ -29,7 +25,7 @@ class ModelLoader:
         self._device = device
         self._model_id = self._config.model_id
         self._model: PreTrainedModel | None = None
-        self._tokenizer: PreTrainedTokenizerBase | None = None
+        self._processor: Any | None = None
 
     def load(self) -> None:
         if self._model is not None:
@@ -39,15 +35,26 @@ class ModelLoader:
         dtype = _dtype_for_device(self._device)
         _LOG.info("Loading '%s' on %s (dtype=%s)", self._model_id, self._device, dtype)
 
-        self._tokenizer = AutoTokenizer.from_pretrained(self._model_id)  # type: ignore[no-untyped-call]
-        self._tokenizer.pad_token = self._tokenizer.eos_token
-        _LOG.debug("Tokenizer for '%s' ready", self._model_id)
+        self._processor = AutoProcessor.from_pretrained(self._model_id)  # type: ignore[no-untyped-call]
+        _LOG.debug("Processor for '%s' ready", self._model_id)
 
-        self._model = AutoModelForCausalLM.from_pretrained(
-            self._model_id,
-            device_map=self._device,
-            dtype=dtype,
-        )
+        if self._device == "mps":
+            # transformers 5.5 caching_allocator_warmup has no MPS-specific logic and
+            # blindly tries to torch.empty() the full model size (~15 GiB), which MPS
+            # rejects. The warmup is skipped when device_map is None, so load on CPU
+            # then move to MPS — the documented pattern for non-CUDA devices.
+            self._model = AutoModelForImageTextToText.from_pretrained(
+                self._model_id,
+                dtype=dtype,
+                attn_implementation="sdpa",
+            ).to(self._device)  # type: ignore[arg-type]
+        else:
+            self._model = AutoModelForImageTextToText.from_pretrained(
+                self._model_id,
+                device_map="auto",
+                dtype=dtype,
+                attn_implementation="sdpa",
+            )
         _LOG.info("Model '%s' ready", self._model_id)
 
     def get_model(self) -> PreTrainedModel:
@@ -55,14 +62,16 @@ class ModelLoader:
             raise RuntimeError(f"Model '{self._model_id}' not loaded. Call load() first.")
         return self._model
 
-    def get_tokenizer(self) -> PreTrainedTokenizerBase:
-        if self._tokenizer is None:
-            raise RuntimeError(f"Tokenizer for '{self._model_id}' not loaded. Call load() first.")
-        return self._tokenizer
+    def get_tokenizer(self) -> Any:
+        if self._processor is None:
+            raise RuntimeError(f"Processor for '{self._model_id}' not loaded. Call load() first.")
+        return self._processor
 
     def unload(self) -> None:
         self._model = None
-        self._tokenizer = None
+        self._processor = None
         if self._device == "cuda" and torch.cuda.is_available():
             torch.cuda.empty_cache()
+        elif self._device == "mps":
+            torch.mps.empty_cache()
         _LOG.info("Model '%s' unloaded", self._model_id)
