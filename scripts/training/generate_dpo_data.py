@@ -148,10 +148,19 @@ def main() -> None:
     from qdrant_client import QdrantClient
 
     from src.generation.loader import ModelLoader
+    from src.retrieval.embedder import BGEEmbedder
+    from src.retrieval.reranker import BGEReranker
     from src.retrieval.retriever import Retriever
+    from src.retrieval.vector_store import QdrantVectorStore
 
-    qdrant = QdrantClient(url=args.qdrant_url)
-    retriever = Retriever(qdrant_client=qdrant)
+    qdrant = QdrantClient(
+        url=args.qdrant_url,
+        api_key=os.environ.get("QDRANT_API_KEY"),
+    )
+    embedder = BGEEmbedder.from_pretrained(model_name="BAAI/bge-m3", device="cuda")
+    reranker = BGEReranker.from_pretrained(model_name="BAAI/bge-reranker-v2-m3", device="cuda")
+    vector_store = QdrantVectorStore(qdrant)
+    retriever = Retriever(embedder=embedder, vector_store=vector_store, reranker=reranker)
 
     loader = ModelLoader(model_id=args.model_id)
     model, processor = loader.load()
