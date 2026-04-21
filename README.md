@@ -344,7 +344,7 @@ output = model.encode(
 
 #### Compatibility Notes
 
-**FlagEmbedding 1.3.5 + transformers 5.x**: `src/retrieval/_compat.py` patches three APIs removed in transformers 5.x that FlagEmbedding still calls: `is_torch_fx_available`, `PreTrainedTokenizerBase.prepare_for_model`, and `build_inputs_with_special_tokens`. This file must be imported before FlagEmbedding — `embedder.py` and `reranker.py` do this automatically. Do not remove this import.
+**FlagEmbedding 1.3.5 + transformers 5.x**: `src/retrieval/_compat.py` patches two APIs removed in transformers 5.x that FlagEmbedding still calls: `is_torch_fx_available` and `PreTrainedTokenizerBase.prepare_for_model` (with `build_inputs_with_special_tokens` logic inlined inside the `prepare_for_model` shim). This file must be imported before FlagEmbedding — `embedder.py` and `reranker.py` do this automatically. Do not remove this import.
 
 ### Vector DB: Qdrant
 
@@ -362,7 +362,7 @@ Each collection stores both `vectors_config` (dense, 1024-dim, cosine) and `spar
 2. **Hybrid search** — Qdrant searches all or selected collections with RRF fusion
 3. **Rerank** — Top-K candidates reranked with `BAAI/bge-reranker-v2-m3`
 4. **Assemble context** — Chunks truncated to token budget, ordered by score
-5. **Generate** — Gemma 2 answers with retrieved context
+5. **Generate** — Gemma 4 answers with retrieved context
 
 ## Generation: Gemma 4 4B-it
 

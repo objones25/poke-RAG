@@ -1,6 +1,6 @@
 # Retrieval Subsystem Codemap
 
-**Last Updated:** 2026-04-20  
+**Last Updated:** 2026-04-21  
 **Entry Points:** `src/retrieval/__init__.py` → `BGEEmbedder`, `Retriever`, `BGEReranker`, `ContextAssembler`
 
 ## Overview
@@ -9,19 +9,20 @@ The retrieval subsystem implements a hybrid semantic + lexical RAG pipeline. It 
 
 ## Compatibility Layer
 
-`src/retrieval/_compat.py` patches three APIs removed in **transformers 5.x** that **FlagEmbedding 1.3.5** still calls at import time. Without these shims, both `BGEEmbedder` and `BGEReranker` fail to import.
+`src/retrieval/_compat.py` patches two APIs removed in **transformers 5.x** that **FlagEmbedding 1.3.5** still calls at import time. A third removal (`build_inputs_with_special_tokens`) is handled by inlining its logic inside the `prepare_for_model` shim. Without these shims, both `BGEEmbedder` and `BGEReranker` fail to import.
 
 ### Patched APIs
 
-| API removed in transformers 5.x | Where FlagEmbedding calls it | Shim strategy |
-|---|---|---|
-| `transformers.utils.import_utils.is_torch_fx_available` | FlagEmbedding model initialization | Probe `torch.fx` import; return `True`/`False` |
-| `PreTrainedTokenizerBase.prepare_for_model` | BGE-M3 tokenizer pipeline | Re-implement: combine IDs with special tokens, optionally truncate |
-| `build_inputs_with_special_tokens` | Called inside `prepare_for_model` shim | Inlined into `prepare_for_model` using XLMRobertaTokenizer RoBERTa pair pattern |
+| API removed in transformers 5.x                         | Where FlagEmbedding calls it           | Shim strategy                                                                   |
+| ------------------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------- |
+| `transformers.utils.import_utils.is_torch_fx_available` | FlagEmbedding model initialization     | Probe `torch.fx` import; return `True`/`False`                                  |
+| `PreTrainedTokenizerBase.prepare_for_model`             | BGE-M3 tokenizer pipeline              | Re-implement: combine IDs with special tokens, optionally truncate              |
+| `build_inputs_with_special_tokens`                      | Called inside `prepare_for_model` shim | Inlined into `prepare_for_model` using XLMRobertaTokenizer RoBERTa pair pattern |
 
 ### XLMRobertaTokenizer special-token pattern
 
 BGE-M3's reranker uses `XLMRobertaTokenizer` which follows the **RoBERTa pair encoding** convention:
+
 - **Single sequence**: `[BOS(0)] + ids + [EOS(2)]`
 - **Pair sequence**: `[BOS(0)] + ids1 + [EOS(2), EOS(2)] + ids2 + [EOS(2)]`
 

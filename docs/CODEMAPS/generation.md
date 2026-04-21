@@ -1,6 +1,6 @@
 # Generation Subsystem Codemap
 
-**Last Updated:** 2026-04-20
+**Last Updated:** 2026-04-21
 **Entry Points:** `src/generation/__init__.py`
 
 ## Overview
@@ -271,7 +271,7 @@ Controls LLM inference hyperparameters.
 ```python
 @dataclass(frozen=True)
 class GenerationConfig:
-    model_id: str                    # HuggingFace model ID (e.g. "google/gemma-2-2b-it")
+    model_id: str                    # HuggingFace model ID (e.g. "google/gemma-4-E4B-it")
     temperature: float = 0.7         # Sampling temperature (0.0–2.0)
     max_new_tokens: int = 512        # Max tokens to generate per inference
     top_p: float = 0.9               # Nucleus sampling (0.0–1.0)
@@ -279,7 +279,6 @@ class GenerationConfig:
 ```
 
 All fields frozen (immutable). Passed to `model.generate()` and stored in `Inferencer`.
-
 
 ## Key Behaviors
 
@@ -425,7 +424,7 @@ From `src/types.py`, returned by `Generator.generate()`:
 class GenerationResult:
     answer: str                     # Generated answer text
     sources_used: tuple[Source, ...]  # Unique sources in sorted order
-    model_name: str                 # Model ID (e.g., "google/gemma-2-2b-it")
+    model_name: str                 # Model ID (e.g., "google/gemma-4-E4B-it")
     num_chunks_used: int            # Count of chunks passed to generator
 ```
 
@@ -508,7 +507,7 @@ config = GenerationConfig(
 
 The `ModelLoader` automatically selects the optimal dtype for your device:
 
-```python
+````python
 # CUDA: auto-selects bfloat16 for efficient inference
 loader = ModelLoader(config, device="cuda")
 
@@ -543,6 +542,6 @@ __all__ = [
     "GenerationConfig",    # Frozen dataclass for LLM config
     "build_prompt",        # Function to format prompt
 ]
-```
+````
 
 Public API only. Internal classes (`ModelLoader`, `Inferencer`) are imported directly from submodules in tests and pipeline code.

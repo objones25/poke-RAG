@@ -10,7 +10,7 @@ Applies every session. Short. If a rule conflicts with a user instruction, flag 
 
 **BGE-M3 embedding class.** Use `FlagEmbedding.BGEM3FlagModel`, not `sentence-transformers`. Call `.encode(..., return_dense=True, return_sparse=True)`. For reranking use `FlagEmbedding.FlagReranker` with `BAAI/bge-reranker-v2-m3` — it is a different class from the embedder.
 
-**Generation model class.** Load via `AutoModelForCausalLM` (Gemma 2 is a causal LM, not a vision-language model).
+**Generation model class.** Load via `AutoModelForImageTextToText` + `AutoProcessor` (Gemma 4 is a vision-language model). Use `dtype=` kwarg (not `torch_dtype=`). For MPS: omit `device_map`, load on CPU, call `.to('mps')` after. Never use `AutoModelForCausalLM` for Gemma 4.
 
 **No generator without retrieved context.** If retrieval raises or returns nothing, propagate the error. Never call `generator.generate()` without grounded documents.
 
@@ -18,7 +18,7 @@ Applies every session. Short. If a rule conflicts with a user instruction, flag 
 
 **`scripts/training/` is isolated.** Nothing in `src/` may import from `scripts/training/`. Training code stays in training code.
 
-**Qdrant: three collections, not one.** `bulbapedia`, `pokeapi`, `smogon` are separate collections. Never merge them. Every point must have `source`, `pokemon_name`, `chunk_index`, and `original_doc_id` in its payload to enable filtered retrieval.
+**Qdrant: three collections, not one.** `bulbapedia`, `pokeapi`, `smogon` are separate collections. Never merge them. Every point must have `source`, `entity_name`, `entity_type`, `chunk_index`, and `original_doc_id` in its payload to enable filtered retrieval.
 
 **`uv` only.** Never use `pip install`. Use `uv add` or `uv sync`.
 

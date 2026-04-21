@@ -1,6 +1,6 @@
 # Pipeline, API & Scripts Codemap
 
-**Last Updated:** 2026-04-20
+**Last Updated:** 2026-04-21
 
 **Entry Points:**
 
@@ -369,12 +369,11 @@ def build_pipeline() -> tuple[RAGPipeline, ModelLoader, QdrantClient]:
    gen_config = GenerationConfig(...)       # from Settings
    tok_config = TokenizerConfig(...)        # from Settings
    loader = ModelLoader(config=gen_config, device=settings.device)
-   loader.load()                            # Loads Gemma 2 model
+   loader.load()                            # Loads Gemma 4 model
    inferencer = Inferencer(                 # Wraps inference
        model=loader.get_model(),
-       tokenizer=loader.get_tokenizer(),
+       processor=loader.get_processor(),
        config=gen_config,
-       tokenizer_config=tok_config,
    )
    generator = Generator(
        loader=loader,
@@ -395,8 +394,8 @@ def build_pipeline() -> tuple[RAGPipeline, ModelLoader, QdrantClient]:
 - Embedder: BGE-M3 for dense+sparse embeddings
 - Vector Store: Qdrant with 3 collections (bulbapedia, pokeapi, smogon)
 - Reranker: BGE Reranker v2-m3 for ranking retrieved chunks
-- Generator: Gemma-2 via HuggingFace Transformers
-- Tokenizer: Paired with generator model
+- Generator: Gemma 4 via HuggingFace Transformers
+- Processor: Paired with generator model (Gemma 4 uses AutoProcessor, not a tokenizer)
 - Prompt Builder: Callable that formats query + context into model input
 - Loader: ModelLoader instance (stored for cleanup during lifespan shutdown)
 - Client: QdrantClient instance (stored in app.state for /stats endpoint)
@@ -659,7 +658,7 @@ def group_by_source(
      - Returns RetrievalResult with top_k chunks
    - Calls `generator.generate(query, chunks)`
      - Builds prompt with context via `build_prompt()`
-     - Loads/infers Gemma 2 with temperature=0.7, max_tokens=512
+     - Loads/infers Gemma 4 with temperature=0.7, max_tokens=512
      - Returns GenerationResult
    - Deduplicates sources from chunks → `("pokeapi",)`
    - Returns PipelineResult
@@ -691,7 +690,7 @@ class Settings:
     # Model names
     embed_model: str               # EMBED_MODEL (default: "BAAI/bge-m3")
     rerank_model: str              # RERANK_MODEL (default: "BAAI/bge-reranker-v2-m3")
-    gen_model: str                 # GEN_MODEL (default: "google/gemma-2-2b-it")
+    gen_model: str                 # GEN_MODEL (default: "google/gemma-4-E4B-it")
 
     # Generation hyperparameters
     temperature: float             # TEMPERATURE (default: 0.7)

@@ -34,7 +34,7 @@ The `train` group is RunPod-only. Don't install it locally unless you have a CUD
 >
 > **Gemma 4 loads via `AutoModelForImageTextToText` + `AutoProcessor`** (not `AutoModelForCausalLM`). Use `dtype=` (not `torch_dtype=`). For MPS: omit `device_map`, call `.to("mps")` after loading. Always verify via Context7 before writing any HuggingFace model-loading code — the API changes frequently.
 >
-> **FlagEmbedding 1.3.5 + transformers 5.x**: `src/retrieval/_compat.py` patches three APIs removed in transformers 5.x that FlagEmbedding still calls: `is_torch_fx_available`, `PreTrainedTokenizerBase.prepare_for_model`, and `build_inputs_with_special_tokens`. This file must be imported before FlagEmbedding — `embedder.py` and `reranker.py` do this automatically. Do not remove this import.
+> **FlagEmbedding 1.3.5 + transformers 5.x**: `src/retrieval/_compat.py` patches two APIs removed in transformers 5.x that FlagEmbedding still calls: `is_torch_fx_available` and `PreTrainedTokenizerBase.prepare_for_model`. The `build_inputs_with_special_tokens` removal is handled by inlining its XLMRobertaTokenizer special-token logic directly inside the `prepare_for_model` shim. This file must be imported before FlagEmbedding — `embedder.py` and `reranker.py` do this automatically. Do not remove this import.
 
 ## Codebase layout
 

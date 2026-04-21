@@ -33,31 +33,34 @@ Dependencies live in `pyproject.toml` and are managed exclusively with `uv`. Nev
 [project]
 dependencies = [
     # Model inference
-    "transformers>=4.40.0",
-    "torch>=2.2.0",
-    "accelerate>=0.27.0",
+    "transformers>=5.5.0,<6.0.0",
+    "torch>=2.11.0",
+    "accelerate>=1.13.0",
     # Embeddings — use FlagEmbedding, NOT sentence-transformers
     # sentence-transformers only returns dense vectors; FlagEmbedding
     # exposes all three BGE-M3 output types (dense, sparse, ColBERT)
-    "FlagEmbedding>=1.2.0",
+    "FlagEmbedding>=1.3.5",
     # Vector DB
-    "qdrant-client>=1.9.0",
+    "qdrant-client>=1.17.1",
     # Data / validation
-    "pydantic>=2.0.0",
-    "numpy>=1.26.0",
+    "pydantic>=2.13.3",
+    "numpy>=2.4.4",
+    # Vision-language model dependencies (Gemma 4)
+    "pillow>=12.2.0",
+    "torchvision>=0.26.0",
 ]
 
 [project.optional-dependencies]
 api = [
-    "fastapi>=0.110.0",
-    "uvicorn[standard]>=0.29.0",
+    "fastapi>=0.136.0",
+    "uvicorn[standard]>=0.44.0",
 ]
 dev = [
-    "pytest>=8.0.0",
-    "pytest-mock>=3.12.0",
-    "pytest-cov>=5.0.0",
-    "ruff>=0.4.0",
-    "mypy>=1.9.0",
+    "pytest>=9.0.3",
+    "pytest-mock>=3.15.1",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.15.11",
+    "mypy>=1.20.1",
 ]
 train = [
     # RunPod only — requires CUDA
@@ -104,6 +107,8 @@ output = model.encode(texts, return_dense=True, return_sparse=True)
 ColBERT (`return_colbert_vecs=True`) is optional. Start without it; add if recall is insufficient.
 
 Each Qdrant collection must be created with both `vectors_config` (dense, 1024-dim, cosine) and `sparse_vectors_config` (sparse). Check current Qdrant client docs via Context7 before writing collection creation code — the API has changed between versions.
+
+**Generation model**: Gemma 4 is a vision-language model and must be loaded with `AutoModelForImageTextToText` + `AutoProcessor`, not `AutoModelForCausalLM`. See `CLAUDE.md` for the exact loading pattern.
 
 **Chunking strategy per source**:
 
@@ -187,7 +192,7 @@ chore(deps): bump transformers to 4.41.0
 
 Training scripts are in `scripts/training/` and are **not imported by `src/`**. The serving layer works with or without a LoRA adapter.
 
-Recommended GPU for Gemma 2 2B QLoRA: **RTX 4090 (24GB)** on RunPod community cloud (~$0.35–$0.69/hr). The model requires ~17GB VRAM with 4-bit quantization via Unsloth.
+Recommended GPU for Gemma 4 4B QLoRA: **RTX 4090 (24GB)** on RunPod community cloud (~$0.35–$0.69/hr). The model requires ~8–10 GB VRAM with 4-bit quantization via Unsloth.
 
 Steps:
 
