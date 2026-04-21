@@ -97,11 +97,19 @@ python3 -m pip install --upgrade pip --quiet
 
 # unsloth_zoo calls torch._inductor.config which was added in PyTorch 2.5.
 # RunPod base images sometimes ship 2.4.x — upgrade to avoid AttributeError.
+# torch/torchvision/torchaudio must be upgraded together — mismatched versions
+# cause import errors. Pinned to 2.6.0/0.21.0/2.6.0 (latest cu124 release per
+# https://pytorch.org/get-started/previous-versions/).
 TORCH_VERSION=$(python3 -c "import torch; print(torch.__version__.split('+')[0])" 2>/dev/null || echo "0.0.0")
 TORCH_MINOR=$(echo "$TORCH_VERSION" | cut -d. -f2)
 if [[ "$(echo "$TORCH_VERSION" | cut -d. -f1)" -lt 2 ]] || [[ "$(echo "$TORCH_VERSION" | cut -d. -f1)" -eq 2 && "$TORCH_MINOR" -lt 5 ]]; then
-    warn "PyTorch ${TORCH_VERSION} detected — upgrading to >=2.5.1 (required by unsloth_zoo) …"
-    pip install "torch>=2.5.1" --index-url "https://download.pytorch.org/whl/cu${CUDA_MAJOR}${CUDA_MINOR}" --quiet
+    warn "PyTorch ${TORCH_VERSION} detected — upgrading torch + torchvision + torchaudio to 2.6.0 …"
+    pip install \
+        torch==2.6.0 \
+        torchvision==0.21.0 \
+        torchaudio==2.6.0 \
+        --index-url "https://download.pytorch.org/whl/cu${CUDA_MAJOR}${CUDA_MINOR}" \
+        --quiet
 else
     info "PyTorch ${TORCH_VERSION} OK (>= 2.5.1)"
 fi
