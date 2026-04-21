@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import time
-from collections import defaultdict
-from collections.abc import AsyncGenerator
+from collections import OrderedDict
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
@@ -26,11 +27,15 @@ load_dotenv()  # populate os.environ before lifespan runs
 
 _LOG = logging.getLogger(__name__)
 
+_MAX_TRACKED_IPS = 10_000
+
 
 class LatencyTrackingMiddleware(BaseHTTPMiddleware):
     """Middleware that adds X-Response-Time-Ms header with elapsed time in milliseconds."""
 
-    async def dispatch(self, request: Request, call_next) -> Response:  # type: ignore[no-untyped-def]
+    async def dispatch(
+        self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
         start = time.perf_counter()
         response: Response = await call_next(request)
         elapsed_ms = (time.perf_counter() - start) * 1000
@@ -44,11 +49,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     def __init__(self, app: ASGIApp, requests_per_minute: int = 20) -> None:
         super().__init__(app)
         self.requests_per_minute = requests_per_minute
-        self.request_times: dict[str, list[float]] = defaultdict(list)
-        # Allow disabling rate limiting via environment variable (useful for testing)
+        self.request_times: OrderedDict[str, list[float]] = OrderedDict()
+        self._lock = asyncio.Lock()
         self.enabled = os.getenv("RATE_LIMIT_ENABLED", "true").lower() != "false"
 
-    async def dispatch(self, request: Request, call_next):  # type: ignore[no-untyped-def]
+    async def dispatch(
+        self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
         if not self.enabled or request.url.path != "/query":
             return await call_next(request)
 
@@ -56,14 +63,22 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         now = time.time()
         window_start = now - 60
 
-        self.request_times[client_ip] = [
-            t for t in self.request_times[client_ip] if t > window_start
-        ]
+        async with self._lock:
+            if client_ip in self.request_times:
+                self.request_times[client_ip] = [
+                    t for t in self.request_times[client_ip] if t > window_start
+                ]
+            else:
+                # Evict oldest entry if at capacity
+                if len(self.request_times) >= _MAX_TRACKED_IPS:
+                    self.request_times.popitem(last=False)
+                self.request_times[client_ip] = []
 
-        if len(self.request_times[client_ip]) >= self.requests_per_minute:
-            return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded"})
+            if len(self.request_times[client_ip]) >= self.requests_per_minute:
+                _LOG.warning("Rate limit exceeded for IP: %s", client_ip)
+                return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded"})
 
-        self.request_times[client_ip].append(now)
+            self.request_times[client_ip].append(now)
 
         return await call_next(request)
 
@@ -76,7 +91,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         app.state.pipeline = pipeline
         app.state.qdrant_client = client
     except Exception as exc:
-        raise RuntimeError(f"Failed to initialize RAG pipeline: {exc}") from exc
+        _LOG.error("Failed to initialize RAG pipeline: %s", exc, exc_info=True)
+        raise RuntimeError("Failed to initialize pipeline. Check server logs for details.") from exc
     try:
         yield
     finally:
@@ -94,13 +110,15 @@ app = FastAPI(title="poke-RAG", lifespan=lifespan)
 allowed_origins = os.getenv("ALLOWED_ORIGINS", "*")
 if allowed_origins == "*":
     origins = ["*"]
+    _allow_credentials = False
 else:
     origins = [origin.strip() for origin in allowed_origins.split(",")]
+    _allow_credentials = True
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_credentials=True,
+    allow_credentials=_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -118,7 +136,13 @@ async def retrieval_error_handler(request: Request, exc: RetrievalError) -> JSON
 @app.exception_handler(ValueError)
 async def value_error_handler(request: Request, exc: ValueError) -> JSONResponse:
     _LOG.warning("Validation error: %s", exc)
-    return JSONResponse(status_code=422, content={"detail": str(exc)})
+    return JSONResponse(status_code=422, content={"detail": "Invalid input"})
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    _LOG.error("Unhandled exception: %s", exc, exc_info=True)
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 
 @app.get("/health")

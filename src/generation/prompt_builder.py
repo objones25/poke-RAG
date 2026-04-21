@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import unicodedata
+
 from src.types import RetrievedChunk
 
 _SYSTEM_PROMPT = (
@@ -15,7 +17,9 @@ def build_prompt(query: str, chunks: tuple[RetrievedChunk, ...]) -> str:
     if not chunks:
         raise ValueError("chunks must not be empty")
 
-    sanitized_query = query.replace("\n", " ")
+    sanitized_query = "".join(
+        " " if unicodedata.category(ch)[0] == "C" else ch for ch in query
+    ).strip()
 
     sorted_chunks = sorted(chunks, key=lambda c: c.score, reverse=True)
 

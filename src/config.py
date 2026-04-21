@@ -71,6 +71,11 @@ class Settings:
             )
 
         device = os.getenv("DEVICE", _detect_device())
+        valid_devices = {"cpu", "cuda", "mps"}
+        if device not in valid_devices:
+            raise ValueError(
+                f"DEVICE must be one of {valid_devices}, got: {device!r}"
+            )
         _LOG.info("Using device: %s", device)
 
         return cls(

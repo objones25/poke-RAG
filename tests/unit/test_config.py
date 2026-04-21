@@ -247,10 +247,18 @@ class TestSettingsFromEnv:
         from src.config import Settings
 
         monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
-        monkeypatch.setenv("DEVICE", "gpu")
+        monkeypatch.setenv("DEVICE", "cuda")
         with patch("src.config._detect_device", return_value="cpu"):
             settings = Settings.from_env()
-            assert settings.device == "gpu"
+            assert settings.device == "cuda"
+
+    def test_raises_valueerror_on_invalid_device(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("DEVICE", "gpu")
+        with pytest.raises(ValueError, match="DEVICE"):
+            Settings.from_env()
 
     def test_device_uses_detection_when_env_not_set(self, monkeypatch) -> None:
         from src.config import Settings
