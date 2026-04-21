@@ -29,7 +29,11 @@ class Inferencer:
         )
         inputs = self._processor(text=text, return_tensors="pt").to(self._model.device)
         input_len: int = inputs["input_ids"].shape[-1]
-        _LOG.debug("Inferring: prompt_len=%d tokens, max_new=%d", input_len, self._config.max_new_tokens)
+        _LOG.debug(
+            "Inferring: prompt_len=%d tokens, max_new=%d",
+            input_len,
+            self._config.max_new_tokens,
+        )
 
         output_ids = self._model.generate(  # type: ignore[operator]
             **inputs,

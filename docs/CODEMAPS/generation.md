@@ -5,7 +5,7 @@
 
 ## Overview
 
-The generation subsystem loads the Gemma 2 model, builds prompts from retrieved context, and runs inference to produce grounded answers to Pokémon queries. It operates in three stages: (1) load the model and tokenizer once via `ModelLoader`, (2) build a formatted prompt from query + chunks via `build_prompt()`, (3) run inference via `Inferencer`, producing a `GenerationResult` with the answer and metadata.
+The generation subsystem loads the Gemma 4 model, builds prompts from retrieved context, and runs inference to produce grounded answers to Pokémon queries. It operates in three stages: (1) load the model and processor once via `ModelLoader`, (2) build a formatted prompt from query + chunks via `build_prompt()`, (3) run inference via `Inferencer`, producing a `GenerationResult` with the answer and metadata.
 
 The subsystem is orchestrated by `Generator`, which wires together the loader, prompt builder, and inferencer. All components follow immutable dataclass patterns and use protocol-based abstraction to enable testing with mock builders and models.
 
@@ -20,12 +20,12 @@ The subsystem is orchestrated by `Generator`, which wires together the loader, p
 │ │ ModelLoader        │  │ PromptBuilder    │  │ Inferencer      │  │
 │ │                    │  │                  │  │                 │  │
 │ │ • load()           │  │ • build_prompt() │  │ • infer()       │  │
-│ │ • get_model()      │  │   formats query  │  │   tokenizes     │  │
-│ │ • get_tokenizer()  │  │   + chunks into  │  │   runs generate │  │
+│ │ • get_model()      │  │   formats query  │  │   builds msgs   │  │
+│ │ • get_processor()  │  │   + chunks into  │  │   runs generate │  │
 │ │ • unload()         │  │   LLM prompt     │  │   decodes       │  │
 │ │                    │  │                  │  │                 │  │
 │ │ AutoModel...       │  │ Sorts by score   │  │ model.generate()│  │
-│ │ AutoTokenizer      │  │ Formats context  │  │ extraction      │  │
+│ │ AutoProcessor      │  │ Formats context  │  │ token extraction│  │
 │ │                    │  │ Builds Sources   │  │                 │  │
 │ └────────────────────┘  └──────────────────┘  └─────────────────┘  │
 │         ↓                       ↓                       ↓            │
@@ -87,7 +87,7 @@ class Generator:
 
 #### `ModelLoader`
 
-Manages lazy loading and unloading of Gemma 2 model + tokenizer.
+Manages lazy loading and unloading of Gemma 4 model + processor.
 
 ```python
 class ModelLoader:
@@ -112,36 +112,36 @@ class ModelLoader:
     def get_model(self) -> PreTrainedModel:
         """Return loaded model or raise RuntimeError if not loaded."""
 
-    def get_tokenizer(self) -> PreTrainedTokenizerBase:
-        """Return loaded tokenizer or raise RuntimeError if not loaded."""
+    def get_processor(self) -> Any:
+        """Return loaded processor or raise RuntimeError if not loaded."""
 
     def unload(self) -> None:
         """
-        Clear model and tokenizer references. Clears CUDA cache if on GPU.
+        Clear model and processor references. Clears device cache if available.
         """
 ```
 
 **Implementation details:**
 
-- Uses `AutoModelForCausalLM.from_pretrained()` — Gemma 2 is a causal LM, not a vision-language model
-- Sets tokenizer `pad_token = eos_token` (standard for gemma models)
-- Loads with `device_map=device` and `torch_dtype=_dtype_for_device(device)`
+- Uses `AutoModelForImageTextToText.from_pretrained()` + `AutoProcessor.from_pretrained()` — Gemma 4 is a vision-language model
+- Uses `dtype=` kwarg (transformers 5.x); `torch_dtype=` was removed
+- MPS path: omit `device_map`, load on CPU, call `.to("mps")` after load — avoids `caching_allocator_warmup` allocating ≥14.79 GiB on MPS
+- CUDA/CPU path: passes `device_map="auto"`, `dtype=_dtype_for_device(device)`, `attn_implementation="sdpa"`
 - Idempotent: checks `if self._model is not None` and skips if already loaded
-- Stores model/tokenizer as private attributes; access via getters
-- `unload()` does NOT delete files, only clears in-memory state and CUDA cache
+- Stores model/processor as private attributes; access via getters
+- `unload()` clears references and calls `torch.cuda.empty_cache()` on CUDA or `torch.mps.empty_cache()` on MPS
 
 #### `Inferencer`
 
-Tokenizes prompt, runs model.generate(), decodes and strips output.
+Builds message format, runs model.generate(), decodes and strips output.
 
 ```python
 class Inferencer:
     def __init__(
         self,
         model: PreTrainedModel,
-        tokenizer: PreTrainedTokenizerBase,
+        processor: Any,
         config: GenerationConfig,
-        tokenizer_config: TokenizerConfig | None = None,
     ) -> None: ...
 
     def infer(self, prompt: str) -> str:
@@ -157,19 +157,21 @@ class Inferencer:
         Raises:
             ValueError: if prompt is empty
             RuntimeError: if model.generate() returns empty sequences
-            TypeError: if tokenizer.decode() returns non-str
+            TypeError: if processor.decode() returns non-str
         """
 ```
 
 **Implementation details:**
 
-- Tokenizes with max_length=8192, truncation=True, padding defaults
-- Moves input_ids and attention_mask to model device
-- Extracts prompt_len to slice generated tokens (exclude prompt from output)
-- Calls `model.generate()` with temperature, top_p, do_sample from config
-- Slices `output_ids[0][prompt_len:]` to get only new tokens
-- Decodes with `skip_special_tokens=True` and strips whitespace
-- Type-checks that decoded output is str
+- Builds messages list: `[{"role": "user", "content": prompt}]`
+- Calls `processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True, enable_thinking=False)`
+- Tokenizes with `processor(text=text, return_tensors="pt")` and moves to model device
+- Extracts `input_len` from `input_ids.shape[-1]` to slice output (exclude prompt tokens)
+- Calls `model.generate(**inputs, max_new_tokens=..., temperature=..., top_p=..., do_sample=...)`
+- Does NOT call `parse_response()` — Gemma 4's `parse_response()` returns a dict, not a str
+- Decodes with `processor.decode(output_ids[0][input_len:], skip_special_tokens=True)`
+- Type-checks that decoded output is str, raises TypeError otherwise
+- Returns `response.strip()`
 
 ### Functions
 
@@ -278,19 +280,6 @@ class GenerationConfig:
 
 All fields frozen (immutable). Passed to `model.generate()` and stored in `Inferencer`.
 
-### `TokenizerConfig`
-
-Controls tokenization parameters.
-
-```python
-@dataclass(frozen=True)
-class TokenizerConfig:
-    max_length: int = 8192           # Max sequence length (pad/truncate to this)
-    return_tensors: str = "pt"       # Return PyTorch tensors
-    truncation: bool = True          # Truncate if input exceeds max_length
-```
-
-Defaults are suitable for most use cases. Passed to `AutoTokenizer.__call__()`.
 
 ## Key Behaviors
 
@@ -345,25 +334,26 @@ This ensures the decoded output contains only the model's generated text, not th
 
 | Package        | Version (from pyproject.toml) | Role                                                                  |
 | -------------- | ----------------------------- | --------------------------------------------------------------------- |
-| `transformers` | Core (pinned)                 | `AutoModelForCausalLM`, `AutoTokenizer`, type definitions             |
+| `transformers` | Core (pinned)                 | `AutoModelForImageTextToText`, `AutoProcessor`, type definitions      |
 | `torch`        | Core                          | Tensor operations, device management, dtype selection, cache clearing |
 | `accelerate`   | Core                          | Device mapping, mixed precision support (used by transformers)        |
 
-**Note:** `google/gemma-2-2b-it` must be downloaded and cached locally or via HuggingFace hub. Model loading uses HuggingFace cache by default.
+**Note:** `google/gemma-4-E4B-it` must be downloaded and cached locally or via HuggingFace hub. Model loading uses HuggingFace cache by default.
 
-## Gemma 2 Model Loading
+## Gemma 4 Model Loading
 
-**Critical:** Gemma 2 is a causal LM. Load with `AutoModelForCausalLM`, **not** `AutoModelForImageTextToText`.
+**Critical:** Gemma 4 is a vision-language model. Load with `AutoModelForImageTextToText` + `AutoProcessor`.
 
 ```python
 # CORRECT
-from transformers import AutoModelForCausalLM
-model = AutoModelForCausalLM.from_pretrained("google/gemma-2-2b-it")
+from transformers import AutoModelForImageTextToText, AutoProcessor
+model = AutoModelForImageTextToText.from_pretrained("google/gemma-4-E4B-it")
+processor = AutoProcessor.from_pretrained("google/gemma-4-E4B-it")
 
-# WRONG — this is for vision-language models
-from transformers import AutoModelForImageTextToText
-model = AutoModelForImageTextToText.from_pretrained("google/gemma-2-2b-it")
-# This will fail or produce wrong dtypes
+# WRONG — this is for causal LM models (Gemma 2)
+from transformers import AutoModelForCausalLM
+model = AutoModelForCausalLM.from_pretrained("google/gemma-4-E4B-it")
+# This will fail or produce wrong model class
 ```
 
 Always verify via Context7 HuggingFace docs before writing any model-loading code — the API changes between versions.
@@ -384,12 +374,12 @@ src/generation/
 │   └─ GeneratorProtocol
 │
 ├── loader.py
-│   ├─ imports: GenerationConfig, torch, transformers (AutoModel..., AutoTokenizer)
+│   ├─ imports: GenerationConfig, torch, transformers (AutoModelForImageTextToText, AutoProcessor)
 │   ├─ _dtype_for_device() helper
 │   └─ ModelLoader class
 │
 ├── inference.py
-│   ├─ imports: GenerationConfig, TokenizerConfig, torch, transformers (PreTrained...)
+│   ├─ imports: GenerationConfig, torch, transformers (PreTrainedModel)
 │   └─ Inferencer class
 │
 ├── prompt_builder.py
@@ -404,8 +394,8 @@ src/generation/
 
 External imports:
 - src.types: RetrievedChunk, GenerationResult, GenerationError (not raised in generation/)
-- transformers: AutoTokenizer, AutoModelForCausalLM, PreTrainedModel, PreTrainedTokenizerBase
-- torch: Tensor, device, dtype, cuda.empty_cache()
+- transformers: AutoModelForImageTextToText, AutoProcessor, PreTrainedModel
+- torch: Tensor, device, dtype, cuda.empty_cache(), mps.empty_cache()
 ```
 
 ## Integration Points
@@ -472,7 +462,7 @@ from src.generation.prompt_builder import build_prompt
 from src.types import RetrievedChunk
 
 config = GenerationConfig(
-    model_id="google/gemma-2-2b-it",
+    model_id="google/gemma-4-E4B-it",
     temperature=0.7,
     max_new_tokens=512,
 )
@@ -481,7 +471,7 @@ loader.load()  # One-time load
 
 inferencer = Inferencer(
     loader.get_model(),
-    loader.get_tokenizer(),
+    loader.get_processor(),
     config,
 )
 generator = Generator(
@@ -506,7 +496,7 @@ Edit `GenerationConfig`:
 
 ```python
 config = GenerationConfig(
-    model_id="google/gemma-2-2b-it",
+    model_id="google/gemma-4-E4B-it",
     temperature=0.5,  # Lower = more deterministic
     max_new_tokens=256,  # Shorter answers
     top_p=0.95,  # Broader sampling
@@ -514,33 +504,28 @@ config = GenerationConfig(
 )
 ```
 
-### 3. Use a Different Tokenizer Config
+### 3. Switch Devices and Precision
+
+The `ModelLoader` automatically selects the optimal dtype for your device:
 
 ```python
-from src.generation.models import TokenizerConfig
+# CUDA: auto-selects bfloat16 for efficient inference
+loader = ModelLoader(config, device="cuda")
 
-tokenizer_config = TokenizerConfig(
-    max_length=4096,  # Shorter sequences for faster inference
-    return_tensors="pt",
-    truncation=True,
-)
-inferencer = Inferencer(model, tokenizer, config, tokenizer_config)
-```
+# MPS (Apple Silicon): auto-selects float16 for Metal Performance Shaders
+loader = ModelLoader(config, device="mps")
 
-### 4. Switch Devices
+# CPU: uses float32 for compatibility
+loader = ModelLoader(config, device="cpu")
 
-```python
-loader = ModelLoader(config, device="mps")  # Apple Silicon
-loader.load()  # Loads with float16 automatically
-```
 
 ## Performance Notes
 
-- **Model load time:** ~5–15s for Gemma 2 2B (first call only, then idempotent)
-- **Inference time:** ~2–5s per query (varies by max_new_tokens, hardware)
-- **Memory:** ~4–5 GB VRAM for 2B model (bfloat16 on CUDA / float16 on MPS)
-- **Tokenization:** ~1–5ms per prompt (negligible)
-- **Tokenizer decode:** ~1ms
+- **Model load time:** ~15–30s for Gemma 4 4B (first call only, then idempotent)
+- **Inference time:** ~3–8s per query (varies by max_new_tokens, hardware)
+- **Memory:** ~8–10 GB VRAM / unified memory (bfloat16 on CUDA / float16 on MPS)
+- **Processor chat template:** ~1–2ms per prompt (negligible)
+- **Processor decode:** ~1–2ms
 
 ## Related Areas
 
@@ -556,7 +541,6 @@ __all__ = [
     "Generator",           # Main orchestrator
     "GeneratorProtocol",   # Protocol for duck typing
     "GenerationConfig",    # Frozen dataclass for LLM config
-    "TokenizerConfig",     # Frozen dataclass for tokenizer config
     "build_prompt",        # Function to format prompt
 ]
 ```

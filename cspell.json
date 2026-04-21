@@ -51,6 +51,7 @@
     "embedder",
     "endswith",
     "fastapi",
+    "flagembedding",
     "htmlcov",
     "inferencer",
     "kwargs",

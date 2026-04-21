@@ -35,7 +35,7 @@ class ModelLoader:
         dtype = _dtype_for_device(self._device)
         _LOG.info("Loading '%s' on %s (dtype=%s)", self._model_id, self._device, dtype)
 
-        self._processor = AutoProcessor.from_pretrained(self._model_id)
+        self._processor = AutoProcessor.from_pretrained(self._model_id)  # type: ignore[no-untyped-call]
         _LOG.debug("Processor for '%s' ready", self._model_id)
 
         if self._device == "mps":
@@ -47,7 +47,7 @@ class ModelLoader:
                 self._model_id,
                 dtype=dtype,
                 attn_implementation="sdpa",
-            ).to(self._device)
+            ).to(self._device)  # type: ignore[arg-type]
         else:
             self._model = AutoModelForImageTextToText.from_pretrained(
                 self._model_id,
