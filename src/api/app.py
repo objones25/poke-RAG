@@ -29,6 +29,7 @@ _LOG = logging.getLogger(__name__)
 
 _MAX_TRACKED_IPS = 10_000
 _MAX_BODY_BYTES = 64 * 1024  # 64 KB — far above any valid query payload
+_DEFAULT_QUERY_TIMEOUT = 120.0  # seconds; override with QUERY_TIMEOUT_SECONDS
 
 
 def _get_client_ip(request: Request, trusted_proxy_count: int) -> str:
@@ -126,9 +127,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Content-Security-Policy"] = "default-src 'none'"
         if os.getenv("HTTPS_ENABLED", "false").lower() == "true":
-            response.headers["Strict-Transport-Security"] = (
-                "max-age=31536000; includeSubDomains"
-            )
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         return response
 
 
@@ -140,21 +139,19 @@ class BodySizeLimitMiddleware(BaseHTTPMiddleware):
         self.max_bytes = max_bytes
 
     async def dispatch(
-            self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
-        ) -> Response:
-            content_length = request.headers.get("Content-Length")
-            if content_length is not None:
-                try:
-                    size = int(content_length)
-                except ValueError:
-                    return JSONResponse(
-                        status_code=400, content={"detail": "Invalid Content-Length header"}
-                    )
-                if size > self.max_bytes:
-                    return JSONResponse(
-                        status_code=413, content={"detail": "Request body too large"}
-                    )
-            return await call_next(request)
+        self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        content_length = request.headers.get("Content-Length")
+        if content_length is not None:
+            try:
+                size = int(content_length)
+            except ValueError:
+                return JSONResponse(
+                    status_code=400, content={"detail": "Invalid Content-Length header"}
+                )
+            if size > self.max_bytes:
+                return JSONResponse(status_code=413, content={"detail": "Request body too large"})
+        return await call_next(request)
 
 
 @asynccontextmanager
@@ -252,11 +249,12 @@ async def query(
     pipeline: RAGPipeline = Depends(get_pipeline),  # noqa: B008
 ) -> QueryResponse:
     parsed = parse_query(body.query)
+    timeout = float(os.getenv("QUERY_TIMEOUT_SECONDS", str(_DEFAULT_QUERY_TIMEOUT)))
     result = await asyncio.wait_for(
         asyncio.to_thread(
             pipeline.query, parsed, sources=body.sources, entity_name=body.entity_name
         ),
-        timeout=30.0,
+        timeout=timeout,
     )
     return QueryResponse(
         answer=result.answer,
