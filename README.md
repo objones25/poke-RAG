@@ -375,7 +375,6 @@ model = AutoModelForCausalLM.from_pretrained(
 )
 ```
 
-
 ## Non-Negotiable Rules
 
 These are enforced by code review and tests:
