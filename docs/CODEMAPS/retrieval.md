@@ -111,8 +111,10 @@ def upsert(
 def search(...) -> list[RetrievedChunk]:
     """Hybrid search: Prefetch dense & sparse independently (limit=top_k*2 each),
     fuse with RRF (Reciprocal Rank Fusion), apply optional entity_name filter,
-    limit final result to top_k. Payload parsing is resilient: uses .get() with
-    defaults for missing or wrong-type keys. Returns list of RetrievedChunk with scores.
+    limit final result to top_k. Payload parsing is partially resilient: text, source,
+    chunk_index, original_doc_id require direct access (KeyError if missing);
+    entity_name and entity_type use .get() with None defaults. Returns list of
+    RetrievedChunk with scores.
     """
 ```
 
@@ -180,7 +182,10 @@ def upsert(
 def search(...) -> list[RetrievedChunk]:
     """Hybrid search: Prefetch dense & sparse independently (limit=top_k*2 each),
     fuse with RRF (Reciprocal Rank Fusion), apply optional entity_name filter,
-    limit final result to top_k. Returns list of RetrievedChunk with scores.
+    limit final result to top_k. Payload parsing is partially resilient: text, source,
+    chunk_index, original_doc_id require direct access (KeyError if missing);
+    entity_name and entity_type use .get() with None defaults. Returns list of
+    RetrievedChunk with scores.
     """
 ```
 
@@ -242,7 +247,8 @@ def __init__(
 def assemble(chunks: list[RetrievedChunk]) -> str:
     """1. Dedup by f"{original_doc_id}:{chunk_index}" (keep chunk with highest score).
     2. Preserve order from input.
-    3. Format each as '[Source: {source} | Entity: {entity_name}]\n{text}'.
+    3. Format each as '[Source: {source}' + optional ' | Entity: {entity_name}' + ']\n{text}'.
+       (Entity line is omitted if entity_name is None.)
     4. Accumulate until max_tokens exceeded.
     5. Truncate last chunk to fit budget.
     6. Join with separator.
@@ -355,12 +361,13 @@ Input: query string
 Input: list[RetrievedChunk]
 
 ```text
-1. Dedup by text content (keep highest score per unique text)
-2. Format each chunk:
-   "[Source: {source} | Entity: {entity_name}]\n{text}"
-3. Accumulate while total tokens < max_tokens
-4. Truncate last chunk if needed
-5. Join with separator
+1. Dedup by f"{original_doc_id}:{chunk_index}" (keep chunk with highest score per key)
+2. Preserve order from input list
+3. Format each chunk:
+   "[Source: {source}" + (optional " | Entity: {entity_name}") + "]\n{text}"
+4. Accumulate while total tokens < max_tokens
+5. Truncate last chunk if needed to fit budget
+6. Join with separator
 Output: context_string for LLM prompt
 ```
 

@@ -289,23 +289,21 @@ def query(
 **Request Body (QueryRequest):**
 
 ```python
-@dataclass
 class QueryRequest(BaseModel):
-    query: str                                          # min_length=1
+    query: str = Field(..., min_length=1, max_length=2000)
     sources: list[Literal["bulbapedia", "pokeapi", "smogon"]] | None = None
 ```
 
 **Response (QueryResponse):**
 
 ```python
-@dataclass
 class QueryResponse(BaseModel):
     answer: str
     sources_used: list[str]              # List (not tuple) of unique sources
     num_chunks_used: int
     model_name: str
     query: str
-    confidence_score: float | None = None  # Optional confidence score
+    confidence_score: float | None = None
 ```
 
 **Behavior:**
@@ -661,7 +659,7 @@ def group_by_source(
      - Returns RetrievalResult with top_k chunks
    - Calls `generator.generate(query, chunks)`
      - Builds prompt with context via `build_prompt()`
-     - Loads/infers Gemma-4 with temperature=0.7, max_tokens=512
+     - Loads/infers Gemma 2 with temperature=0.7, max_tokens=512
      - Returns GenerationResult
    - Deduplicates sources from chunks → `("pokeapi",)`
    - Returns PipelineResult
@@ -688,7 +686,7 @@ def group_by_source(
 class Settings:
     # Vector store
     qdrant_url: str                # QDRANT_URL (required)
-    qdrant_api_key: str | None     # QDRANT_API_KEY (optional)
+    qdrant_api_key: SecretStr | None  # QDRANT_API_KEY (optional, masked in logs)
 
     # Model names
     embed_model: str               # EMBED_MODEL (default: "BAAI/bge-m3")

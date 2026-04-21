@@ -123,7 +123,7 @@ class ModelLoader:
 
 **Implementation details:**
 
-- Uses `AutoModelForCausalLM` (NOT `AutoModelForCausalLM`) — Gemma 2 is a multimodal vision-language model
+- Uses `AutoModelForCausalLM.from_pretrained()` — Gemma 2 is a causal LM, not a vision-language model
 - Sets tokenizer `pad_token = eos_token` (standard for gemma models)
 - Loads with `device_map=device` and `torch_dtype=_dtype_for_device(device)`
 - Idempotent: checks `if self._model is not None` and skips if already loaded
@@ -349,24 +349,24 @@ This ensures the decoded output contains only the model's generated text, not th
 | `torch`        | Core                          | Tensor operations, device management, dtype selection, cache clearing |
 | `accelerate`   | Core                          | Device mapping, mixed precision support (used by transformers)        |
 
-**Note:** `google/gemma-2-2b-it` or `google/gemma-2-2b-it` must be downloaded and cached locally or via HuggingFace hub (requires auth token if gated model). Model loading uses HuggingFace cache by default.
+**Note:** `google/gemma-2-2b-it` must be downloaded and cached locally or via HuggingFace hub. Model loading uses HuggingFace cache by default.
 
-## Gemma 2 Model Loading Quirk
+## Gemma 2 Model Loading
 
-**Critical:** Gemma 2 is a vision-language model and must be loaded with `AutoModelForCausalLM`, NOT `AutoModelForCausalLM`.
+**Critical:** Gemma 2 is a causal LM. Load with `AutoModelForCausalLM`, **not** `AutoModelForImageTextToText`.
 
 ```python
 # CORRECT
 from transformers import AutoModelForCausalLM
 model = AutoModelForCausalLM.from_pretrained("google/gemma-2-2b-it")
 
-# WRONG
-from transformers import AutoModelForCausalLM
-model = AutoModelForCausalLM.from_pretrained("google/gemma-2-2b-it")
-# This will fail with AttributeError or dtype mismatches
+# WRONG — this is for vision-language models
+from transformers import AutoModelForImageTextToText
+model = AutoModelForImageTextToText.from_pretrained("google/gemma-2-2b-it")
+# This will fail or produce wrong dtypes
 ```
 
-Always verify via Context7 HuggingFace docs when loading multimodal models — the API changes frequently.
+Always verify via Context7 HuggingFace docs before writing any model-loading code — the API changes between versions.
 
 ## Module Dependency Graph
 
@@ -437,7 +437,6 @@ class GenerationResult:
     sources_used: tuple[Source, ...]  # Unique sources in sorted order
     model_name: str                 # Model ID (e.g., "google/gemma-2-2b-it")
     num_chunks_used: int            # Count of chunks passed to generator
-    confidence_score: float | None = None  # Optional confidence score from generator
 ```
 
 ## Testing Patterns
@@ -537,9 +536,9 @@ loader.load()  # Loads with float16 automatically
 
 ## Performance Notes
 
-- **Model load time:** ~15–30s for Gemma 2 9B (first call only, then idempotent)
+- **Model load time:** ~5–15s for Gemma 2 2B (first call only, then idempotent)
 - **Inference time:** ~2–5s per query (varies by max_new_tokens, hardware)
-- **Memory:** ~18–20 GB VRAM for 9B model (bfloat16 on CUDA), ~10 GB for float16 on MPS
+- **Memory:** ~4–5 GB VRAM for 2B model (bfloat16 on CUDA / float16 on MPS)
 - **Tokenization:** ~1–5ms per prompt (negligible)
 - **Tokenizer decode:** ~1ms
 
