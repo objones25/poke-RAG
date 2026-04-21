@@ -164,8 +164,39 @@ gradient checkpointing and KV cache cannot coexist. Training is unaffected.
 
 ---
 
+## Downloading the LoRA Adapter
+
+`huggingface-cli` is **deprecated** on this RunPod image. Use `hf` instead.
+
+**On RunPod — upload to HF Hub:**
+```bash
+hf auth login          # already logged in if you set HF_TOKEN in pod env
+hf upload objones25/pokesage-lora /workspace/models/pokesage-lora/lora_adapter .
+```
+
+**Locally — download from HF Hub:**
+```bash
+hf download objones25/pokesage-lora --local-dir models/pokesage-lora
+```
+
+Adapter is ~147 MB (adapter_model.safetensors + tokenizer.json). HF repo: https://huggingface.co/objones25/pokesage-lora
+
+---
+
 ## Training Command (single line)
 
 ```bash
 python scripts/training/train_sft.py --data data/sft/train.jsonl --output-dir /workspace/models/pokesage-lora --epochs 3 --run-name pokesage-v1
 ```
+
+## Training Results (pokesage-v1, April 2026)
+
+| Epoch | Train loss (end) | Eval loss |
+|-------|-----------------|-----------|
+| 1     | 1.93            | 2.92      |
+| 2     | 1.54            | **2.82**  |
+| 3     | 1.34            | 2.901     |
+
+`load_best_model_at_end=True` means the saved adapter is epoch 2 (eval_loss 2.82).
+Mild overfitting visible at epoch 3 — expected with 2 000 training pairs.
+W&B run: https://wandb.ai/objones25/pokesage-sft/runs/ht1h2qpd
