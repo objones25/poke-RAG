@@ -5,7 +5,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
-from qdrant_client.models import Fusion, SparseVector
+from qdrant_client.models import Fusion, FusionQuery, SparseVector
 
 from src.retrieval.types import EmbeddingOutput
 from src.retrieval.vector_store import QdrantVectorStore
@@ -212,7 +212,9 @@ class TestSearch:
         store = QdrantVectorStore(client)
         store.search("pokeapi", [0.1] * 1024, {1: 0.5}, top_k=5)
         call_kwargs = client.query_points.call_args[1]
-        assert call_kwargs.get("query") == Fusion.RRF
+        query_arg = call_kwargs.get("query")
+        assert isinstance(query_arg, FusionQuery)
+        assert query_arg.fusion == Fusion.RRF
 
     def test_search_sends_two_prefetch_legs(self) -> None:
         client = _make_client()
