@@ -291,11 +291,15 @@ QDRANT_API_KEY=                            # Optional, for cloud
 EMBED_MODEL=BAAI/bge-m3                    # BGE-M3, don't change
 GEN_MODEL=google/gemma-4-E4B-it            # Gemma 4, don't change
 
+# LoRA fine-tuning
+LORA_ADAPTER_PATH=                         # Optional: path to local LoRA adapter
+
 # Device / GPU
 DEVICE=cuda                                # cpu, cuda, or mps
 
 # API settings
 RATE_LIMIT_ENABLED=true                    # Enable/disable rate limiting
+QUERY_TIMEOUT_SECONDS=120                  # Query timeout (increase for MPS)
 ALLOWED_ORIGINS=*                          # CORS allowed origins
 LOG_LEVEL=INFO                             # Log level (INFO, DEBUG, WARNING, ERROR)
 ```
@@ -307,6 +311,21 @@ from src.config import Settings
 settings = Settings.from_env()
 ```
 
+### Configuration Details
+
+| Variable | Default | Required | Description |
+| -------- | ------- | -------- | ----------- |
+| `QDRANT_URL` | `http://localhost:6333` | Yes | Qdrant vector DB URL (Docker locally, hosted in prod) |
+| `QDRANT_API_KEY` | (none) | No | API key for cloud Qdrant; omit for local |
+| `EMBED_MODEL` | `BAAI/bge-m3` | No | BGE-M3 embedding model (do not change) |
+| `GEN_MODEL` | `google/gemma-4-E4B-it` | No | Gemma 4 generation model (do not change) |
+| `LORA_ADAPTER_PATH` | (none) | No | Path to local PEFT LoRA adapter (e.g. `models/pokesage-lora`). If set but path doesn't exist, falls back to `objones25/pokesage-lora` on HF Hub. Omit to run base model only. |
+| `DEVICE` | `cuda` | No | Device: `cpu`, `cuda`, or `mps` (Apple Silicon) |
+| `RATE_LIMIT_ENABLED` | `true` | No | Enable/disable rate limiting on `/query` endpoint |
+| `QUERY_TIMEOUT_SECONDS` | `120` | No | Timeout for inference. Increase for MPS (e.g. `300`). |
+| `ALLOWED_ORIGINS` | `*` | No | CORS allowed origins (comma-separated or `*` for all) |
+| `LOG_LEVEL` | `INFO` | No | Log level: `DEBUG`, `INFO`, `WARNING`, `ERROR` |
+
 ## Core Dependencies
 
 | Group     | Key Packages                             | Purpose                            |
@@ -314,11 +333,12 @@ settings = Settings.from_env()
 | **core**  | `transformers`, `torch`, `accelerate`    | Model loading & inference          |
 |           | `FlagEmbedding` ≥1.3.5                   | BGE-M3 embeddings (dense + sparse) |
 |           | `qdrant-client` ≥1.17.1                  | Vector DB client                   |
+|           | `peft`                                   | LoRA adapter loading at inference  |
 |           | `pydantic`, `numpy`                      | Data validation, numerics          |
 | **api**   | `fastapi`, `uvicorn[standard]`           | HTTP server                        |
 | **dev**   | `pytest`, `pytest-mock`, `pytest-cov`    | Testing                            |
 |           | `ruff`, `mypy`                           | Linting & type checking            |
-| **train** | `unsloth`, `trl`, `peft`, `bitsandbytes` | LoRA fine-tuning (RunPod only)     |
+| **train** | `unsloth`, `trl`, `bitsandbytes`         | LoRA fine-tuning (RunPod only)     |
 
 Never use `pip install` — use `uv add` only. See `CONTRIBUTING.md` for dependency management.
 
@@ -465,11 +485,64 @@ Test organization:
 
 See `TESTING.md` for mocking patterns (embedder, generator), the no-fallback invariant test, and fixtures.
 
-## Fine-Tuning on RunPod
+## Fine-Tuning with LoRA
 
-LoRA adapter scripts are in `scripts/training/` (isolated from `src/`). The serving API works with or without an adapter.
+The `pokesage-lora` adapter is a PEFT LoRA adapter trained with Supervised Fine-Tuning (SFT) on Gemma 4 4B-it using Unsloth + TRL on RunPod H100.
 
-Recommended GPU: **RTX 4090 (24GB)** on RunPod community (~$0.35–$0.69/hr). Gemma 4 4B requires ~8–10 GB VRAM with 4-bit quantization via Unsloth.
+### Training Details
+
+**pokesage-v1** training run:
+
+- **Method**: Supervised Fine-Tuning (SFT) with Unsloth + TRL `SFTTrainer`
+- **Adapter Config**: LoRA with r=16, alpha=16, targeting all linear layers
+- **Adapter Size**: ~147MB
+- **Hardware**: RunPod H100 GPU
+- **Training Run**: [pokesage-sft on Weights & Biases](https://wandb.ai/objones25/pokesage-sft/runs/ht1h2qpd)
+
+**Results**:
+
+| Epoch | eval_loss |
+|-------|-----------|
+| 1     | 2.920     |
+| 2     | 2.820     | ← best checkpoint saved |
+| 3     | 2.901     |
+
+The adapter is published to HF Hub as [`objones25/pokesage-lora`](https://huggingface.co/objones25/pokesage-lora).
+
+### Using the LoRA Adapter at Inference
+
+The adapter is automatically loaded at startup if `LORA_ADAPTER_PATH` is set:
+
+```bash
+# Use a local adapter
+export LORA_ADAPTER_PATH=models/pokesage-lora
+uv run uvicorn src.api.app:app
+
+# Or use the HF Hub version (auto-download)
+export LORA_ADAPTER_PATH=objones25/pokesage-lora
+uv run uvicorn src.api.app:app
+
+# Omit LORA_ADAPTER_PATH to run base model only
+uv run uvicorn src.api.app:app
+```
+
+During startup, `ModelLoader._apply_lora_adapter()` wraps the base model with `PeftModel.from_pretrained`:
+1. If `LORA_ADAPTER_PATH` is set, tries to load from local path
+2. If local path doesn't exist, falls back to HF Hub
+3. Raises `RuntimeError` if the adapter cannot be loaded
+
+### Performance Notes
+
+On **Apple Silicon (MPS)**, Gemma 4 4B-it inference takes ~120 seconds per query. To avoid timeouts:
+
+```bash
+export QUERY_TIMEOUT_SECONDS=300  # 5 minutes
+uv run uvicorn src.api.app:app
+```
+
+### Training on RunPod
+
+LoRA adapter scripts are in `scripts/training/` (isolated from `src/`). Recommended GPU: **RTX 4090 (24GB)** on RunPod community (~$0.35–$0.69/hr). Gemma 4 4B requires ~8–10 GB VRAM with 4-bit quantization via Unsloth.
 
 Steps:
 
@@ -490,5 +563,5 @@ See `CONTRIBUTING.md` for full RunPod workflow.
 
 ---
 
-**Last updated**: 2026-04-20  
+**Last updated**: 2026-04-21  
 **Status**: Active development
