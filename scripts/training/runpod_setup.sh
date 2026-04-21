@@ -90,10 +90,21 @@ fi
 info "GPU passes compute capability check (>= 8.0 required for bfloat16 + efficient CUDA kernels)"
 
 # ---------------------------------------------------------------------------
-# 3. Upgrade pip
+# 3. Upgrade pip + PyTorch
 # ---------------------------------------------------------------------------
 info "Upgrading pip …"
 python3 -m pip install --upgrade pip --quiet
+
+# unsloth_zoo calls torch._inductor.config which was added in PyTorch 2.5.
+# RunPod base images sometimes ship 2.4.x — upgrade to avoid AttributeError.
+TORCH_VERSION=$(python3 -c "import torch; print(torch.__version__.split('+')[0])" 2>/dev/null || echo "0.0.0")
+TORCH_MINOR=$(echo "$TORCH_VERSION" | cut -d. -f2)
+if [[ "$(echo "$TORCH_VERSION" | cut -d. -f1)" -lt 2 ]] || [[ "$(echo "$TORCH_VERSION" | cut -d. -f1)" -eq 2 && "$TORCH_MINOR" -lt 5 ]]; then
+    warn "PyTorch ${TORCH_VERSION} detected — upgrading to >=2.5.1 (required by unsloth_zoo) …"
+    pip install "torch>=2.5.1" --index-url "https://download.pytorch.org/whl/cu${CUDA_MAJOR}${CUDA_MINOR}" --quiet
+else
+    info "PyTorch ${TORCH_VERSION} OK (>= 2.5.1)"
+fi
 
 # ---------------------------------------------------------------------------
 # 4. Install Unsloth from GitHub main
