@@ -57,14 +57,19 @@ class TestBuildPromptContent:
         assert "bulbapedia" in prompt.lower()
         assert "smogon" in prompt.lower()
 
-    def test_sources_are_deduplicated(self) -> None:
+    def test_no_standalone_sources_summary_line(self) -> None:
+        # build_prompt no longer injects a "Sources: x, y" summary line;
+        # source attribution lives in the per-chunk [Source: ...] headers.
         chunks = (
             _chunk("Text A.", score=0.9, source="bulbapedia", chunk_index=0),
             _chunk("Text B.", score=0.7, source="bulbapedia", chunk_index=1),
         )
         prompt = build_prompt("Question?", chunks)
-        sources_line = next(line for line in prompt.splitlines() if line.startswith("Sources:"))
-        assert sources_line.lower().count("bulbapedia") == 1
+        dynamic_section = prompt.split("EXAMPLES:")[1] if "EXAMPLES:" in prompt else prompt
+        summary_lines = [
+            line for line in dynamic_section.splitlines() if line.startswith("Sources:")
+        ]
+        assert summary_lines == []
 
     def test_multiple_chunks_highest_score_appears_first(self) -> None:
         chunks = (

@@ -14,9 +14,16 @@ _SYSTEM_PROMPT = (
     "'The provided context does not cover that — try a more specific query.' "
     "Never fabricate stats, move data, tier placements, evolution levels, or item effects. "
     "If sources conflict, report both and label each.\n\n"
+    "SOURCE TRUST:\n"
+    "pokeapi → base stats, types, abilities, evolution levels.\n"
+    "smogon → competitive sets, tier placements, usage advice.\n"
+    "bulbapedia → mechanics, lore, move and item effects.\n\n"
     "RESPONSE FORMAT:\n"
     "Answer directly and concisely. "
-    "For competitive sets always include: moves, item, ability, EVs/nature, and role.\n\n"
+    "For competitive sets always include: moves, item, ability, EVs/nature, and role. "
+    "If a context chunk is primarily about a different Pokémon or entity that merely "
+    "references the subject of the question in passing (e.g. as a partner, check, or counter), "
+    "ignore that chunk entirely.\n\n"
     "EXAMPLES:\n\n"
     "Context:\n"
     "[Source: pokeapi | Entity: Pikachu]\n"
@@ -31,9 +38,17 @@ _SYSTEM_PROMPT = (
     "Item: Rocky Helmet. Ability: Rough Skin. EVs: 252 Atk / 4 Def / 252 Spe. Jolly nature. "
     "This set functions as an offensive Stealth Rock setter that punishes physical contact moves "
     "via Rough Skin + Rocky Helmet chip. Key counters include Skeledirge and Dondozo.\n\n"
+    "[Source: pokeapi | Entity: Garchomp]\n"
+    "Garchomp is a Dragon/Ground-type Pokémon. "
+    "Base stats: HP 108 / Atk 130 / Def 95 / SpA 80 / SpD 85 / Spe 102. "
+    "Abilities: Sand Veil / Rough Skin (hidden ability).\n\n"
+    "[Source: smogon | Entity: Diggersby]\n"
+    "Diggersby (NU): appreciates partners that handle fast threats. "
+    "Garchomp is a strong partner that switches into priority moves like Mach Punch.\n\n"
     "Question: What is a good moveset for Garchomp in Smogon singles?\n\n"
     "Answer: "
-    "In Smogon OU, Garchomp's standard set is an offensive Stealth Rock setter.\n\n"
+    "In Smogon OU, Garchomp's standard set is an offensive Stealth Rock setter. "
+    "Its high Attack (130) and Speed (102) make it a strong physical attacker.\n\n"
     "Moves:\n"
     "  - Earthquake     — primary STAB, wide coverage\n"
     "  - Scale Shot     — Dragon STAB, boosts Speed after use\n"
@@ -95,15 +110,7 @@ def build_prompt(query: str, chunks: tuple[RetrievedChunk, ...]) -> str:
         context_parts.append(f"{header}\n{safe_text}")
 
     context_block = "\n\n".join(context_parts)
-    unique_sources = sorted(
-        {c.source if c.source in _ALLOWED_SOURCES else "unknown" for c in chunks}
-    )
-    sources_line = "Sources: " + ", ".join(unique_sources)
 
     return (
-        f"{_SYSTEM_PROMPT}\n\n"
-        f"Context:\n{context_block}\n\n"
-        f"{sources_line}\n\n"
-        f"Question: {sanitized_query}\n\n"
-        f"Answer:"
+        f"{_SYSTEM_PROMPT}\n\nContext:\n{context_block}\n\nQuestion: {sanitized_query}\n\nAnswer:"
     )
