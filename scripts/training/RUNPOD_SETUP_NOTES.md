@@ -74,7 +74,7 @@ silently pull in torch 2.11.0+cu126 and replace your carefully-pinned 2.7.0. Thi
 - torchaudio 2.7.0 (requires `torch==2.7.0` exactly)
 - torchvision 0.22.0 (requires `torch==2.7.0` exactly)
 
-**xformers is not needed.** Unsloth on H100 uses Flash Attention 2 or SDPA natively.
+**xformers is not needed.** Unsloth on H100 will use SDPA natively (see Flash Attention 2 note below).
 Do not install it.
 
 If you accidentally upgraded xformers and broke the stack, recover with:
@@ -122,6 +122,45 @@ python -c "from unsloth import FastModel; print('OK')"
 | packaging   | >= 24.2          | Required by setuptools 80.9.0            |
 | unsloth_zoo | GitHub main      | Install with --no-deps                   |
 | unsloth     | GitHub main      | Install with --no-build-isolation        |
+
+---
+
+## Expected Warnings During Gemma 4 Training (Not Errors)
+
+These messages appear on every clean Gemma 4 run. They are all normal.
+
+### Flash Attention 2 is False — training still works
+
+```
+Unsloth: Your Flash Attention 2 installation seems to be broken. Using Xformers instead.
+...
+Xformers = None
+FA2 = False
+```
+
+On this RunPod setup (driver 580+, Unsloth from GitHub main), FA2 reports as broken/False.
+Training runs via SDPA instead and performance is fine. **Do not try to install `flash-attn`
+separately** — it is incompatible with the torch 2.7.0 / cu126 stack and will break things.
+
+### Sample packing is skipped
+
+```
+Unsloth: Sample packing skipped (processor-based model detected).
+```
+
+Gemma 4 is a multimodal model loaded via `AutoModelForImageTextToText`. Unsloth detects this
+and skips sequence packing automatically. This is expected — not a performance regression you
+need to fix.
+
+### KV cache disabled during gradient checkpointing
+
+```
+Caching is incompatible with gradient checkpointing in Gemma4TextDecoderLayer.
+Setting past_key_values=None.
+```
+
+This warning fires once per layer on first forward pass. It is expected Gemma 4 behavior —
+gradient checkpointing and KV cache cannot coexist. Training is unaffected.
 
 ---
 
