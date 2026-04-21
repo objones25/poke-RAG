@@ -1,0 +1,8 @@
+Pikachu is an Electric-type Pokémon. It is number 025 in the Pokédex. Pikachu evolves from Pichu with high friendship and into Raichu via Thunder Stone. Its base stats are HP: 35, Attack: 55, Defense: 40, Sp.Atk: 50, Sp.Def: 50, Speed: 90.
+Garchomp is a Dragon/Ground-type Pokémon. It is number 445 in the Pokédex and the final evolution of Gible. Its base stats are HP: 108, Attack: 130, Defense: 95, Sp.Atk: 80, Sp.Def: 85, Speed: 102. Garchomp's ability is Sand Veil or Rough Skin.
+Charizard is a Fire/Flying-type Pokémon. It is number 006 in the Pokédex and evolves from Charmeleon at level 36. Its base stats are HP: 78, Attack: 84, Defense: 78, Sp.Atk: 109, Sp.Def: 85, Speed: 100. Charizard can Mega Evolve.
+Thunderbolt is a Pokémon move of Electric type with 90 base power and 100 accuracy. It has a 10% chance to paralyze the target and is one of Pikachu's signature moves.
+Earthquake is a Pokémon move of Ground type with 100 base power and 100 accuracy. It hits all adjacent targets in double battles and is one of Garchomp's key moves.
+Rough Skin is a Pokémon ability that damages the attacker for 1/8 of its maximum HP when a contact move hits the Pokémon with this ability. Garchomp commonly has Rough Skin.
+Blaze is a Pokémon ability that boosts the power of Fire-type moves by 50% when the Pokémon's HP is below one third. Charizard has the Blaze ability.
+Static is a Pokémon ability that gives a 30% chance to paralyze the attacker when a contact move hits the Pokémon. Pikachu can have the Static ability.

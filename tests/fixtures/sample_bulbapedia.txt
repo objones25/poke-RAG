@@ -1,0 +1,12 @@
+Title: Pikachu (Pokémon)
+Pikachu is an Electric-type Pokémon introduced in Generation I. It is the official mascot of the Pokémon franchise and one of the most recognizable characters in the world. Pikachu evolves from Pichu when leveled up with high friendship, and further evolves into Raichu when exposed to a Thunder Stone.
+
+In battle, Pikachu uses Electric-type moves as its primary STAB. Its most iconic move is Thunderbolt, a reliable 90-power special move. Pikachu held by the Light Ball item gains doubled Attack and Special Attack statistics. Pikachu's base Speed of 90 allows it to outspeed many threats.
+Title: Garchomp (Pokémon)
+Garchomp is a Dragon/Ground-type Pokémon introduced in Generation IV in the Sinnoh region. It is the final evolution of Gible, evolving first into Gabite at level 24, then into Garchomp at level 48. Garchomp possesses outstanding offensive stats with 130 base Attack and 102 base Speed.
+
+In competitive play, Garchomp is a top-tier threat in OU. Its ability Rough Skin causes contact moves to chip the attacker. Key moves include Earthquake, Dragon Claw, Outrage, Fire Blast, and Stone Edge. Swords Dance boosts its already formidable Attack.
+Title: Charizard (Pokémon)
+Charizard is a Fire/Flying-type Pokémon introduced in Generation I. It is the final evolution of Charmander, evolving at level 36 from Charmeleon. Charizard has two Mega Evolutions: Mega Charizard X changes typing to Fire/Dragon with boosted Attack, while Mega Charizard Y retains Fire/Flying with boosted Special Attack.
+
+Charizard's base stats feature 109 Special Attack and 100 Speed. Despite being a Fire/Flying type, it is weak to Stealth Rock. Its Blaze ability activates below one third HP to boost Fire-type moves. Charizard is immune to Ground-type moves due to its Flying type.
