@@ -119,8 +119,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=_allow_credentials,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 app.add_middleware(LatencyTrackingMiddleware)
@@ -160,11 +160,12 @@ def stats(request: Request) -> dict[str, bool]:
 
 
 @app.post("/query", response_model=QueryResponse)
-def query(
+async def query(
     body: QueryRequest,
     pipeline: RAGPipeline = Depends(get_pipeline),  # noqa: B008
 ) -> QueryResponse:
-    result = pipeline.query(parse_query(body.query), sources=body.sources)
+    parsed = parse_query(body.query)
+    result = await asyncio.to_thread(pipeline.query, parsed, sources=body.sources)
     return QueryResponse(
         answer=result.answer,
         sources_used=list(result.sources_used),

@@ -58,6 +58,8 @@ class ContextAssembler:
             tokens = _approx_tokens(block)
             if tokens > budget:
                 words_allowed = int(budget * _WORDS_PER_TOKEN)
+                if words_allowed == 0:
+                    break
                 words = block.split()
                 block = " ".join(words[:words_allowed])
                 formatted.append(block)

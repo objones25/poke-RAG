@@ -49,32 +49,6 @@ def chunk_all_files(
     return chunks
 
 
-def embed_in_batches(
-    embedder: BGEEmbedder,
-    chunks: list[RetrievedChunk],
-    batch_size: int = _DEFAULT_BATCH_SIZE,
-) -> EmbeddingOutput:
-    if not chunks:
-        return EmbeddingOutput(dense=[], sparse=[])
-
-    all_dense: list[list[float]] = []
-    all_sparse: list[dict[int, float]] = []
-
-    for i in range(0, len(chunks), batch_size):
-        batch = chunks[i : i + batch_size]
-        texts = [c.text for c in batch]
-        result = embedder.encode(texts)
-        if len(result.dense) != len(batch) or len(result.sparse) != len(batch):
-            raise RuntimeError(
-                f"Embedder returned {len(result.dense)} dense and "
-                f"{len(result.sparse)} sparse vectors for batch of {len(batch)}"
-            )
-        all_dense.extend(result.dense)
-        all_sparse.extend(result.sparse)
-
-    return EmbeddingOutput(dense=all_dense, sparse=all_sparse)
-
-
 def group_by_source(
     chunks: list[RetrievedChunk],
     embeddings: EmbeddingOutput,
@@ -225,7 +199,10 @@ def main() -> None:
     from src.retrieval.vector_store import QdrantVectorStore
 
     embedder = BGEEmbedder.from_pretrained(model_name=settings.embed_model, device=settings.device)
-    client = QdrantClient(url=settings.qdrant_url, api_key=settings.qdrant_api_key)
+    api_key_str = (
+        None if settings.qdrant_api_key is None else settings.qdrant_api_key.get_secret_value()
+    )
+    client = QdrantClient(url=settings.qdrant_url, api_key=api_key_str)
     vector_store = QdrantVectorStore(client)
 
     run(
