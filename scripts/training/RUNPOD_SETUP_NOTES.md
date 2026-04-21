@@ -54,7 +54,7 @@ pip install --no-deps git+https://github.com/unslothai/unsloth-zoo.git
 #    PyPI Unsloth does NOT have the Gemma 4 gradient accumulation fix.
 #    --no-build-isolation uses the setuptools we just installed instead of
 #    pip's isolated build env which may have a different setuptools version.
-pip install "unsloth[cu124-torch260] @ git+https://github.com/unslothai/unsloth.git" \
+pip install "unsloth[cu126-torch270] @ git+https://github.com/unslothai/unsloth.git" \
     --no-build-isolation
 
 # 6. Verify

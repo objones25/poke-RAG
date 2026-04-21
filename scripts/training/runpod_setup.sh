@@ -136,7 +136,7 @@ pip install --no-deps "git+https://github.com/unslothai/unsloth-zoo.git" --quiet
 # pip's isolated build environment which may ship a different setuptools.
 info "Installing Unsloth from GitHub main (required for Gemma 4 support) …"
 pip install \
-    "unsloth[cu124-torch260] @ git+https://github.com/unslothai/unsloth.git" \
+    "unsloth[cu126-torch270] @ git+https://github.com/unslothai/unsloth.git" \
     --no-build-isolation \
     --quiet
 
