@@ -186,18 +186,25 @@ def main() -> None:
 
     from src.generation.loader import ModelLoader
     from src.retrieval.embedder import BGEEmbedder
-    from src.retrieval.reranker import BGEReranker
     from src.retrieval.retriever import Retriever
     from src.retrieval.vector_store import QdrantVectorStore
+    from src.types import RetrievedChunk
+
+    class _PassthroughReranker:
+        def rerank(
+            self, query: str, documents: list[RetrievedChunk], top_k: int
+        ) -> list[RetrievedChunk]:
+            return documents[:top_k]
 
     qdrant = QdrantClient(
         url=args.qdrant_url,
         api_key=os.environ.get("QDRANT_API_KEY"),
     )
     embedder = BGEEmbedder.from_pretrained(model_name="BAAI/bge-m3", device="cuda")
-    reranker = BGEReranker.from_pretrained(model_name="BAAI/bge-reranker-v2-m3", device="cuda")
     vector_store = QdrantVectorStore(qdrant)
-    retriever = Retriever(embedder=embedder, vector_store=vector_store, reranker=reranker)
+    retriever = Retriever(
+        embedder=embedder, vector_store=vector_store, reranker=_PassthroughReranker()
+    )
 
     loader = ModelLoader(model_id=args.model)
     base_model, processor = loader.load()
