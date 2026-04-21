@@ -1,0 +1,33 @@
+.git
+.github
+.venv
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.mypy_cache
+.ruff_cache
+*.egg-info
+
+# Test and dev files
+tests/
+docs/
+
+# Training scripts (RunPod-only, not needed in API image)
+scripts/training/
+
+# Processed data (read-only, mounted or downloaded separately)
+processed/
+
+# Secrets and local config
+.env
+.env.local
+.env.*
+!.env.example
+
+# Checkpoints
+.build_index_checkpoint.json
+
+# Docs
+*.md
+!README.md
