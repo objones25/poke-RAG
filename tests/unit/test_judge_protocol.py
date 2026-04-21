@@ -39,19 +39,21 @@ class TestGeminiJudge:
         assert score.total == 255
 
     def test_score_candidate_returns_none_on_persistent_error(self) -> None:
-        with patch("scripts.training.judge_protocol.genai") as mock_genai:
-            with patch("scripts.training.judge_protocol.time"):
-                mock_client = MagicMock()
-                mock_genai.Client.return_value = mock_client
-                mock_client.models.generate_content.side_effect = RuntimeError("API failed")
+        with (
+            patch("scripts.training.judge_protocol.genai") as mock_genai,
+            patch("scripts.training.judge_protocol.time"),
+        ):
+            mock_client = MagicMock()
+            mock_genai.Client.return_value = mock_client
+            mock_client.models.generate_content.side_effect = RuntimeError("API failed")
 
-                judge = GeminiJudge(api_key="fake", max_retries=2)
-                score = judge.score_candidate(
-                    question="q",
-                    response="r",
-                    retrieved_chunks=["c"],
-                    reference_chunks=["ref"],
-                )
+            judge = GeminiJudge(api_key="fake", max_retries=2)
+            score = judge.score_candidate(
+                question="q",
+                response="r",
+                retrieved_chunks=["c"],
+                reference_chunks=["ref"],
+            )
 
         assert score is None
 
@@ -66,19 +68,21 @@ class TestGeminiJudge:
                 raise Exception("429 RESOURCE_EXHAUSTED")
             return mock_response
 
-        with patch("scripts.training.judge_protocol.genai") as mock_genai:
-            with patch("scripts.training.judge_protocol.time"):
-                mock_client = MagicMock()
-                mock_genai.Client.return_value = mock_client
-                mock_client.models.generate_content.side_effect = side_effect
+        with (
+            patch("scripts.training.judge_protocol.genai") as mock_genai,
+            patch("scripts.training.judge_protocol.time"),
+        ):
+            mock_client = MagicMock()
+            mock_genai.Client.return_value = mock_client
+            mock_client.models.generate_content.side_effect = side_effect
 
-                judge = GeminiJudge(api_key="fake", max_retries=5)
-                score = judge.score_candidate(
-                    question="q",
-                    response="r",
-                    retrieved_chunks=["c"],
-                    reference_chunks=["ref"],
-                )
+            judge = GeminiJudge(api_key="fake", max_retries=5)
+            score = judge.score_candidate(
+                question="q",
+                response="r",
+                retrieved_chunks=["c"],
+                reference_chunks=["ref"],
+            )
 
         assert score is not None
         assert call_count["n"] == 3

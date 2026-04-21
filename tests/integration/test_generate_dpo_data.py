@@ -9,7 +9,7 @@ import torch
 
 from scripts.training.generate_dpo_data import run
 from scripts.training.schemas import JudgeScore
-from src.types import RetrievedChunk, RetrievalResult
+from src.types import RetrievalResult, RetrievedChunk
 
 
 def _make_chunk(text: str = "Pikachu is Electric-type.") -> RetrievedChunk:
@@ -118,7 +118,9 @@ class TestRunDPOGeneration:
             questions=["What type is Pikachu?"],
             retriever=retriever,
             model=_make_model(),
-            processor=_make_processor(responses=["Low quality answer.", "High quality detailed answer."]),
+            processor=_make_processor(
+                responses=["Low quality answer.", "High quality detailed answer."]
+            ),
             judge=judge,
             k=2,
             delay=0.0,

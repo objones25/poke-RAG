@@ -11,7 +11,7 @@ from scripts.training.inference_runner import (
     format_context,
     generate_candidates,
 )
-from src.types import RetrievalError, RetrievedChunk, RetrievalResult
+from src.types import RetrievalError, RetrievalResult, RetrievedChunk
 
 
 def _make_chunk(text: str, source: str = "pokeapi") -> RetrievedChunk:
