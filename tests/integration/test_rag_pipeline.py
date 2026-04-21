@@ -41,7 +41,7 @@ class TestRAGPipelineQuery:
             return GenerationResult(
                 answer="Pikachu is an Electric-type Pokémon.",
                 sources_used=sources_used,
-                model_name="google/gemma-2-2b-it",
+                model_name="google/gemma-4-E4B-it",
                 num_chunks_used=len(chunks),
             )
 
@@ -68,7 +68,7 @@ class TestRAGPipelineQuery:
         mock_generator.generate.return_value = GenerationResult(
             answer=expected_answer,
             sources_used=("pokeapi",),
-            model_name="google/gemma-2-2b-it",
+            model_name="google/gemma-4-E4B-it",
             num_chunks_used=1,
         )
         pipeline = RAGPipeline(retriever=mock_retriever, generator=mock_generator)
@@ -112,7 +112,7 @@ class TestRAGPipelineQuery:
         mock_generator: GeneratorProtocol,
     ) -> None:
         """result.model_name equals generator's model_name."""
-        expected_model = "google/gemma-2-2b-it"
+        expected_model = "google/gemma-4-E4B-it"
         mock_generator.generate.return_value = GenerationResult(
             answer="test answer",
             sources_used=("pokeapi",),
@@ -345,7 +345,7 @@ class TestRAGPipelineProtocolCompliance:
         generator.generate.return_value = GenerationResult(
             answer="test",
             sources_used=("pokeapi",),
-            model_name="google/gemma-2-2b-it",
+            model_name="google/gemma-4-E4B-it",
             num_chunks_used=1,
         )
 
@@ -375,7 +375,7 @@ class TestRAGPipelineProtocolCompliance:
         generator.generate.return_value = GenerationResult(
             answer="test answer",
             sources_used=("pokeapi", "bulbapedia"),
-            model_name="google/gemma-2-2b-it",
+            model_name="google/gemma-4-E4B-it",
             num_chunks_used=2,
         )
 

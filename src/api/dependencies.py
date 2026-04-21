@@ -7,7 +7,7 @@ from src.config import Settings
 from src.generation.generator import Generator
 from src.generation.inference import Inferencer
 from src.generation.loader import ModelLoader
-from src.generation.models import GenerationConfig, TokenizerConfig
+from src.generation.models import GenerationConfig
 from src.generation.prompt_builder import build_prompt
 from src.pipeline.rag_pipeline import RAGPipeline
 from src.retrieval.embedder import BGEEmbedder
@@ -44,18 +44,12 @@ def build_pipeline() -> tuple[RAGPipeline, ModelLoader, QdrantClient]:
         top_p=settings.top_p,
         do_sample=settings.do_sample,
     )
-    tok_config = TokenizerConfig(
-        max_length=settings.tokenizer_max_length,
-        return_tensors=settings.return_tensors,
-        truncation=settings.truncation,
-    )
     loader = ModelLoader(config=gen_config, device=settings.device)
     loader.load()
     inferencer = Inferencer(
         model=loader.get_model(),
-        tokenizer=loader.get_tokenizer(),
+        processor=loader.get_tokenizer(),
         config=gen_config,
-        tokenizer_config=tok_config,
     )
     generator = Generator(
         loader=loader, prompt_builder=build_prompt, inferencer=inferencer, config=gen_config

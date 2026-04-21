@@ -8,6 +8,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
+import torch
 
 from src.generation.generator import Generator
 from src.generation.inference import Inferencer
@@ -17,9 +18,13 @@ from src.generation.prompt_builder import build_prompt
 from src.types import GenerationResult, RetrievedChunk
 
 
+class _FakeInputs(dict):
+    """Dict-like batch that supports .to(device), mirrors BatchFeature."""
+
+
 @pytest.fixture()
 def config() -> GenerationConfig:
-    return GenerationConfig(model_id="google/gemma-2-2b-it")
+    return GenerationConfig(model_id="google/gemma-4-E4B-it")
 
 
 @pytest.fixture()
@@ -58,26 +63,32 @@ def sample_chunks() -> tuple[RetrievedChunk, ...]:
 @pytest.fixture()
 def generator(config: GenerationConfig) -> Generator:
     fake_model = MagicMock()
-    fake_tokenizer = MagicMock()
-    encoded = MagicMock()
-    encoded.to = MagicMock(return_value=encoded)
-    encoded.__getitem__ = MagicMock(return_value=MagicMock())
-    fake_tokenizer.return_value = encoded
+    fake_processor = MagicMock()
+
+    input_ids = torch.tensor([[1, 2, 3]])
+    fake_inputs = _FakeInputs(
+        {"input_ids": input_ids, "attention_mask": torch.ones_like(input_ids)}
+    )
+    fake_inputs.to = MagicMock(return_value=fake_inputs)  # type: ignore[attr-defined]
+
     fake_model.device = "cpu"
-    fake_model.generate.return_value = MagicMock()
-    fake_tokenizer.decode.return_value = (
+    fake_processor.apply_chat_template.return_value = "formatted text"
+    fake_processor.return_value = fake_inputs
+    fake_model.generate.return_value = torch.arange(5).unsqueeze(0)
+    fake_processor.decode.return_value = "raw <thinking>...</thinking>"
+    fake_processor.parse_response.return_value = (
         "Charizard is a Fire/Flying-type Pokémon with 109 Special Attack."
     )
 
     loader = ModelLoader(config=config, device="cpu")
     with (
         patch(
-            "src.generation.loader.AutoModelForCausalLM.from_pretrained",
+            "src.generation.loader.AutoModelForImageTextToText.from_pretrained",
             return_value=fake_model,
         ),
         patch(
-            "src.generation.loader.AutoTokenizer.from_pretrained",
-            return_value=fake_tokenizer,
+            "src.generation.loader.AutoProcessor.from_pretrained",
+            return_value=fake_processor,
         ),
     ):
         loader.load()
@@ -119,7 +130,7 @@ class TestGenerationPipelineIntegration:
         self, generator: Generator, sample_chunks: tuple[RetrievedChunk, ...]
     ) -> None:
         result = generator.generate("Tell me about Charizard.", sample_chunks)
-        assert result.model_name == "google/gemma-2-2b-it"
+        assert result.model_name == "google/gemma-4-E4B-it"
 
     def test_raises_on_empty_chunks(self, generator: Generator) -> None:
         with pytest.raises(ValueError, match="chunks"):

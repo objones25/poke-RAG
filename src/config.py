@@ -81,7 +81,7 @@ class Settings:
             qdrant_api_key=SecretStr(api_key) if (api_key := os.getenv("QDRANT_API_KEY")) else None,
             embed_model=os.getenv("EMBED_MODEL", "BAAI/bge-m3"),
             rerank_model=os.getenv("RERANK_MODEL", "BAAI/bge-reranker-v2-m3"),
-            gen_model=os.getenv("GEN_MODEL", "google/gemma-2-2b-it"),
+            gen_model=os.getenv("GEN_MODEL", "google/gemma-4-E4B-it"),
             temperature=temperature,
             max_new_tokens=max_new_tokens,
             top_p=top_p,
