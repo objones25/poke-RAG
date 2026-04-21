@@ -113,15 +113,21 @@ Each Qdrant collection must be created with both `vectors_config` (dense, 1024-d
 | `smogon`     | Recursive, sentence-aware                          | 256–512 tokens  | ~10%           |
 | `bulbapedia` | Split at `Title:` then recursive `\n\n` → sentence | 512 tokens      | Test 0% vs 10% |
 
-Every chunk's Qdrant payload must include: `source`, `pokemon_name` (if extractable from title/header), `chunk_index`, `original_doc_id`. This enables payload-filtered queries (e.g. `source == "smogon" AND pokemon_name == "Garchomp"`) before the vector search runs.
+Every chunk's Qdrant payload must include: `source`, `entity_name` (string, e.g. "Garchomp"), `entity_type` (string, e.g. "pokemon", "move", "item"), `chunk_index`, `original_doc_id`. This enables payload-filtered queries (e.g. `source == "smogon" AND entity_name == "Garchomp" AND entity_type == "pokemon"`) before the vector search runs.
 
 **Retrieval pipeline**: dense+sparse hybrid fused with Qdrant `Prefetch` + `Fusion.RRF` → rerank top-K with `BAAI/bge-reranker-v2-m3` → assemble context. The reranker uses `FlagEmbedding.FlagReranker`, not the embedding model class. Generator dependency injection uses `PromptBuilderProtocol` (defined in `src/generation/protocols.py`) — any callable `(str, tuple[RetrievedChunk, ...]) -> str` satisfies it.
+
+**Deduplication key**: In `ContextAssembler`, chunk deduplication uses `f"{original_doc_id}:{chunk_index}"` as the key, not a full text hash.
+
+**Confidence scores**: `PipelineResult` and `QueryResponse` now include `confidence_score: float | None = None`, reflecting the confidence level of retrieval and generation.
+
+**Rate limiting**: `RateLimitMiddleware` enforces 20 requests per minute per IP on `/query` endpoints. The `RATE_LIMIT_ENABLED` environment variable can be set to `"false"` to disable rate limiting (used in tests via `monkeypatch.setenv("RATE_LIMIT_ENABLED", "false")`).
 
 ## Workflow
 
 ### Branches
 
-```
+```text
 main          stable, CI always green
 dev           integration branch
 feature/<n>   new features (branch from dev)
@@ -143,7 +149,7 @@ See `TESTING.md` for full details.
 
 [Conventional Commits](https://www.conventionalcommits.org/) format:
 
-```
+```text
 <type>(<scope>): <description>
 ```
 
@@ -151,7 +157,7 @@ Types: `feat`, `fix`, `test`, `refactor`, `docs`, `chore`, `experiment`
 
 Examples:
 
-```
+```text
 feat(retrieval): add namespace filtering to vector search
 fix(pipeline): raise RetrievalError when index is empty
 test(pipeline): cover no-fallback invariant

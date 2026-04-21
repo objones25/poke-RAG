@@ -9,7 +9,7 @@ The retrieval subsystem implements a hybrid semantic + lexical RAG pipeline. It 
 
 ## Architecture
 
-```
+```text
 Input (raw files from processed/)
   ↓
 chunker.py (source-specific splitting)
@@ -40,7 +40,7 @@ reranker.py (BGEReranker)
   → sort by score, return top_k
   ↓
 context_assembler.py (ContextAssembler)
-  → dedup by text (keep highest score)
+  → dedup by f"{original_doc_id}:{chunk_index}" (keep highest score)
   → format with source + entity metadata
   → fit to max_tokens budget (default 4096)
   → join with separator (default "\n\n---\n\n")
@@ -108,14 +108,12 @@ def upsert(
 ) -> None:
     """Upsert documents with their precomputed embeddings into a collection."""
 
-def search(
-    collection: Source,
-    query_dense: list[float],
-    query_sparse: dict[int, float],
-    top_k: int,
-    entity_name: str | None = None,
-) -> list[RetrievedChunk]:
-    """Hybrid dense+sparse search with optional entity_name payload filter."""
+def search(...) -> list[RetrievedChunk]:
+    """Hybrid search: Prefetch dense & sparse independently (limit=top_k*2 each),
+    fuse with RRF (Reciprocal Rank Fusion), apply optional entity_name filter,
+    limit final result to top_k. Payload parsing is resilient: uses .get() with
+    defaults for missing or wrong-type keys. Returns list of RetrievedChunk with scores.
+    """
 ```
 
 **`RerankerProtocol`**
@@ -205,9 +203,10 @@ def retrieve(
     sources: list[Source] | None = None,
 ) -> RetrievalResult:
     """1. Embed query (raises EmbeddingError if empty or fails).
-    2. Search each active source for candidates_per_source items.
-    3. Merge candidates (may exceed top_k at this stage).
-    4. Rerank to top_k.
+    2. Validate embedding: assert len(embedding.dense) == 1 before using.
+    3. Search each active source for candidates_per_source items.
+    4. Merge candidates (may exceed top_k at this stage).
+    5. Rerank to top_k.
     Raises RetrievalError if no candidates found or reranking fails.
     """
 ```
@@ -241,7 +240,7 @@ def __init__(
     """Configure token budget and separator."""
 
 def assemble(chunks: list[RetrievedChunk]) -> str:
-    """1. Dedup by text content (keep chunk with highest score).
+    """1. Dedup by f"{original_doc_id}:{chunk_index}" (keep chunk with highest score).
     2. Preserve order from input.
     3. Format each as '[Source: {source} | Entity: {entity_name}]\n{text}'.
     4. Accumulate until max_tokens exceeded.
@@ -316,7 +315,7 @@ def chunk_file(path: Path, *, source: Source) -> list[RetrievedChunk]:
 
 Input: `processed/bulbapedia/`, `processed/pokeapi/`, `processed/smogon/`
 
-```
+```text
 For each source:
   For each file in source directory:
     chunk_file(path, source) → list[RetrievedChunk]
@@ -332,7 +331,7 @@ For each source:
 
 Input: query string
 
-```
+```text
 1. embedder.encode([query])
    → EmbeddingOutput(dense=[...], sparse=[...])
 
@@ -355,7 +354,7 @@ Input: query string
 
 Input: list[RetrievedChunk]
 
-```
+```text
 1. Dedup by text content (keep highest score per unique text)
 2. Format each chunk:
    "[Source: {source} | Entity: {entity_name}]\n{text}"

@@ -38,7 +38,7 @@ open htmlcov/index.html
 
 ## Test layout
 
-```
+```text
 tests/
   conftest.py             shared fixtures (sample docs, mock generator, mock embedder, etc.)
   unit/                   pure logic — no disk, no network, no model
@@ -48,11 +48,15 @@ tests/
     test_context_assembler.py
     test_pipeline.py
     test_query_parser.py
+    test_config.py            Settings validation, device detection, SecretStr masking
+    test_inference.py         Inferencer model lifecycle
+    test_loader.py            ModelLoader coverage
   integration/            real I/O against fixture data and local index
     test_embedder.py          BGE-M3 encoding: dense + sparse shapes, types
     test_qdrant_store.py      collection creation, upsert, hybrid search, payload filtering
     test_rag_pipeline.py
     test_api.py
+    test_api_lifespan.py       FastAPI lifespan (startup/shutdown/failure)
   e2e/                    full query → answer with real model
     test_pokemon_queries.py
   fixtures/               small sample data files committed to the repo
@@ -153,6 +157,21 @@ def mock_generator(mocker):
 
 E2E tests that need real generation are marked `@pytest.mark.gpu` and excluded from CI unless a GPU runner is configured.
 
+## API integration tests and rate limiting
+
+Integration tests that hit `/query` must disable rate limiting to avoid spurious test failures. Use `monkeypatch.setenv()` in the test fixture:
+
+```python
+@pytest.fixture
+def client(mocker, monkeypatch):
+    monkeypatch.setenv("RATE_LIMIT_ENABLED", "false")
+    from src.api.app import create_app
+    app = create_app()
+    return TestClient(app)
+```
+
+This prevents the `RateLimitMiddleware` (20 req/min/IP on `/query`) from blocking rapid test requests.
+
 ## The no-fallback invariant
 
 The pipeline must never call the generator when retrieval fails. This must have an explicit test:
@@ -171,6 +190,10 @@ def test_pipeline_does_not_call_generator_when_retrieval_fails(mocker):
 
     generator.generate.assert_not_called()
 ```
+
+## Test count
+
+Approximately **~398 tests** total across unit, integration, and e2e markers.
 
 ## Fixtures
 

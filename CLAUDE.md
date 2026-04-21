@@ -31,23 +31,32 @@ Managed via `uv` and `pyproject.toml`. Groups:
 The `train` group is RunPod-only. Don't install it locally unless you have a CUDA GPU.
 
 > **Embeddings**: Use `FlagEmbedding` (`BGEM3FlagModel`), not `sentence-transformers`. Only `FlagEmbedding` exposes all three BGE-M3 output types (dense, sparse, ColBERT). `sentence-transformers` gives dense only.
-
+>
 > **Gemma 2 loads via `AutoModelForCausalLM`.** Verify via Context7 before writing any HuggingFace model-loading code — the API changes frequently.
 
 ## Codebase layout
 
-```
+```text
 src/
   retrieval/    embedding, indexing, vector search, optional reranker
   generation/   model loading, inference wrapper
   pipeline/     RAG orchestration, multi-round retrieval
   api/          FastAPI app
+  config.py     environment configuration
   utils/        shared helpers, logging
 
 tests/
-  unit/         no I/O, no model, fast
-  integration/  real disk/index I/O, uses fixture data
-  e2e/          full pipeline, GPU required
+  conftest.py            shared fixtures
+  unit/                  no I/O, no model, fast
+    test_config.py
+    test_inference.py
+    test_loader.py
+    ... (other unit tests)
+  integration/           real disk/index I/O, uses fixture data
+    test_api.py
+    test_api_lifespan.py
+    ... (other integration tests)
+  e2e/                   full pipeline, GPU required
 
 scripts/
   build_index.py        embed and index processed/ data (run once)
@@ -64,7 +73,7 @@ processed/              READ ONLY
 | `processed/pokeapi/`    | one entry per line, no header          | No chunking — each line is already an atomic fact (~100–300 tokens). One doc per line.                  |
 | `processed/smogon/`     | `Name (tier): ...`, one entry per line | Recursive sentence-aware split. Target 256–512 tokens, ~10% overlap.                                    |
 
-Every chunk must carry these metadata fields in its Qdrant payload: `source` (`bulbapedia` / `pokeapi` / `smogon`), `pokemon_name` (if extractable), `chunk_index`, `original_doc_id`.
+Every chunk must carry these metadata fields in its Qdrant payload: `source` (`bulbapedia` / `pokeapi` / `smogon`), `entity_name` (if extractable), `entity_type`, `chunk_index`, `original_doc_id`.
 
 `_aug.txt` variants are paraphrased rewrites for training/retrieval diversity. Read-only like the originals.
 
@@ -81,6 +90,29 @@ BGE-M3 output types and what to store in Qdrant:
 - **ColBERT multi-vector**: optional — higher recall, significantly more storage and query cost; add later if recall is insufficient
 
 Each source (`bulbapedia`, `pokeapi`, `smogon`) is a **separate Qdrant collection**. Queries target one or more collections via namespace parameter. This enables source-specific retrieval (e.g. stats-only queries hit `pokeapi` only).
+
+## Pipeline and API
+
+**`build_pipeline()` return type**: `tuple[RAGPipeline, ModelLoader, QdrantClient]`
+
+**Response types**:
+
+- `PipelineResult` (in `src/pipeline/types.py`): includes `confidence_score: float | None = None`
+- `QueryResponse` (in `src/api/models.py`): includes `confidence_score: float | None = None`
+
+**API endpoints**:
+
+- `POST /query` — Main RAG endpoint (20 req/min/IP rate limit)
+- `GET /stats` — Returns dict of Qdrant collection names → bool
+
+**Config changes**:
+
+- `qdrant_api_key` in `src/config.py` is now `SecretStr` (Pydantic) — masked in logs/repr
+
+**Security & rate limiting**:
+
+- Query prompt injection: `src/generation/prompt_builder.py` strips newlines from user queries
+- Rate limiting via `RateLimitMiddleware` in `src/api/app.py` (configurable via `RATE_LIMIT_ENABLED`)
 
 ## Non-negotiable rules
 

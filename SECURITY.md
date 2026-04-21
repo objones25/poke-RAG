@@ -26,7 +26,7 @@ This project handles several sensitive values that must never be committed:
 
 Example `.env` structure (safe to document here — do not fill in real values):
 
-```
+```env
 HF_TOKEN=
 RUNPOD_API_KEY=
 QDRANT_URL=http://localhost:6333
@@ -34,6 +34,22 @@ QDRANT_API_KEY=
 ```
 
 Local Qdrant (Docker) does not require an API key. `QDRANT_API_KEY` is only needed for hosted/cloud instances.
+
+**Secret handling in config**: The `qdrant_api_key` field in `src/config.py` is a `SecretStr` from Pydantic. It is never logged in plaintext; the value is masked in string representations and logs.
+
+## Rate limiting
+
+The API enforces rate limiting on `/query` endpoints via `RateLimitMiddleware`:
+
+- **Limit**: 20 requests per minute per IP address
+- **Enforcement**: Headers check via `RATE_LIMIT_ENABLED` environment variable
+- **Testing**: Set `RATE_LIMIT_ENABLED=false` via `monkeypatch.setenv()` in tests to disable rate limiting and prevent spurious failures
+
+See `src/api/middleware.py` for implementation details.
+
+## Prompt injection prevention
+
+The `src/generation/prompt_builder.py` module strips newline characters (`\n`, `\r`, `\t`) from user-supplied query strings before building the prompt. This mitigates prompt injection attacks that attempt to break out of the prompt template via multi-line input.
 
 ## Dependencies
 

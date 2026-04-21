@@ -8,7 +8,7 @@ poke-RAG is a production-ready RAG pipeline that answers Pokémon questions with
 
 ### Architecture
 
-```
+```text
 User Query
     ↓
 [Query Parser] — parse source/filter constraints
@@ -28,7 +28,7 @@ bulbapedia     pokeapi        smogon
     ↓
 [Gemma 2 Generator] — answer + attribution
     ↓
-QueryResponse (answer, sources, chunks_used, model_name)
+QueryResponse (answer, sources, chunks_used, confidence_score, model_name)
 ```
 
 Each query hits one or more collections via source filtering. Dense and sparse vectors are fused with Qdrant's reciprocal rank fusion (RRF), avoiding per-collection tuning.
@@ -102,7 +102,25 @@ uv run uvicorn src.api.app:app --reload
 
 Server listens on `http://localhost:8000`. See `/docs` for Swagger UI.
 
-### 5. Example Query
+Rate limiting: 20 requests per minute per IP on `/query` endpoint (configurable via `RATE_LIMIT_ENABLED`).
+
+### 5. Check Service Status
+
+```bash
+curl http://localhost:8000/stats
+```
+
+Response lists available Qdrant collections:
+
+```json
+{
+  "bulbapedia": true,
+  "pokeapi": true,
+  "smogon": true
+}
+```
+
+### 6. Example Query
 
 ```bash
 curl -X POST "http://localhost:8000/query" \
@@ -126,6 +144,7 @@ result = response.json()
 print(result["answer"])
 print(f"Sources: {result['sources_used']}")
 print(f"Chunks: {result['num_chunks_used']}")
+print(f"Confidence: {result.get('confidence_score')}")
 ```
 
 **Response format:**
@@ -135,6 +154,7 @@ print(f"Chunks: {result['num_chunks_used']}")
   "answer": "Charizard has a Base Speed of 100, Special Attack of 109, ...",
   "sources_used": ["pokeapi"],
   "num_chunks_used": 3,
+  "confidence_score": 0.87,
   "model_name": "google/gemma-2-2b-it",
   "query": "What are Charizard's base stats?"
 }
@@ -146,7 +166,7 @@ print(f"Chunks: {result['num_chunks_used']}")
 
 ```bash
 uv sync --all-extras          # Install all deps (core + api + dev + train)
-uv run pytest                 # Run all tests
+uv run pytest                 # Run all tests (~398 tests)
 uv run pytest -m "not gpu"    # Skip GPU tests (local dev default)
 uv run pytest tests/unit/     # Unit tests only
 uv run pytest --cov=src --cov-report=html  # Coverage report
@@ -172,7 +192,7 @@ uv run uvicorn src.api.app:app --host 0.0.0.0 --port 8000  # For production
 
 ## Project Layout
 
-```
+```text
 poke-RAG/
 ├── README.md                   # This file
 ├── CLAUDE.md                   # Authoritative project definition
@@ -273,6 +293,11 @@ GENERATE_MODEL=google/gemma-2-2b-it       # Gemma 4, don't change
 
 # Device / GPU
 DEVICE=cuda                                # cpu or cuda
+
+# API settings
+RATE_LIMIT_ENABLED=true                    # Enable/disable rate limiting
+ALLOWED_ORIGINS=*                          # CORS allowed origins
+LOG_LEVEL=INFO                             # Log level (INFO, DEBUG, WARNING, ERROR)
 ```
 
 Load these in code via:
@@ -368,7 +393,7 @@ These are enforced by code review and tests:
 
 ### Branch Strategy
 
-```
+```text
 main          — stable, CI always green
 dev           — integration branch
 feature/<n>   — new features (branch from dev)
@@ -397,7 +422,7 @@ See `TESTING.md` for full details on test organization, markers, mocking, and co
 
 [Conventional Commits](https://www.conventionalcommits.org/) format:
 
-```
+```text
 <type>(<scope>): <description>
 ```
 
@@ -405,7 +430,7 @@ Types: `feat`, `fix`, `test`, `refactor`, `docs`, `chore`, `experiment`
 
 Examples:
 
-```
+```text
 feat(retrieval): add entity_type filtering to vector search
 fix(pipeline): raise RetrievalError when index is empty
 test(pipeline): cover no-fallback invariant

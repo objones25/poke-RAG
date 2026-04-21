@@ -1,6 +1,6 @@
 # Generation Subsystem Codemap
 
-**Last Updated:** 2025-02-04
+**Last Updated:** 2026-04-20
 **Entry Points:** `src/generation/__init__.py`
 
 ## Overview
@@ -11,7 +11,7 @@ The subsystem is orchestrated by `Generator`, which wires together the loader, p
 
 ## Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────┐
 │ Generator (main orchestrator)                                       │
 ├─────────────────────────────────────────────────────────────────────┤
@@ -167,7 +167,7 @@ class Inferencer:
 - Moves input_ids and attention_mask to model device
 - Extracts prompt_len to slice generated tokens (exclude prompt from output)
 - Calls `model.generate()` with temperature, top_p, do_sample from config
-- Slices output_ids[0][prompt_len:] to get only new tokens
+- Slices `output_ids[0][prompt_len:]` to get only new tokens
 - Decodes with `skip_special_tokens=True` and strips whitespace
 - Type-checks that decoded output is str
 
@@ -199,7 +199,7 @@ def build_prompt(
 
 **Prompt structure:**
 
-```
+```text
 You are a knowledgeable Pokémon expert. Answer the question using only the context provided below. Cite your sources at the end of your answer.
 
 Context:
@@ -218,6 +218,7 @@ Answer:
 
 **Implementation details:**
 
+- Strips newline characters (`\n`, `\r`) from user input before building prompt template
 - Sorts chunks by score (descending) before formatting
 - For each chunk, constructs a header: `[Source: X | Entity: Y]` if entity_name exists, else `[Source: X]`
 - Joins chunks with `\n\n` separator
@@ -344,7 +345,7 @@ This ensures the decoded output contains only the model's generated text, not th
 
 | Package        | Version (from pyproject.toml) | Role                                                                  |
 | -------------- | ----------------------------- | --------------------------------------------------------------------- |
-| `transformers` | Core (pinned)                 | `AutoModelForCausalLM`, `AutoTokenizer`, type definitions      |
+| `transformers` | Core (pinned)                 | `AutoModelForCausalLM`, `AutoTokenizer`, type definitions             |
 | `torch`        | Core                          | Tensor operations, device management, dtype selection, cache clearing |
 | `accelerate`   | Core                          | Device mapping, mixed precision support (used by transformers)        |
 
@@ -369,7 +370,7 @@ Always verify via Context7 HuggingFace docs when loading multimodal models — t
 
 ## Module Dependency Graph
 
-```
+```text
 src/generation/
 ├── __init__.py
 │   └─ exports: Generator, GeneratorProtocol, GenerationConfig, TokenizerConfig, build_prompt
@@ -436,6 +437,7 @@ class GenerationResult:
     sources_used: tuple[Source, ...]  # Unique sources in sorted order
     model_name: str                 # Model ID (e.g., "google/gemma-2-2b-it")
     num_chunks_used: int            # Count of chunks passed to generator
+    confidence_score: float | None = None  # Optional confidence score from generator
 ```
 
 ## Testing Patterns

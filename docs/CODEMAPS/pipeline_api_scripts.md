@@ -13,7 +13,7 @@
 
 ## Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                       FastAPI App                           │
 │                      (src/api/app.py)                       │
@@ -192,18 +192,35 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Startup
     setup_logging()
     try:
-        app.state.pipeline = build_pipeline()
+        pipeline, loader, client = build_pipeline()
+        app.state.pipeline = pipeline
+        app.state.qdrant_client = client
     except Exception as exc:
         raise RuntimeError(f"Failed to initialize RAG pipeline: {exc}") from exc
-    yield
-    # (Shutdown logic would go after yield)
+    try:
+        yield
+    finally:
+        loader.unload()
+        # (Loky executor shutdown)
 ```
 
 - Calls `setup_logging()` to configure root logger
 - Calls `build_pipeline()` (see below) to construct and wire the full pipeline
-- Stores pipeline in `app.state.pipeline` for use in request handlers
+- Stores **3-tuple**: `(RAGPipeline, ModelLoader, QdrantClient)`
+- Stores pipeline in `app.state.pipeline` and client in `app.state.qdrant_client`
+- On shutdown: calls `loader.unload()` to clear model from memory
 - Wraps build errors as `RuntimeError` with context
 - Startup failure prevents the app from starting
+
+**Middlewares:**
+
+1. **LatencyTrackingMiddleware**: Adds `X-Response-Time-Ms` header with elapsed time in milliseconds
+2. **RateLimitMiddleware**: 20 requests per minute per IP (sliding window). Disabled via `RATE_LIMIT_ENABLED=false`
+
+**CORS:**
+
+- `ALLOWED_ORIGINS` env var controls allowed origins (default `"*"`)
+- If `"*"`, allow all origins; otherwise split by comma and strip whitespace
 
 **Exception Handlers:**
 
@@ -216,6 +233,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
    ```
 
 2. **ValueError** → HTTP 422 (Unprocessable Entity)
+
    ```python
    @app.exception_handler(ValueError)
    async def value_error_handler(request: Request, exc: ValueError) -> JSONResponse:
@@ -238,6 +256,25 @@ def health() -> dict[str, str]:
 ```
 
 Simple health check; requires no dependencies.
+
+#### GET /stats
+
+```python
+@app.get("/stats")
+def stats(request: Request) -> dict[str, bool]:
+```
+
+**Response:**
+
+```json
+{
+  "bulbapedia": true,
+  "pokeapi": true,
+  "smogon": true
+}
+```
+
+Returns a dict of collection names to `True` (indicating they exist). Extracts `qdrant_client` from `request.app.state` and calls `client.get_collections()`.
 
 #### POST /query
 
@@ -268,6 +305,7 @@ class QueryResponse(BaseModel):
     num_chunks_used: int
     model_name: str
     query: str
+    confidence_score: float | None = None  # Optional confidence score
 ```
 
 **Behavior:**
@@ -276,6 +314,7 @@ class QueryResponse(BaseModel):
 - Calls `parse_query(body.query)` to strip and re-validate
 - Calls `pipeline.query(normalized_query, sources=body.sources)`
 - Converts `PipelineResult` fields to `QueryResponse` (tuple → list for sources)
+- Includes `confidence_score` from `PipelineResult` (may be None)
 - On `ValueError`: returns HTTP 422 with error detail
 - On `RetrievalError`: returns HTTP 503 with error detail
 
@@ -296,8 +335,10 @@ FastAPI dependency that extracts the pipeline from request state. Raises `Runtim
 ### build_pipeline()
 
 ```python
-def build_pipeline() -> RAGPipeline:
+def build_pipeline() -> tuple[RAGPipeline, ModelLoader, QdrantClient]:
 ```
+
+**Returns:** 3-tuple of (RAGPipeline, ModelLoader, QdrantClient).
 
 **Orchestration:**
 
@@ -345,9 +386,10 @@ def build_pipeline() -> RAGPipeline:
    )
    ```
 
-4. **Combine into RAGPipeline:**
+4. **Combine into RAGPipeline and return 3-tuple:**
+
    ```python
-   return RAGPipeline(retriever=retriever, generator=generator)
+   return RAGPipeline(retriever=retriever, generator=generator), loader, client
    ```
 
 **Dependencies Wired:**
@@ -355,9 +397,11 @@ def build_pipeline() -> RAGPipeline:
 - Embedder: BGE-M3 for dense+sparse embeddings
 - Vector Store: Qdrant with 3 collections (bulbapedia, pokeapi, smogon)
 - Reranker: BGE Reranker v2-m3 for ranking retrieved chunks
-- Generator: Gemma-4 via HuggingFace Transformers
+- Generator: Gemma-2 via HuggingFace Transformers
 - Tokenizer: Paired with generator model
 - Prompt Builder: Callable that formats query + context into model input
+- Loader: ModelLoader instance (stored for cleanup during lifespan shutdown)
+- Client: QdrantClient instance (stored in app.state for /stats endpoint)
 
 ---
 
@@ -459,6 +503,7 @@ def run(
 - Loads existing checkpoint JSON (set of completed file keys) or returns empty set
 - Checkpoint format: JSON array of strings, e.g. `["bulbapedia/pokemon.txt", "pokeapi/moves.txt"]`
 - File key: `"{source}/{filename}"`
+- Checkpoint is **only saved after successful upsert** to prevent saving on failure
 - On error reading checkpoint, logs warning and starts fresh
 
 **Discovery & Filtering:**
