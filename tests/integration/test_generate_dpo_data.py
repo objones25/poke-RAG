@@ -86,8 +86,10 @@ class TestRunDPOGeneration:
         retriever.retrieve.return_value = _make_retrieval_result(["chunk"])
         judge = MagicMock()
         judge.score_candidate.side_effect = [
-            _score(270), _score(150),
-            _score(200), _score(100),
+            _score(270),
+            _score(150),
+            _score(200),
+            _score(100),
         ]
 
         run(
