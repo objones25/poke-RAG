@@ -49,3 +49,13 @@ class TestParseQuery:
         from src.api.query_parser import parse_query
 
         assert parse_query("\tPikachu\n") == "Pikachu"
+
+    def test_preserves_unicode_characters(self) -> None:
+        from src.api.query_parser import parse_query
+
+        assert parse_query("What type is Pokémon?") == "What type is Pokémon?"
+
+    def test_preserves_emoji(self) -> None:
+        from src.api.query_parser import parse_query
+
+        assert parse_query("Tell me about Pikachu 🔗") == "Tell me about Pikachu 🔗"

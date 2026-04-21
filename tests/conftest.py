@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 
 import pytest
@@ -61,3 +62,13 @@ def make_generation_result() -> Callable[..., GenerationResult]:
         )
 
     return _factory
+
+
+@pytest.fixture(scope="session", autouse=True)
+def disable_rate_limiting_for_tests():
+    """Disable rate limiting for all tests to avoid cross-test interference."""
+    os.environ["RATE_LIMIT_ENABLED"] = "false"
+    yield
+    # Restore the original value after tests
+    if "RATE_LIMIT_ENABLED" in os.environ:
+        del os.environ["RATE_LIMIT_ENABLED"]

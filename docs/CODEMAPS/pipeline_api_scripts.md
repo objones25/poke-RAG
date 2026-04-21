@@ -3,6 +3,7 @@
 **Last Updated:** 2026-04-20
 
 **Entry Points:**
+
 - `src/pipeline/rag_pipeline.py` — RAGPipeline orchestrator
 - `src/api/app.py` — FastAPI application
 - `scripts/build_index.py` — Index builder CLI
@@ -65,6 +66,7 @@ discover_files() → chunk_all_files() → embed_in_batches()
 The core orchestrator: accepts a query, retrieves context, and passes it to the generator.
 
 **Constructor:**
+
 ```python
 RAGPipeline(
     *,
@@ -76,6 +78,7 @@ RAGPipeline(
 **Key Invariant:** If `retriever.retrieve()` raises `RetrievalError`, the generator is never called. The exception propagates immediately.
 
 **query() Method:**
+
 ```python
 def query(
     self,
@@ -93,6 +96,7 @@ def query(
 - Returns `PipelineResult` with answer, sources used, chunk count, model name, and original query
 
 **Raises:**
+
 - `ValueError`: if query is empty or whitespace-only
 - `RetrievalError` (or subclasses): propagated immediately from retriever; generator never called
 
@@ -101,6 +105,7 @@ def query(
 **Location:** `src/pipeline/types.py`
 
 Immutable output of a single RAG query:
+
 ```python
 @dataclass(frozen=True)
 class PipelineResult:
@@ -118,6 +123,7 @@ class PipelineResult:
 **Location:** `src/types.py`
 
 ### RetrievedChunk
+
 ```python
 @dataclass(frozen=True)
 class RetrievedChunk:
@@ -131,6 +137,7 @@ class RetrievedChunk:
 ```
 
 ### RetrievalResult
+
 ```python
 @dataclass(frozen=True)
 class RetrievalResult:
@@ -139,6 +146,7 @@ class RetrievalResult:
 ```
 
 ### GenerationResult
+
 ```python
 @dataclass(frozen=True)
 class GenerationResult:
@@ -149,12 +157,14 @@ class GenerationResult:
 ```
 
 ### Type Literals
+
 ```python
 Source = Literal["bulbapedia", "pokeapi", "smogon"]
 EntityType = Literal["pokemon", "move", "ability", "item", "format"]
 ```
 
 ### Exception Hierarchy
+
 ```python
 class RetrievalError(Exception):
     """Raised when retrieval fails. Generator must never be called."""
@@ -175,6 +185,7 @@ class VectorIndexError(RetrievalError):
 **Location:** `src/api/app.py`
 
 **Lifespan Handler:**
+
 ```python
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
@@ -197,6 +208,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 **Exception Handlers:**
 
 1. **RetrievalError** → HTTP 503 (Service Unavailable)
+
    ```python
    @app.exception_handler(RetrievalError)
    async def retrieval_error_handler(request: Request, exc: RetrievalError) -> JSONResponse:
@@ -213,19 +225,22 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 ### HTTP Endpoints
 
 #### GET /health
+
 ```python
 @app.get("/health")
 def health() -> dict[str, str]:
 ```
 
 **Response:**
+
 ```json
-{"status": "ok"}
+{ "status": "ok" }
 ```
 
 Simple health check; requires no dependencies.
 
 #### POST /query
+
 ```python
 @app.post("/query", response_model=QueryResponse)
 def query(
@@ -235,6 +250,7 @@ def query(
 ```
 
 **Request Body (QueryRequest):**
+
 ```python
 @dataclass
 class QueryRequest(BaseModel):
@@ -243,6 +259,7 @@ class QueryRequest(BaseModel):
 ```
 
 **Response (QueryResponse):**
+
 ```python
 @dataclass
 class QueryResponse(BaseModel):
@@ -254,6 +271,7 @@ class QueryResponse(BaseModel):
 ```
 
 **Behavior:**
+
 - `QueryRequest.query` is validated by Pydantic (min_length=1)
 - Calls `parse_query(body.query)` to strip and re-validate
 - Calls `pipeline.query(normalized_query, sources=body.sources)`
@@ -268,6 +286,7 @@ class QueryResponse(BaseModel):
 **Location:** `src/api/dependencies.py`
 
 ### get_pipeline()
+
 ```python
 def get_pipeline(request: Request) -> RAGPipeline:
 ```
@@ -275,11 +294,13 @@ def get_pipeline(request: Request) -> RAGPipeline:
 FastAPI dependency that extracts the pipeline from request state. Raises `RuntimeError` if not initialized (should not happen if lifespan succeeded).
 
 ### build_pipeline()
+
 ```python
 def build_pipeline() -> RAGPipeline:
 ```
 
 **Orchestration:**
+
 1. Load settings from environment via `Settings.from_env()`:
    - `QDRANT_URL` (required)
    - `QDRANT_API_KEY` (optional)
@@ -288,6 +309,7 @@ def build_pipeline() -> RAGPipeline:
    - `DEVICE` (auto-detected from torch: cuda → mps → cpu)
 
 2. **Retrieval Pipeline:**
+
    ```python
    embedder = BGEEmbedder.from_pretrained(
        model_name=settings.embed_model,
@@ -303,6 +325,7 @@ def build_pipeline() -> RAGPipeline:
    ```
 
 3. **Generation Pipeline:**
+
    ```python
    gen_config = GenerationConfig(...)       # from Settings
    tok_config = TokenizerConfig(...)        # from Settings
@@ -328,6 +351,7 @@ def build_pipeline() -> RAGPipeline:
    ```
 
 **Dependencies Wired:**
+
 - Embedder: BGE-M3 for dense+sparse embeddings
 - Vector Store: Qdrant with 3 collections (bulbapedia, pokeapi, smogon)
 - Reranker: BGE Reranker v2-m3 for ranking retrieved chunks
@@ -364,6 +388,7 @@ def setup_logging(level: str | None = None) -> None:
 ```
 
 **Configuration:**
+
 - Level: `level` parameter, or `LOG_LEVEL` environment variable, or default "INFO"
 - Format: `"%(asctime)s %(levelname)-8s %(name)s — %(message)s"`
 - Timestamp: ISO 8601 with time component (`"%Y-%m-%dT%H:%M:%S"`)
@@ -392,6 +417,7 @@ uv run python scripts/build_index.py \
 ```
 
 **Arguments:**
+
 - `--source` (repeatable): Index only specified source(s). Default: all three (bulbapedia, pokeapi, smogon)
 - `--batch-size` (int): Embedding batch size. Default: 32
 - `--dry-run` (flag): Log what would be indexed without writing to Qdrant
@@ -429,12 +455,14 @@ def run(
 ```
 
 **Checkpoint Load/Save:**
+
 - Loads existing checkpoint JSON (set of completed file keys) or returns empty set
 - Checkpoint format: JSON array of strings, e.g. `["bulbapedia/pokemon.txt", "pokeapi/moves.txt"]`
 - File key: `"{source}/{filename}"`
 - On error reading checkpoint, logs warning and starts fresh
 
 **Discovery & Filtering:**
+
 1. `discover_files(processed_dir, sources)` → list of (source, Path) tuples
    - Scans `processed/{source}/` for `.txt` files
    - Excludes files ending in `_aug.txt` (paraphrased variants, separate indices)
@@ -443,6 +471,7 @@ def run(
 3. Logs progress: files discovered, already indexed, to process
 
 **Embedding & Upsert (per file):**
+
 1. `chunk_file(path, source=source)` → list of RetrievedChunk
 2. For each batch in chunks (stride = batch_size):
    - Extract texts: `[c.text for c in batch]`
@@ -456,11 +485,13 @@ def run(
 5. Log completion
 
 **Collections:**
+
 - Before first upsert (if not dry_run): calls `vector_store.ensure_collections()`
 - Creates 3 Qdrant collections if they don't exist: "bulbapedia", "pokeapi", "smogon"
 - One collection per source; upsert targets collection named by Source
 
 **Logging:**
+
 - `_LOG = logging.getLogger(__name__)`
 - Info: discovery summary, per-file processing, batch upserts (debug), completion
 - Warning: missing source directories, checkpoint read errors
@@ -471,6 +502,7 @@ def run(
 ## Helper Functions in build_index.py
 
 ### discover_files()
+
 ```python
 def discover_files(
     processed_dir: Path,
@@ -481,6 +513,7 @@ def discover_files(
 **Returns:** List of (source, file_path) tuples for all `.txt` files in each source directory, excluding `_aug` variants.
 
 **Behavior:**
+
 - Iterates through sources
 - Checks if `processed_dir/{source}/` exists; warns and skips if not
 - Globs `*.txt` files, filters to `not p.stem.endswith("_aug")`
@@ -488,6 +521,7 @@ def discover_files(
 - Returns early if any source dir missing (non-fatal)
 
 ### chunk_all_files()
+
 ```python
 def chunk_all_files(
     files: list[tuple[Source, Path]],
@@ -497,14 +531,16 @@ def chunk_all_files(
 **Returns:** Flat list of all chunks from all files.
 
 **Behavior:**
+
 - Iterates over (source, path) pairs
 - Calls `chunk_file(path, source=source)` for each
 - Extends global chunk list
 - **Not used in current run()** (see note below)
 
-*Note: Current `run()` chunks files one-at-a-time rather than chunking all upfront. This helper is available but the main loop handles chunking inline.*
+_Note: Current `run()` chunks files one-at-a-time rather than chunking all upfront. This helper is available but the main loop handles chunking inline._
 
 ### embed_in_batches()
+
 ```python
 def embed_in_batches(
     embedder: BGEEmbedder,
@@ -516,6 +552,7 @@ def embed_in_batches(
 **Returns:** Single `EmbeddingOutput(dense=[], sparse=[])` combining all batches, or empty output if no chunks.
 
 **Behavior:**
+
 - Returns empty output if chunks list is empty
 - Iterates in batches: `range(0, len(chunks), batch_size)` with slicing
 - Extracts texts from batch: `[c.text for c in batch]`
@@ -527,6 +564,7 @@ def embed_in_batches(
 - **Not used in current run()** (inline embedding happens during file processing)
 
 ### group_by_source()
+
 ```python
 def group_by_source(
     chunks: list[RetrievedChunk],
@@ -535,10 +573,12 @@ def group_by_source(
 ```
 
 **Returns:** Dictionary mapping each Source to a tuple of:
+
 - List of RetrievedChunks for that source
 - EmbeddingOutput (dense + sparse) for those chunks only
 
 **Behavior:**
+
 - Returns empty dict if chunks list is empty
 - Iterates through chunks with index
 - Groups chunks by `chunk.source`
@@ -552,6 +592,7 @@ def group_by_source(
 ## Control Flow: A Typical Query
 
 1. **Client sends POST /query:**
+
    ```json
    {
      "query": "What are Pikachu's stats?",
@@ -603,28 +644,29 @@ class Settings:
     # Vector store
     qdrant_url: str                # QDRANT_URL (required)
     qdrant_api_key: str | None     # QDRANT_API_KEY (optional)
-    
+
     # Model names
     embed_model: str               # EMBED_MODEL (default: "BAAI/bge-m3")
     rerank_model: str              # RERANK_MODEL (default: "BAAI/bge-reranker-v2-m3")
     gen_model: str                 # GEN_MODEL (default: "google/gemma-2-2b-it")
-    
+
     # Generation hyperparameters
     temperature: float             # TEMPERATURE (default: 0.7)
     max_new_tokens: int            # MAX_NEW_TOKENS (default: 512)
     top_p: float                   # TOP_P (default: 0.9)
     do_sample: bool                # DO_SAMPLE (default: true)
-    
+
     # Tokenizer config
     tokenizer_max_length: int      # TOKENIZER_MAX_LENGTH (default: 8192)
     return_tensors: str            # RETURN_TENSORS (default: "pt")
     truncation: bool               # TRUNCATION (default: true)
-    
+
     # Device
     device: str                    # DEVICE (auto-detected if not set)
 ```
 
 **from_env()** classmethod:
+
 - Raises `KeyError` if `QDRANT_URL` missing
 - Auto-detects device: cuda → mps → cpu
 - Returns frozen Settings instance
@@ -634,6 +676,7 @@ class Settings:
 ## Dependencies & Protocols
 
 ### RetrieverProtocol
+
 ```python
 class RetrieverProtocol(Protocol):
     def retrieve(
@@ -649,6 +692,7 @@ class RetrieverProtocol(Protocol):
 Implemented by: `src/retrieval/retriever.py:Retriever`
 
 ### GeneratorProtocol
+
 ```python
 class GeneratorProtocol(Protocol):
     def generate(
@@ -664,18 +708,18 @@ Implemented by: `src/generation/generator.py:Generator`
 
 ## File Organization Summary
 
-| File | Purpose |
-|------|---------|
-| `src/pipeline/rag_pipeline.py` | RAGPipeline orchestrator class |
-| `src/pipeline/types.py` | PipelineResult dataclass |
-| `src/types.py` | Shared types: RetrievedChunk, RetrievalResult, GenerationResult, exceptions |
-| `src/api/app.py` | FastAPI app, lifespan, exception handlers, endpoints |
-| `src/api/dependencies.py` | get_pipeline(), build_pipeline() factory |
-| `src/api/models.py` | QueryRequest, QueryResponse Pydantic models |
-| `src/api/query_parser.py` | parse_query() validator |
-| `src/utils/logging.py` | setup_logging() configuration |
-| `src/config.py` | Settings dataclass, from_env() |
-| `scripts/build_index.py` | Index builder: discover, chunk, embed, upsert; checkpointing |
+| File                           | Purpose                                                                     |
+| ------------------------------ | --------------------------------------------------------------------------- |
+| `src/pipeline/rag_pipeline.py` | RAGPipeline orchestrator class                                              |
+| `src/pipeline/types.py`        | PipelineResult dataclass                                                    |
+| `src/types.py`                 | Shared types: RetrievedChunk, RetrievalResult, GenerationResult, exceptions |
+| `src/api/app.py`               | FastAPI app, lifespan, exception handlers, endpoints                        |
+| `src/api/dependencies.py`      | get_pipeline(), build_pipeline() factory                                    |
+| `src/api/models.py`            | QueryRequest, QueryResponse Pydantic models                                 |
+| `src/api/query_parser.py`      | parse_query() validator                                                     |
+| `src/utils/logging.py`         | setup_logging() configuration                                               |
+| `src/config.py`                | Settings dataclass, from_env()                                              |
+| `scripts/build_index.py`       | Index builder: discover, chunk, embed, upsert; checkpointing                |
 
 ---
 

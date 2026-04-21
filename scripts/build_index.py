@@ -147,28 +147,32 @@ def run(
 
     for source, path in remaining:
         file_key = f"{source}/{path.name}"
-        chunks = chunk_file(path, source=source)
-        _LOG.info("Processing '%s' → %d chunk(s)", file_key, len(chunks))
+        try:
+            chunks = chunk_file(path, source=source)
+            _LOG.info("Processing '%s' → %d chunk(s)", file_key, len(chunks))
 
-        for i in range(0, len(chunks), batch_size):
-            batch = chunks[i : i + batch_size]
-            texts = [c.text for c in batch]
-            result = embedder.encode(texts)
-            if len(result.dense) != len(batch) or len(result.sparse) != len(batch):
-                raise RuntimeError(
-                    f"Embedder returned {len(result.dense)} dense and "
-                    f"{len(result.sparse)} sparse vectors for batch of {len(batch)}"
-                )
-            if dry_run:
-                _LOG.info("[dry-run] would upsert %d chunk(s) into '%s'", len(batch), source)
-            else:
-                vector_store.upsert(source, batch, result)
-                _LOG.debug("Upserted batch %d–%d for '%s'", i, i + len(batch), file_key)
+            for i in range(0, len(chunks), batch_size):
+                batch = chunks[i : i + batch_size]
+                texts = [c.text for c in batch]
+                result = embedder.encode(texts)
+                if len(result.dense) != len(batch) or len(result.sparse) != len(batch):
+                    raise RuntimeError(
+                        f"Embedder returned {len(result.dense)} dense and "
+                        f"{len(result.sparse)} sparse vectors for batch of {len(batch)}"
+                    )
+                if dry_run:
+                    _LOG.info("[dry-run] would upsert %d chunk(s) into '%s'", len(batch), source)
+                else:
+                    vector_store.upsert(source, batch, result)
+                    _LOG.debug("Upserted batch %d–%d for '%s'", i, i + len(batch), file_key)
 
-        completed.add(file_key)
-        if checkpoint_path:
-            _save_checkpoint(checkpoint_path, completed)
-        _LOG.info("Done: %s", file_key)
+            completed.add(file_key)
+            if checkpoint_path:
+                _save_checkpoint(checkpoint_path, completed)
+            _LOG.info("Done: %s", file_key)
+        except Exception as exc:
+            _LOG.error("Failed to process '%s': %s", file_key, exc)
+            raise
 
     _LOG.info("Indexing complete.")
 

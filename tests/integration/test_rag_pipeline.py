@@ -32,14 +32,20 @@ class TestRAGPipelineQuery:
 
     @pytest.fixture
     def mock_generator(self) -> GeneratorProtocol:
-        """Mock generator returning a generation result."""
+        """Mock generator returning a generation result based on input chunks."""
         generator = MagicMock(spec=GeneratorProtocol)
-        generator.generate.return_value = GenerationResult(
-            answer="Pikachu is an Electric-type Pokémon.",
-            sources_used=("pokeapi",),
-            model_name="google/gemma-2-2b-it",
-            num_chunks_used=2,
-        )
+
+        def generate_side_effect(query: str, chunks: tuple) -> GenerationResult:
+            """Generate result with sources and count derived from chunks."""
+            sources_used = tuple(sorted({c.source for c in chunks}))
+            return GenerationResult(
+                answer="Pikachu is an Electric-type Pokémon.",
+                sources_used=sources_used,
+                model_name="google/gemma-2-2b-it",
+                num_chunks_used=len(chunks),
+            )
+
+        generator.generate.side_effect = generate_side_effect
         return generator
 
     def test_returns_pipeline_result(

@@ -70,9 +70,13 @@ class TestRAGPipelineQuery:
         retriever = mocker.MagicMock()
         retriever.retrieve.return_value = _make_retrieval_result(chunks=chunks)
 
+        # Extract unique sources from chunks and sort them
+        sources_from_chunks = tuple(sorted({c.source for c in chunks}))
+
         generator = mocker.MagicMock()
         generator.generate.return_value = _make_generation_result(
             answer=answer,
+            sources_used=sources_from_chunks,
             num_chunks_used=len(chunks),
         )
 
@@ -156,6 +160,19 @@ class TestRAGPipelineQuery:
         pipeline, _, generator = self._make_pipeline(mocker, chunks=chunks)
         pipeline.query("What type is Pikachu?")
         generator.generate.assert_called_once_with("What type is Pikachu?", chunks)
+
+    def test_generator_error_propagates(self, mocker) -> None:
+        from src.pipeline.rag_pipeline import RAGPipeline
+
+        retriever = mocker.MagicMock()
+        retriever.retrieve.return_value = _make_retrieval_result(chunks=(_make_chunk(),))
+        generator = mocker.MagicMock()
+        generator.generate.side_effect = ValueError("Invalid chunks provided")
+
+        pipeline = RAGPipeline(retriever=retriever, generator=generator)
+
+        with pytest.raises(ValueError, match="Invalid chunks"):
+            pipeline.query("What type is Pikachu?")
 
 
 @pytest.mark.unit

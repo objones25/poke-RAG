@@ -26,7 +26,8 @@ def _make_result(**overrides: object) -> PipelineResult:
 def mock_pipeline(mocker):
     pipeline = mocker.MagicMock()
     loader = mocker.MagicMock()
-    mocker.patch("src.api.app.build_pipeline", return_value=(pipeline, loader))
+    mock_qdrant_client = mocker.MagicMock()
+    mocker.patch("src.api.app.build_pipeline", return_value=(pipeline, loader, mock_qdrant_client))
     return pipeline
 
 
@@ -34,6 +35,17 @@ def mock_pipeline(mocker):
 def client(mock_pipeline):
     with TestClient(app) as c:
         yield c
+
+
+@pytest.mark.unit
+class TestStatsEndpoint:
+    def test_stats_returns_200(self, client) -> None:
+        response = client.get("/stats")
+        assert response.status_code == 200
+
+    def test_stats_returns_dict_with_collections(self, client) -> None:
+        response = client.get("/stats").json()
+        assert isinstance(response, dict)
 
 
 @pytest.mark.unit
@@ -71,7 +83,7 @@ class TestQueryEndpoint:
     def test_retrieval_error_detail_in_response(self, client, mock_pipeline) -> None:
         mock_pipeline.query.side_effect = RetrievalError("index unavailable")
         response = client.post("/query", json={"query": "What type is Pikachu?"})
-        assert "index unavailable" in response.json()["detail"]
+        assert response.json()["detail"] == "Retrieval service unavailable"
 
     def test_empty_query_returns_422(self, client) -> None:
         response = client.post("/query", json={"query": ""})
@@ -107,3 +119,13 @@ class TestQueryEndpoint:
         client.post("/query", json={"query": "How fast is Jolteon?"})
         args, _ = mock_pipeline.query.call_args
         assert args[0] == "How fast is Jolteon?"
+
+    def test_confidence_score_in_response(self, client, mock_pipeline) -> None:
+        mock_pipeline.query.return_value = _make_result(confidence_score=0.92)
+        response = client.post("/query", json={"query": "What type is Pikachu?"}).json()
+        assert response["confidence_score"] == 0.92
+
+    def test_confidence_score_none_by_default(self, client, mock_pipeline) -> None:
+        mock_pipeline.query.return_value = _make_result(confidence_score=None)
+        response = client.post("/query", json={"query": "What type is Pikachu?"}).json()
+        assert response["confidence_score"] is None

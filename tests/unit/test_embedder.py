@@ -104,6 +104,50 @@ class TestBGEEmbedderEncode:
 
 
 @pytest.mark.unit
+class TestBGEEmbedderFromPretrained:
+    def test_passes_model_name_to_bgem3flagmodel(self) -> None:
+        from unittest.mock import patch
+
+        with patch("FlagEmbedding.BGEM3FlagModel") as mock_model_class:
+            BGEEmbedder.from_pretrained(model_name="BAAI/bge-m3", device="cpu")
+            mock_model_class.assert_called_once()
+            call_kwargs = mock_model_class.call_args[1]
+            assert call_kwargs["model_name_or_path"] == "BAAI/bge-m3"
+
+    def test_passes_device_to_bgem3flagmodel(self) -> None:
+        from unittest.mock import patch
+
+        with patch("FlagEmbedding.BGEM3FlagModel") as mock_model_class:
+            BGEEmbedder.from_pretrained(model_name="BAAI/bge-m3", device="cuda")
+            call_kwargs = mock_model_class.call_args[1]
+            assert call_kwargs["device"] == "cuda"
+
+    def test_use_fp16_true_for_cuda(self) -> None:
+        from unittest.mock import patch
+
+        with patch("FlagEmbedding.BGEM3FlagModel") as mock_model_class:
+            BGEEmbedder.from_pretrained(model_name="BAAI/bge-m3", device="cuda")
+            call_kwargs = mock_model_class.call_args[1]
+            assert call_kwargs["use_fp16"] is True
+
+    def test_use_fp16_true_for_mps(self) -> None:
+        from unittest.mock import patch
+
+        with patch("FlagEmbedding.BGEM3FlagModel") as mock_model_class:
+            BGEEmbedder.from_pretrained(model_name="BAAI/bge-m3", device="mps")
+            call_kwargs = mock_model_class.call_args[1]
+            assert call_kwargs["use_fp16"] is True
+
+    def test_use_fp16_false_for_cpu(self) -> None:
+        from unittest.mock import patch
+
+        with patch("FlagEmbedding.BGEM3FlagModel") as mock_model_class:
+            BGEEmbedder.from_pretrained(model_name="BAAI/bge-m3", device="cpu")
+            call_kwargs = mock_model_class.call_args[1]
+            assert call_kwargs["use_fp16"] is False
+
+
+@pytest.mark.unit
 class TestBGEEmbedderProtocolCompliance:
     def test_satisfies_embedder_protocol(self) -> None:
         from src.retrieval.protocols import EmbedderProtocol

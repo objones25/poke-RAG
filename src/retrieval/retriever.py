@@ -47,8 +47,11 @@ class Retriever:
         except Exception as exc:
             raise RetrievalError(f"Embedding failed: {exc}") from exc
 
-        if not embedding.dense or not embedding.sparse:
-            raise EmbeddingError("Embedder returned empty result for query")
+        if len(embedding.dense) != 1 or len(embedding.sparse) != 1:
+            raise EmbeddingError(
+                f"Expected 1 embedding, got dense={len(embedding.dense)}"
+                f" sparse={len(embedding.sparse)}"
+            )
         query_dense = embedding.dense[0]
         query_sparse = embedding.sparse[0]
 

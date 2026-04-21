@@ -23,14 +23,16 @@ def get_pipeline(request: Request) -> RAGPipeline:
     return pipeline
 
 
-def build_pipeline() -> tuple[RAGPipeline, ModelLoader]:
+def build_pipeline() -> tuple[RAGPipeline, ModelLoader, QdrantClient]:
     settings = Settings.from_env()
 
     embedder = BGEEmbedder.from_pretrained(model_name=settings.embed_model, device=settings.device)
     reranker = BGEReranker.from_pretrained(model_name=settings.rerank_model, device=settings.device)
 
-    client = QdrantClient(url=settings.qdrant_url, api_key=settings.qdrant_api_key)
+    api_key_str = None if settings.qdrant_api_key is None else str(settings.qdrant_api_key)
+    client = QdrantClient(url=settings.qdrant_url, api_key=api_key_str)
     vector_store = QdrantVectorStore(client)
+    vector_store.ensure_collections()
     retriever = Retriever(embedder=embedder, vector_store=vector_store, reranker=reranker)
 
     gen_config = GenerationConfig(
@@ -57,4 +59,4 @@ def build_pipeline() -> tuple[RAGPipeline, ModelLoader]:
         loader=loader, prompt_builder=build_prompt, inferencer=inferencer, config=gen_config
     )
 
-    return RAGPipeline(retriever=retriever, generator=generator), loader
+    return RAGPipeline(retriever=retriever, generator=generator), loader, client

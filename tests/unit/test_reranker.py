@@ -74,7 +74,10 @@ class TestBGERerankerRerank:
     def test_passes_query_text_pairs_to_model(self) -> None:
         mock_model = _make_mock_reranker([0.5, 0.3])
         reranker = BGEReranker(mock_model)
-        docs = [make_chunk(text="doc text a", chunk_index=0), make_chunk(text="doc text b", chunk_index=1)]
+        docs = [
+            make_chunk(text="doc text a", chunk_index=0),
+            make_chunk(text="doc text b", chunk_index=1),
+        ]
         reranker.rerank("my query", docs, top_k=2)
         pairs = mock_model.compute_score.call_args[0][0]
         assert ["my query", "doc text a"] in pairs
@@ -114,6 +117,49 @@ class TestBGERerankerRerank:
         assert results[0].entity_name == "Gyarados"
         assert results[0].chunk_index == 3
         assert results[0].original_doc_id == "smogon_42"
+
+
+@pytest.mark.unit
+class TestBGERerankerFromPretrained:
+    def test_passes_model_name_to_flag_reranker(self) -> None:
+        from unittest.mock import patch
+
+        with patch("FlagEmbedding.FlagReranker") as mock_model_class:
+            BGEReranker.from_pretrained(model_name="BAAI/bge-reranker-v2-m3", device="cpu")
+            mock_model_class.assert_called_once()
+            assert mock_model_class.call_args[0][0] == "BAAI/bge-reranker-v2-m3"
+
+    def test_passes_device_to_flag_reranker(self) -> None:
+        from unittest.mock import patch
+
+        with patch("FlagEmbedding.FlagReranker") as mock_model_class:
+            BGEReranker.from_pretrained(model_name="BAAI/bge-reranker-v2-m3", device="mps")
+            call_kwargs = mock_model_class.call_args[1]
+            assert call_kwargs["device"] == "mps"
+
+    def test_use_fp16_true_for_cuda(self) -> None:
+        from unittest.mock import patch
+
+        with patch("FlagEmbedding.FlagReranker") as mock_model_class:
+            BGEReranker.from_pretrained(model_name="BAAI/bge-reranker-v2-m3", device="cuda")
+            call_kwargs = mock_model_class.call_args[1]
+            assert call_kwargs["use_fp16"] is True
+
+    def test_use_fp16_true_for_mps(self) -> None:
+        from unittest.mock import patch
+
+        with patch("FlagEmbedding.FlagReranker") as mock_model_class:
+            BGEReranker.from_pretrained(model_name="BAAI/bge-reranker-v2-m3", device="mps")
+            call_kwargs = mock_model_class.call_args[1]
+            assert call_kwargs["use_fp16"] is True
+
+    def test_use_fp16_false_for_cpu(self) -> None:
+        from unittest.mock import patch
+
+        with patch("FlagEmbedding.FlagReranker") as mock_model_class:
+            BGEReranker.from_pretrained(model_name="BAAI/bge-reranker-v2-m3", device="cpu")
+            call_kwargs = mock_model_class.call_args[1]
+            assert call_kwargs["use_fp16"] is False
 
 
 @pytest.mark.unit

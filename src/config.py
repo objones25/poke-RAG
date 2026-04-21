@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
+
+from pydantic import SecretStr
+
+_LOG = logging.getLogger(__name__)
 
 
 def _detect_device() -> str:
@@ -17,7 +22,7 @@ def _detect_device() -> str:
 @dataclass(frozen=True)
 class Settings:
     qdrant_url: str
-    qdrant_api_key: str | None
+    qdrant_api_key: SecretStr | None
     embed_model: str
     rerank_model: str
     gen_model: str
@@ -32,18 +37,54 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> Settings:
+        try:
+            temperature = float(os.getenv("TEMPERATURE", "0.7"))
+        except ValueError:
+            raise ValueError(
+                f"TEMPERATURE must be a valid float, got: {os.getenv('TEMPERATURE')!r}"
+            ) from None
+
+        try:
+            max_new_tokens = int(os.getenv("MAX_NEW_TOKENS", "512"))
+        except ValueError:
+            raise ValueError(
+                f"MAX_NEW_TOKENS must be a valid int, got: {os.getenv('MAX_NEW_TOKENS')!r}"
+            ) from None
+
+        try:
+            top_p = float(os.getenv("TOP_P", "0.9"))
+        except ValueError:
+            raise ValueError(f"TOP_P must be a valid float, got: {os.getenv('TOP_P')!r}") from None
+
+        try:
+            tokenizer_max_length = int(os.getenv("TOKENIZER_MAX_LENGTH", "8192"))
+        except ValueError:
+            tmax_val = os.getenv("TOKENIZER_MAX_LENGTH")
+            msg = f"TOKENIZER_MAX_LENGTH must be a valid int, got: {tmax_val!r}"
+            raise ValueError(msg) from None
+
+        log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+        valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+        if log_level not in valid_levels:
+            raise ValueError(
+                f"LOG_LEVEL must be one of {valid_levels}, got: {os.getenv('LOG_LEVEL')!r}"
+            )
+
+        device = os.getenv("DEVICE", _detect_device())
+        _LOG.info("Using device: %s", device)
+
         return cls(
             qdrant_url=os.environ["QDRANT_URL"],
-            qdrant_api_key=os.getenv("QDRANT_API_KEY"),
+            qdrant_api_key=SecretStr(api_key) if (api_key := os.getenv("QDRANT_API_KEY")) else None,
             embed_model=os.getenv("EMBED_MODEL", "BAAI/bge-m3"),
             rerank_model=os.getenv("RERANK_MODEL", "BAAI/bge-reranker-v2-m3"),
             gen_model=os.getenv("GEN_MODEL", "google/gemma-2-2b-it"),
-            temperature=float(os.getenv("TEMPERATURE", "0.7")),
-            max_new_tokens=int(os.getenv("MAX_NEW_TOKENS", "512")),
-            top_p=float(os.getenv("TOP_P", "0.9")),
+            temperature=temperature,
+            max_new_tokens=max_new_tokens,
+            top_p=top_p,
             do_sample=os.getenv("DO_SAMPLE", "true").lower() == "true",
-            tokenizer_max_length=int(os.getenv("TOKENIZER_MAX_LENGTH", "8192")),
+            tokenizer_max_length=tokenizer_max_length,
             return_tensors=os.getenv("RETURN_TENSORS", "pt"),
             truncation=os.getenv("TRUNCATION", "true").lower() == "true",
-            device=os.getenv("DEVICE", _detect_device()),
+            device=device,
         )

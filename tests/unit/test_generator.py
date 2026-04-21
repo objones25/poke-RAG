@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.generation.models import GenerationConfig
-from src.types import GenerationResult, RetrievedChunk, Source
+from src.types import GenerationResult
 from tests.conftest import make_chunk as _chunk
 
 _GEMMA_ID = "google/gemma-2-2b-it"
@@ -107,9 +107,7 @@ class TestModelLoader:
         from src.generation.loader import ModelLoader
         from src.generation.models import GenerationConfig
 
-        loader = ModelLoader(
-            config=GenerationConfig(model_id="google/gemma-2-2b-it"), device="cpu"
-        )
+        loader = ModelLoader(config=GenerationConfig(model_id="google/gemma-2-2b-it"), device="cpu")
         with (
             patch(
                 "src.generation.loader.AutoModelForCausalLM.from_pretrained",

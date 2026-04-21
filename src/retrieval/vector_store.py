@@ -140,6 +140,7 @@ class QdrantVectorStore:
         )
 
         chunks: list[RetrievedChunk] = []
+        skipped_count = 0
         for p in response.points:
             try:
                 chunks.append(
@@ -154,7 +155,18 @@ class QdrantVectorStore:
                     )
                 )
             except (KeyError, TypeError, ValueError) as exc:
-                raise VectorIndexError(f"Malformed payload for point {p.id}: {exc}") from exc
+                _LOG.warning("Malformed payload for point %s: %s", p.id, exc)
+                skipped_count += 1
+
+        if not chunks and response.points:
+            raise VectorIndexError(
+                f"Failed to parse any valid results from {len(response.points)} point(s)"
+            )
+
+        if skipped_count > 0:
+            _LOG.warning(
+                "Skipped %d malformed points out of %d total", skipped_count, len(response.points)
+            )
 
         _LOG.debug("Search '%s' → %d result(s)", collection, len(chunks))
         return chunks

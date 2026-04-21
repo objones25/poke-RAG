@@ -15,6 +15,8 @@ def build_prompt(query: str, chunks: tuple[RetrievedChunk, ...]) -> str:
     if not chunks:
         raise ValueError("chunks must not be empty")
 
+    sanitized_query = query.replace("\n", " ")
+
     sorted_chunks = sorted(chunks, key=lambda c: c.score, reverse=True)
 
     context_parts: list[str] = []
@@ -33,6 +35,6 @@ def build_prompt(query: str, chunks: tuple[RetrievedChunk, ...]) -> str:
         f"{_SYSTEM_PROMPT}\n\n"
         f"Context:\n{context_block}\n\n"
         f"{sources_line}\n\n"
-        f"Question: {query}\n\n"
+        f"Question: {sanitized_query}\n\n"
         f"Answer:"
     )

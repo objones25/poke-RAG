@@ -53,11 +53,11 @@ class TestContextAssemblerAssemble:
         second_pos = result.index("second chunk")
         assert first_pos < second_pos
 
-    def test_deduplicates_identical_text(self) -> None:
+    def test_deduplicates_identical_chunk_identity(self) -> None:
         assembler = ContextAssembler()
         chunks = [
-            _make_chunk(text="duplicate text", score=0.9, original_doc_id="doc_0"),
-            _make_chunk(text="duplicate text", score=0.5, original_doc_id="doc_1", chunk_index=1),
+            _make_chunk(text="duplicate text", score=0.9, original_doc_id="doc_0", chunk_index=0),
+            _make_chunk(text="duplicate text", score=0.5, original_doc_id="doc_0", chunk_index=0),
         ]
         result = assembler.assemble(chunks)
         assert result.count("duplicate text") == 1
@@ -65,8 +65,12 @@ class TestContextAssemblerAssemble:
     def test_deduplication_keeps_highest_score(self) -> None:
         assembler = ContextAssembler()
         chunks = [
-            _make_chunk(text="dup", score=0.3, source="pokeapi", original_doc_id="doc_0"),
-            _make_chunk(text="dup", score=0.9, source="smogon", original_doc_id="doc_1", chunk_index=1),
+            _make_chunk(
+                text="dup", score=0.3, source="pokeapi", original_doc_id="doc_0", chunk_index=0
+            ),
+            _make_chunk(
+                text="dup", score=0.9, source="smogon", original_doc_id="doc_0", chunk_index=0
+            ),
         ]
         result = assembler.assemble(chunks)
         assert "smogon" in result
@@ -75,9 +79,9 @@ class TestContextAssemblerAssemble:
     def test_deduplication_emits_winner_once(self) -> None:
         assembler = ContextAssembler()
         chunks = [
-            _make_chunk(text="shared", score=0.5, original_doc_id="doc_0"),
-            _make_chunk(text="shared", score=0.8, original_doc_id="doc_1", chunk_index=1),
-            _make_chunk(text="shared", score=0.2, original_doc_id="doc_2", chunk_index=2),
+            _make_chunk(text="shared", score=0.5, original_doc_id="doc_0", chunk_index=0),
+            _make_chunk(text="shared", score=0.8, original_doc_id="doc_0", chunk_index=0),
+            _make_chunk(text="shared", score=0.2, original_doc_id="doc_0", chunk_index=0),
         ]
         result = assembler.assemble(chunks)
         assert result.count("shared") == 1
@@ -135,7 +139,8 @@ class TestContextAssemblerDefaults:
     def test_default_max_tokens_is_large(self) -> None:
         assembler = ContextAssembler()
         long_chunks = [
-            _make_chunk(text="word " * 100, original_doc_id=f"doc_{i}", chunk_index=i) for i in range(5)
+            _make_chunk(text="word " * 100, original_doc_id=f"doc_{i}", chunk_index=i)
+            for i in range(5)
         ]
         result = assembler.assemble(long_chunks)
         assert len(result) > 0

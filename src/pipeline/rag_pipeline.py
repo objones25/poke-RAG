@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import statistics
+
 from src.generation.protocols import GeneratorProtocol
 from src.pipeline.types import PipelineResult
 from src.retrieval.protocols import RetrieverProtocol
@@ -39,12 +41,16 @@ class RAGPipeline:
 
         gen_result = self._generator.generate(query, chunks)
 
-        sources_used: tuple[Source, ...] = tuple(sorted({c.source for c in chunks}))
+        # Compute confidence score as mean of chunk scores
+        confidence_score: float | None = (
+            statistics.mean(c.score for c in chunks) if chunks else None
+        )
 
         return PipelineResult(
             answer=gen_result.answer,
-            sources_used=sources_used,
-            num_chunks_used=len(chunks),
+            sources_used=gen_result.sources_used,
+            num_chunks_used=gen_result.num_chunks_used,
             model_name=gen_result.model_name,
             query=query,
+            confidence_score=confidence_score,
         )

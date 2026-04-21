@@ -37,16 +37,18 @@ class ContextAssembler:
 
         seen: dict[str, RetrievedChunk] = {}
         for chunk in chunks:
-            existing = seen.get(chunk.text)
+            key = f"{chunk.original_doc_id}:{chunk.chunk_index}"
+            existing = seen.get(key)
             if existing is None or chunk.score > existing.score:
-                seen[chunk.text] = chunk
+                seen[key] = chunk
 
         emitted: set[str] = set()
         ordered: list[RetrievedChunk] = []
         for chunk in chunks:
-            winner = seen[chunk.text]
-            if winner.text not in emitted:
-                emitted.add(winner.text)
+            key = f"{chunk.original_doc_id}:{chunk.chunk_index}"
+            winner = seen[key]
+            if key not in emitted:
+                emitted.add(key)
                 ordered.append(winner)
 
         formatted: list[str] = []

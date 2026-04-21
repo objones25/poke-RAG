@@ -77,7 +77,10 @@ class TestEnsureCollectionsIntegration:
         mock_client = MagicMock()
         # Make create_collection raise 409 (already exists)
         unexpected_resp = UnexpectedResponse(
-            status_code=409, reason_phrase="Conflict", content=b"", headers={}  # type: ignore[arg-type]
+            status_code=409,
+            reason_phrase="Conflict",
+            content=b"",
+            headers={},  # type: ignore[arg-type]
         )
         mock_client.create_collection.side_effect = unexpected_resp
         store = QdrantVectorStore(mock_client)
@@ -468,8 +471,8 @@ class TestSearchIntegration:
         assert len(results) == 1
         assert results[0].entity_type == "pokemon"
 
-    def test_missing_text_key_raises_vector_index_error(self) -> None:
-        """Point payload without 'text' key raises VectorIndexError."""
+    def test_missing_text_key_raises_when_all_invalid(self) -> None:
+        """Point payload without 'text' key raises VectorIndexError when all points malformed."""
         mock_client = MagicMock()
 
         mock_point = MagicMock()
@@ -490,11 +493,11 @@ class TestSearchIntegration:
 
         store = QdrantVectorStore(mock_client)
 
-        with pytest.raises(VectorIndexError, match="Malformed payload"):
+        with pytest.raises(VectorIndexError, match="Failed to parse"):
             store.search("pokeapi", [0.1] * 1024, {5: 0.8}, top_k=5)
 
-    def test_missing_chunk_index_key_raises_vector_index_error(self) -> None:
-        """Point payload without 'chunk_index' key raises VectorIndexError."""
+    def test_missing_chunk_index_key_raises_when_all_invalid(self) -> None:
+        """Point payload without 'chunk_index' raises VectorIndexError when all points malformed."""
         mock_client = MagicMock()
 
         mock_point = MagicMock()
@@ -515,7 +518,7 @@ class TestSearchIntegration:
 
         store = QdrantVectorStore(mock_client)
 
-        with pytest.raises(VectorIndexError, match="Malformed payload"):
+        with pytest.raises(VectorIndexError, match="Failed to parse"):
             store.search("pokeapi", [0.1] * 1024, {5: 0.8}, top_k=5)
 
     def test_multiple_results_returned(self) -> None:

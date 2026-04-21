@@ -63,7 +63,7 @@ class TestBuildPromptContent:
             _chunk("Text B.", score=0.7, source="bulbapedia", chunk_index=1),
         )
         prompt = build_prompt("Question?", chunks)
-        sources_line = next(l for l in prompt.splitlines() if l.startswith("Sources:"))
+        sources_line = next(line for line in prompt.splitlines() if line.startswith("Sources:"))
         assert sources_line.lower().count("bulbapedia") == 1
 
     def test_multiple_chunks_highest_score_appears_first(self) -> None:

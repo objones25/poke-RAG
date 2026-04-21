@@ -10,13 +10,11 @@ from qdrant_client.models import Fusion, FusionQuery, SparseVector
 from src.retrieval.types import EmbeddingOutput
 from src.retrieval.vector_store import QdrantVectorStore
 from src.types import RetrievedChunk, VectorIndexError
+from tests.conftest import make_chunk as _make_chunk
 
 
 def _make_client() -> MagicMock:
     return MagicMock()
-
-
-from tests.conftest import make_chunk as _make_chunk
 
 
 def _make_embeddings(n: int = 1, dense_dim: int = 1024) -> EmbeddingOutput:
@@ -88,7 +86,9 @@ class TestUpsert:
     def test_payload_contains_metadata(self) -> None:
         client = _make_client()
         store = QdrantVectorStore(client)
-        chunk = _make_chunk(source="pokeapi", entity_name="Ivysaur", chunk_index=2, original_doc_id="d_1")
+        chunk = _make_chunk(
+            source="pokeapi", entity_name="Ivysaur", chunk_index=2, original_doc_id="d_1"
+        )
         store.upsert("pokeapi", [chunk], _make_embeddings(n=1))
         payload = client.upsert.call_args[1]["points"][0].payload
         assert payload["source"] == "pokeapi"
@@ -236,9 +236,23 @@ class TestSearch:
         assert isinstance(sparse_pf.query, SparseVector)
         assert set(sparse_pf.query.indices) == {10, 20}
 
-    def test_malformed_payload_raises_vector_index_error(self) -> None:
+    def test_malformed_payload_skipped_when_other_valid_results_exist(self) -> None:
         client = _make_client()
         bad_point = MagicMock()
+        bad_point.score = 0.8
+        bad_point.id = "bad_id"
+        bad_point.payload = {"source": "pokeapi"}  # missing "text" and others
+        good_point = self._make_scored_point("Valid text", 0.9)
+        client.query_points.return_value.points = [bad_point, good_point]
+        store = QdrantVectorStore(client)
+        results = store.search("pokeapi", [0.1] * 1024, {}, top_k=1)
+        assert len(results) == 1
+        assert results[0].text == "Valid text"
+
+    def test_malformed_payload_raises_when_all_invalid(self) -> None:
+        client = _make_client()
+        bad_point = MagicMock()
+        bad_point.id = "bad_id"
         bad_point.score = 0.8
         bad_point.payload = {"source": "pokeapi"}  # missing "text" and others
         client.query_points.return_value.points = [bad_point]

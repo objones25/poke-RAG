@@ -219,6 +219,43 @@ class TestRetrieverRetrieve:
         result = retriever.retrieve("query")
         assert isinstance(result.documents, tuple)
 
+    def test_raises_embedding_error_when_embedder_returns_empty_dense(self) -> None:
+        embedder = MagicMock()
+        embedder.encode.return_value = EmbeddingOutput(dense=[], sparse=[])
+        retriever = Retriever(
+            embedder=embedder,
+            vector_store=_make_vector_store(),
+            reranker=_make_reranker(),
+        )
+        from src.types import EmbeddingError
+
+        with pytest.raises(EmbeddingError):
+            retriever.retrieve("query")
+
+    def test_raises_embedding_error_when_embedder_returns_empty_sparse(self) -> None:
+        embedder = MagicMock()
+        embedder.encode.return_value = EmbeddingOutput(dense=[[0.1] * 1024], sparse=[])
+        retriever = Retriever(
+            embedder=embedder,
+            vector_store=_make_vector_store(),
+            reranker=_make_reranker(),
+        )
+        from src.types import EmbeddingError
+
+        with pytest.raises(EmbeddingError):
+            retriever.retrieve("query")
+
+    def test_reranker_exception_propagates_as_retrieval_error(self) -> None:
+        reranker = MagicMock()
+        reranker.rerank.side_effect = RuntimeError("reranker crashed")
+        retriever = Retriever(
+            embedder=_make_embedder(),
+            vector_store=_make_vector_store(),
+            reranker=reranker,
+        )
+        with pytest.raises(RetrievalError):
+            retriever.retrieve("query")
+
 
 @pytest.mark.unit
 class TestRetrieverProtocolCompliance:

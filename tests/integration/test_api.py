@@ -17,6 +17,7 @@ def _make_result(**overrides: object) -> PipelineResult:
         "num_chunks_used": 3,
         "model_name": "google/gemma-2-2b-it",
         "query": "What type is Pikachu?",
+        "confidence_score": None,
     }
     defaults.update(overrides)
     return PipelineResult(**defaults)  # type: ignore[arg-type]
@@ -26,12 +27,15 @@ def _make_result(**overrides: object) -> PipelineResult:
 def mock_pipeline(mocker):
     pipeline = mocker.MagicMock()
     loader = mocker.MagicMock()
-    mocker.patch("src.api.app.build_pipeline", return_value=(pipeline, loader))
+    mock_qdrant_client = mocker.MagicMock()
+    mocker.patch("src.api.app.build_pipeline", return_value=(pipeline, loader, mock_qdrant_client))
     return pipeline
 
 
 @pytest.fixture()
-def client(mock_pipeline):
+def client(mock_pipeline, monkeypatch):
+    # Disable rate limiting for integration tests to avoid flaky test behavior
+    monkeypatch.setenv("RATE_LIMIT_ENABLED", "false")
     with TestClient(app) as c:
         yield c
 
@@ -50,7 +54,7 @@ class TestAPIResponseFormat:
     def test_503_response_has_detail_key(self, client, mock_pipeline) -> None:
         mock_pipeline.query.side_effect = RetrievalError("index unavailable")
         response = client.post("/query", json={"query": "Pikachu?"})
-        assert "detail" in response.json()
+        assert response.json()["detail"] == "Retrieval service unavailable"
 
     def test_422_pydantic_error_is_json(self, client) -> None:
         response = client.post("/query", json={"query": ""})
@@ -97,3 +101,8 @@ class TestQueryNormalisation:
         mock_pipeline.query.side_effect = ValueError("query must not be empty or whitespace-only")
         response = client.post("/query", json={"query": "   "})
         assert response.status_code == 422
+
+    def test_confidence_score_in_response(self, client, mock_pipeline) -> None:
+        mock_pipeline.query.return_value = _make_result(confidence_score=0.87)
+        response = client.post("/query", json={"query": "What type is Pikachu?"}).json()
+        assert response["confidence_score"] == 0.87

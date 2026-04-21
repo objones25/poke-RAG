@@ -316,9 +316,10 @@ class TestBGEEmbedderFromPretrainedIntegration:
     def test_from_pretrained_initialization_suppresses_warnings(self) -> None:
         """Verify that from_pretrained suppresses the fast tokenizer warning."""
         mock_model_instance = MagicMock()
-        with patch("FlagEmbedding.BGEM3FlagModel", return_value=mock_model_instance), patch(
-            "warnings.filterwarnings"
-        ) as mock_warnings:
+        with (
+            patch("FlagEmbedding.BGEM3FlagModel", return_value=mock_model_instance),
+            patch("warnings.filterwarnings") as mock_warnings,
+        ):
             BGEEmbedder.from_pretrained(model_name="BAAI/bge-m3", device="cpu")
             # Verify that filterwarnings was called to ignore fast tokenizer warning
             mock_warnings.assert_called()
