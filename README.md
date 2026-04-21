@@ -59,7 +59,7 @@ Augmented variants (`*_aug.txt`) are paraphrased rewrites for training diversity
 ### 1. Clone and Install
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/objones25/poke-RAG.git
 cd poke-RAG
 
 # Install all dependencies (core + API + dev tools)

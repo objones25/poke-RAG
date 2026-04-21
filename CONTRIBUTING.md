@@ -11,8 +11,8 @@ For GPU work (fine-tuning, E2E tests): a CUDA-capable GPU locally, or a RunPod i
 ## Local setup
 
 ```bash
-git clone <repo-url>
-cd <repo>
+git clone https://github.com/objones25/poke-RAG.git
+cd poke-RAG
 
 # Install all dependency groups
 uv sync --all-extras
