@@ -75,7 +75,9 @@ jobs:
         run: uv tool install pip-audit
 
       - name: Export dependencies
-        run: uv export --no-dev --format requirements-txt > requirements-audit.txt
+        run: |
+          echo '{"dependencies": []}' > pip-audit-report.json
+          uv export --no-dev --no-emit-project --format requirements-txt > requirements-audit.txt
 
       - name: Run pip-audit
         run: |

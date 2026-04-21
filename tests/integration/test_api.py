@@ -65,7 +65,7 @@ class TestAPIResponseFormat:
         mock_pipeline.query.side_effect = ValueError("bad pipeline input")
         response = client.post("/query", json={"query": "valid query"})
         assert response.status_code == 422
-        assert "bad pipeline input" in response.json()["detail"]
+        assert response.json()["detail"] == "Invalid input"
 
 
 @pytest.mark.integration

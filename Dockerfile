@@ -6,7 +6,7 @@ WORKDIR /app
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 # Copy dependency manifest first for layer caching
-COPY pyproject.toml uv.lock ./
+COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
 
 # Install core + api deps as a non-editable package into .venv
