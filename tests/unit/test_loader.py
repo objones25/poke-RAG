@@ -347,3 +347,138 @@ class TestModelLoaderUnload:
             config=GenerationConfig(model_id="google/gemma-4-E4B-it"), device="cpu"
         )
         loader.unload()
+
+
+@pytest.mark.unit
+class TestModelLoaderLoraAdapter:
+    def test_applies_lora_from_local_path_when_exists(self) -> None:
+        from src.generation.loader import ModelLoader
+        from src.generation.models import GenerationConfig
+
+        fake_model = MagicMock()
+        fake_processor = MagicMock()
+        fake_peft_model = MagicMock()
+        mock_path_cls = MagicMock()
+        mock_path_cls.return_value.exists.return_value = True
+
+        with (
+            patch(
+                "src.generation.loader.AutoModelForImageTextToText.from_pretrained",
+                return_value=fake_model,
+            ),
+            patch(
+                "src.generation.loader.AutoProcessor.from_pretrained",
+                return_value=fake_processor,
+            ),
+            patch("src.generation.loader.Path", mock_path_cls),
+            patch(
+                "src.generation.loader.PeftModel.from_pretrained",
+                return_value=fake_peft_model,
+            ) as mock_peft,
+        ):
+            loader = ModelLoader(
+                config=GenerationConfig(model_id="google/gemma-4-E4B-it"),
+                device="cpu",
+                lora_adapter_path="models/pokesage-lora",
+            )
+            loader.load()
+
+        mock_peft.assert_called_once()
+        assert mock_peft.call_args[0][0] is fake_model
+        assert mock_peft.call_args[0][1] == "models/pokesage-lora"
+
+    def test_falls_back_to_hf_hub_when_local_missing(self) -> None:
+        from src.generation.loader import ModelLoader
+        from src.generation.models import GenerationConfig
+
+        fake_model = MagicMock()
+        fake_processor = MagicMock()
+        fake_peft_model = MagicMock()
+        mock_path_cls = MagicMock()
+        mock_path_cls.return_value.exists.return_value = False
+
+        with (
+            patch(
+                "src.generation.loader.AutoModelForImageTextToText.from_pretrained",
+                return_value=fake_model,
+            ),
+            patch(
+                "src.generation.loader.AutoProcessor.from_pretrained",
+                return_value=fake_processor,
+            ),
+            patch("src.generation.loader.Path", mock_path_cls),
+            patch(
+                "src.generation.loader.PeftModel.from_pretrained",
+                return_value=fake_peft_model,
+            ) as mock_peft,
+        ):
+            loader = ModelLoader(
+                config=GenerationConfig(model_id="google/gemma-4-E4B-it"),
+                device="cpu",
+                lora_adapter_path="models/pokesage-lora",
+            )
+            loader.load()
+
+        mock_peft.assert_called_once()
+        assert mock_peft.call_args[0][1] == "objones25/pokesage-lora"
+
+    def test_raises_when_adapter_unloadable(self) -> None:
+        from src.generation.loader import ModelLoader
+        from src.generation.models import GenerationConfig
+
+        fake_model = MagicMock()
+        fake_processor = MagicMock()
+        mock_path_cls = MagicMock()
+        mock_path_cls.return_value.exists.return_value = False
+
+        with (
+            patch(
+                "src.generation.loader.AutoModelForImageTextToText.from_pretrained",
+                return_value=fake_model,
+            ),
+            patch(
+                "src.generation.loader.AutoProcessor.from_pretrained",
+                return_value=fake_processor,
+            ),
+            patch("src.generation.loader.Path", mock_path_cls),
+            patch(
+                "src.generation.loader.PeftModel.from_pretrained",
+                side_effect=OSError("adapter not found"),
+            ),
+        ):
+            loader = ModelLoader(
+                config=GenerationConfig(model_id="google/gemma-4-E4B-it"),
+                device="cpu",
+                lora_adapter_path="models/pokesage-lora",
+            )
+            with pytest.raises(RuntimeError, match="LoRA"):
+                loader.load()
+
+    def test_skips_lora_when_path_is_none(self) -> None:
+        from src.generation.loader import ModelLoader
+        from src.generation.models import GenerationConfig
+
+        fake_model = MagicMock()
+        fake_processor = MagicMock()
+
+        with (
+            patch(
+                "src.generation.loader.AutoModelForImageTextToText.from_pretrained",
+                return_value=fake_model,
+            ),
+            patch(
+                "src.generation.loader.AutoProcessor.from_pretrained",
+                return_value=fake_processor,
+            ),
+            patch(
+                "src.generation.loader.PeftModel.from_pretrained",
+            ) as mock_peft,
+        ):
+            loader = ModelLoader(
+                config=GenerationConfig(model_id="google/gemma-4-E4B-it"),
+                device="cpu",
+                lora_adapter_path=None,
+            )
+            loader.load()
+
+        mock_peft.assert_not_called()

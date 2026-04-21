@@ -2377,6 +2377,7 @@ dependencies = [
     { name = "flagembedding" },
     { name = "lxml" },
     { name = "numpy" },
+    { name = "peft" },
     { name = "pillow" },
     { name = "pydantic" },
     { name = "python-dotenv" },
@@ -2404,7 +2405,6 @@ gen = [
 train = [
     { name = "bitsandbytes" },
     { name = "datasets" },
-    { name = "peft" },
     { name = "trl" },
     { name = "unsloth" },
 ]
@@ -2425,7 +2425,7 @@ requires-dist = [
     { name = "lxml", specifier = ">=6.1.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.20.1" },
     { name = "numpy", specifier = ">=2.4.4" },
-    { name = "peft", marker = "extra == 'train'" },
+    { name = "peft", specifier = ">=0.14.0" },
     { name = "pillow", specifier = ">=12.2.0" },
     { name = "pydantic", specifier = ">=2.13.3" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.0.3" },

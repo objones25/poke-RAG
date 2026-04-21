@@ -34,6 +34,7 @@ class Settings:
     return_tensors: str
     truncation: bool
     device: str
+    lora_adapter_path: str | None = None
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -96,4 +97,5 @@ class Settings:
             return_tensors=os.getenv("RETURN_TENSORS", "pt"),
             truncation=os.getenv("TRUNCATION", "true").lower() == "true",
             device=device,
+            lora_adapter_path=os.getenv("LORA_ADAPTER_PATH"),
         )

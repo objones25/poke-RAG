@@ -44,7 +44,11 @@ def build_pipeline() -> tuple[RAGPipeline, ModelLoader, QdrantClient]:
         top_p=settings.top_p,
         do_sample=settings.do_sample,
     )
-    loader = ModelLoader(config=gen_config, device=settings.device)
+    loader = ModelLoader(
+        config=gen_config,
+        device=settings.device,
+        lora_adapter_path=settings.lora_adapter_path,
+    )
     loader.load()
     inferencer = Inferencer(
         model=loader.get_model(),

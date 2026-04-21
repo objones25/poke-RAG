@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
 import torch
+from peft import PeftModel
 from transformers import AutoModelForImageTextToText, AutoProcessor, PreTrainedModel
 
 from src.generation.models import GenerationConfig
@@ -19,11 +21,20 @@ def _dtype_for_device(device: str) -> torch.dtype:
     return torch.float32
 
 
+_HF_FALLBACK_ADAPTER = "objones25/pokesage-lora"
+
+
 class ModelLoader:
-    def __init__(self, config: GenerationConfig, device: str) -> None:
+    def __init__(
+        self,
+        config: GenerationConfig,
+        device: str,
+        lora_adapter_path: str | None = None,
+    ) -> None:
         self._config = config
         self._device = device
         self._model_id = self._config.model_id
+        self._lora_adapter_path = lora_adapter_path
         self._model: PreTrainedModel | None = None
         self._processor: Any | None = None
 
@@ -43,19 +54,34 @@ class ModelLoader:
             # blindly tries to torch.empty() the full model size (~15 GiB), which MPS
             # rejects. The warmup is skipped when device_map is None, so load on CPU
             # then move to MPS — the documented pattern for non-CUDA devices.
-            self._model = AutoModelForImageTextToText.from_pretrained(
+            raw_model: PreTrainedModel = AutoModelForImageTextToText.from_pretrained(
                 self._model_id,
                 dtype=dtype,
                 attn_implementation="sdpa",
             ).to(self._device)  # type: ignore[arg-type]
         else:
-            self._model = AutoModelForImageTextToText.from_pretrained(
+            raw_model = AutoModelForImageTextToText.from_pretrained(
                 self._model_id,
                 device_map="auto",
                 dtype=dtype,
                 attn_implementation="sdpa",
             )
+        self._model = self._apply_lora_adapter(raw_model)
         _LOG.info("Model '%s' ready", self._model_id)
+
+    def _apply_lora_adapter(self, model: PreTrainedModel) -> PreTrainedModel:
+        if self._lora_adapter_path is None:
+            return model
+        source = (
+            self._lora_adapter_path
+            if Path(self._lora_adapter_path).exists()
+            else _HF_FALLBACK_ADAPTER
+        )
+        _LOG.info("Loading LoRA adapter from '%s'", source)
+        try:
+            return PeftModel.from_pretrained(model, source)  # type: ignore[return-value]
+        except Exception as exc:
+            raise RuntimeError(f"Failed to load LoRA adapter (tried '{source}'): {exc}") from exc
 
     def get_model(self) -> PreTrainedModel:
         if self._model is None:

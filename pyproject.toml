@@ -13,6 +13,7 @@ dependencies = [
     "pydantic>=2.13.3",
     "python-dotenv>=1.0.0",
     "qdrant-client>=1.17.1",
+    "peft>=0.14.0",
     "torch>=2.11.0",
     "torchvision>=0.26.0",
     "transformers>=5.5.0,<6.0.0",
@@ -34,7 +35,6 @@ train = [
     # RunPod / CUDA only — do not install locally
     "unsloth",
     "trl",
-    "peft",
     "bitsandbytes",
     "datasets",
 ]

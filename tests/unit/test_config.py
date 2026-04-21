@@ -316,6 +316,23 @@ class TestSettingsFromEnv:
         assert hasattr(settings, "return_tensors")
         assert hasattr(settings, "truncation")
         assert hasattr(settings, "device")
+        assert hasattr(settings, "lora_adapter_path")
+
+    def test_lora_adapter_path_from_env_variable(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("LORA_ADAPTER_PATH", "models/pokesage-lora")
+        settings = Settings.from_env()
+        assert settings.lora_adapter_path == "models/pokesage-lora"
+
+    def test_lora_adapter_path_defaults_to_none(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.delenv("LORA_ADAPTER_PATH", raising=False)
+        settings = Settings.from_env()
+        assert settings.lora_adapter_path is None
 
 
 @pytest.mark.unit
