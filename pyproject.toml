@@ -37,6 +37,9 @@ train = [
     "bitsandbytes",
     "datasets",
 ]
+gen = [
+    "google-genai>=1.0.0",
+]
 
 [tool.uv]
 package = true
@@ -54,6 +57,7 @@ dev = [
 packages = ["src"]
 
 [tool.pytest.ini_options]
+pythonpath = ["."]
 markers = [
     "unit: no I/O, no model",
     "integration: real I/O against fixture data",
