@@ -13,32 +13,36 @@ class TestDetectDevice:
     def test_returns_cuda_when_available(self) -> None:
         from src.config import _detect_device
 
-        with patch("torch.cuda.is_available", return_value=True), patch(
-            "torch.backends.mps.is_available", return_value=False
+        with (
+            patch("torch.cuda.is_available", return_value=True),
+            patch("torch.backends.mps.is_available", return_value=False),
         ):
             assert _detect_device() == "cuda"
 
     def test_returns_mps_when_cuda_unavailable_but_mps_available(self) -> None:
         from src.config import _detect_device
 
-        with patch("torch.cuda.is_available", return_value=False), patch(
-            "torch.backends.mps.is_available", return_value=True
+        with (
+            patch("torch.cuda.is_available", return_value=False),
+            patch("torch.backends.mps.is_available", return_value=True),
         ):
             assert _detect_device() == "mps"
 
     def test_returns_cpu_when_neither_cuda_nor_mps_available(self) -> None:
         from src.config import _detect_device
 
-        with patch("torch.cuda.is_available", return_value=False), patch(
-            "torch.backends.mps.is_available", return_value=False
+        with (
+            patch("torch.cuda.is_available", return_value=False),
+            patch("torch.backends.mps.is_available", return_value=False),
         ):
             assert _detect_device() == "cpu"
 
     def test_cuda_takes_precedence_over_mps(self) -> None:
         from src.config import _detect_device
 
-        with patch("torch.cuda.is_available", return_value=True), patch(
-            "torch.backends.mps.is_available", return_value=True
+        with (
+            patch("torch.cuda.is_available", return_value=True),
+            patch("torch.backends.mps.is_available", return_value=True),
         ):
             assert _detect_device() == "cuda"
 

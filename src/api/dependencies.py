@@ -30,8 +30,7 @@ def build_pipeline() -> tuple[RAGPipeline, ModelLoader, QdrantClient]:
     reranker = BGEReranker.from_pretrained(model_name=settings.rerank_model, device=settings.device)
 
     api_key_str = (
-        None if settings.qdrant_api_key is None
-        else settings.qdrant_api_key.get_secret_value()
+        None if settings.qdrant_api_key is None else settings.qdrant_api_key.get_secret_value()
     )
     client = QdrantClient(url=settings.qdrant_url, api_key=api_key_str)
     vector_store = QdrantVectorStore(client)

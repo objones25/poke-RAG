@@ -85,7 +85,11 @@ jobs:
             -r requirements-audit.txt \
             --desc \
             --format json \
-            --output pip-audit-report.json || true
+            --output pip-audit-report.json \
+            --ignore-vuln CVE-2026-1839 \
+            || true
+          # CVE-2026-1839: affects transformers Trainer class (RunPod-only train group);
+          # not reachable from production API code. Suppress until upstream patch ships.
 
       - name: Check for vulnerabilities
         run: |

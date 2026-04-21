@@ -65,10 +65,14 @@ class TestAppLifespan:
         """If build_pipeline raises, RuntimeError with 'Failed to initialize' should be raised."""
         from src.api.app import app
 
-        with patch(
-            "src.api.app.build_pipeline",
-            side_effect=ValueError("Config missing"),
-        ), pytest.raises(RuntimeError, match="Failed to initialize"), TestClient(app):
+        with (
+            patch(
+                "src.api.app.build_pipeline",
+                side_effect=ValueError("Config missing"),
+            ),
+            pytest.raises(RuntimeError, match="Failed to initialize"),
+            TestClient(app),
+        ):
             pass
 
     def test_health_endpoint_accessible_after_startup(self, mocker) -> None:
@@ -92,8 +96,12 @@ class TestAppLifespan:
         """If pipeline initialization fails, query endpoint should return 500."""
         from src.api.app import app
 
-        with patch(
-            "src.api.app.build_pipeline",
-            side_effect=RuntimeError("Build failed"),
-        ), pytest.raises(RuntimeError), TestClient(app):
+        with (
+            patch(
+                "src.api.app.build_pipeline",
+                side_effect=RuntimeError("Build failed"),
+            ),
+            pytest.raises(RuntimeError),
+            TestClient(app),
+        ):
             pass
