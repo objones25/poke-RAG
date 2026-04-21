@@ -43,8 +43,8 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--model",
-        default="unsloth/gemma-4-E4B-it-bnb-4bit",
-        help="HuggingFace model ID or local path (default: unsloth/gemma-4-E4B-it-bnb-4bit)",
+        default="google/gemma-4-E4B-it",
+        help="HuggingFace model ID or local path (default: google/gemma-4-E4B-it)",
     )
     p.add_argument(
         "--data",

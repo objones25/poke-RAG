@@ -1,18 +1,22 @@
 #!/usr/bin/env bash
 # RunPod environment setup for Gemma-4 QLoRA SFT.
 #
-# What this does:
-#   1. Checks CUDA version and GPU compute capability (must be >= 8.0)
-#   2. Installs Unsloth from GitHub main (NOT PyPI — PyPI build lacks Gemma 4 fix)
-#   3. Installs all other training deps at pinned minimum versions
-#   4. Runs a smoke test to confirm Unsloth loads without error
+# READ RUNPOD_SETUP_NOTES.md BEFORE EDITING THIS FILE.
+#
+# Key facts learned the hard way:
+#   - torchao >= 0.13.0 needs torch 2.7.0+ (register_constant in pytree)
+#   - torch 2.7.0 does NOT exist for cu124 — use cu126 index instead
+#   - NVIDIA driver CUDA version (nvidia-smi) governs wheel selection, not nvcc
+#   - RunPod H100 driver 580+ supports CUDA 13.0 → cu126 wheels work
+#   - setuptools must be 80.9.0 and packaging >= 24.2 before building Unsloth
+#   - torch/torchvision/torchaudio must always be upgraded together
+#   - Unsloth must be installed from GitHub main (PyPI lacks Gemma 4 fix)
 #
 # Usage:
 #   bash scripts/training/runpod_setup.sh
 #
 # Verified working on:
-#   - A100 80GB SXM4 (sm_80) + CUDA 12.1 / 12.4
-#   - H100 80GB SXM5 (sm_90) + CUDA 12.4
+#   - H100 80GB HBM3 (sm_90) + CUDA toolkit 12.4 + driver 580 (CUDA 13.0)
 
 set -euo pipefail
 
@@ -38,21 +42,11 @@ fi
 CUDA_VERSION=$(nvcc --version | grep -oP 'release \K[0-9]+\.[0-9]+')
 CUDA_MAJOR=$(echo "$CUDA_VERSION" | cut -d. -f1)
 CUDA_MINOR=$(echo "$CUDA_VERSION" | cut -d. -f2)
-info "CUDA version: ${CUDA_VERSION}"
+info "CUDA toolkit version: ${CUDA_VERSION}"
 
 if [[ "$CUDA_MAJOR" -lt 12 ]]; then
     die "CUDA ${CUDA_VERSION} detected. Unsloth Ampere builds require CUDA >= 12.x."
 fi
-
-# Map CUDA minor → wheel suffix used by Unsloth extras
-if [[ "$CUDA_MAJOR" -eq 12 && "$CUDA_MINOR" -le 1 ]]; then
-    UNSLOTH_CUDA="cu121-ampere"
-elif [[ "$CUDA_MAJOR" -eq 12 && "$CUDA_MINOR" -le 3 ]]; then
-    UNSLOTH_CUDA="cu123-ampere"
-else
-    UNSLOTH_CUDA="cu124-ampere"   # 12.4 and newer
-fi
-info "Unsloth CUDA variant: ${UNSLOTH_CUDA}"
 
 # ---------------------------------------------------------------------------
 # 2. GPU compute capability check
@@ -86,56 +80,73 @@ if [[ "$COMPUTE_INT" -lt 80 ]]; then
 Need A100 (sm_80) or H100 (sm_90) for bfloat16 and efficient QLoRA."
 fi
 
-# bfloat16 sanity
 info "GPU passes compute capability check (>= 8.0 required for bfloat16 + efficient CUDA kernels)"
 
 # ---------------------------------------------------------------------------
-# 3. Upgrade pip + PyTorch
+# 3. Upgrade pip + setuptools + packaging
 # ---------------------------------------------------------------------------
 info "Upgrading pip …"
 python3 -m pip install --upgrade pip --quiet
 
-# unsloth_zoo calls torch._inductor.config which was added in PyTorch 2.5.
-# RunPod base images sometimes ship 2.4.x — upgrade to avoid AttributeError.
-# torch/torchvision/torchaudio must be upgraded together — mismatched versions
-# cause import errors. Pinned to 2.6.0/0.21.0/2.6.0 (latest cu124 release per
-# https://pytorch.org/get-started/previous-versions/).
+# Unsloth pyproject.toml requires setuptools==80.9.0 for its build backend.
+# setuptools 80.9.0 also requires packaging>=24.2 to parse SPDX license strings.
+# These must be installed before Unsloth — order matters.
+info "Pinning setuptools==80.9.0 and packaging>=24.2 (required by Unsloth build) …"
+pip install "setuptools==80.9.0" "packaging>=24.2" --quiet
+
+# ---------------------------------------------------------------------------
+# 4. Upgrade PyTorch to 2.7.0 via cu126
+# ---------------------------------------------------------------------------
+# CRITICAL: torch 2.7.0 does NOT exist on the cu124 index.
+# torchao >= 0.13.0 (required by unsloth_zoo) calls
+# torch.utils._pytree.register_constant which was added in torch 2.7.0.
+# The H100 driver (580+) supports CUDA 13.0, so cu126 wheels are compatible
+# even though the installed toolkit reports 12.4.
+# torch/torchvision/torchaudio MUST be upgraded together — mismatched versions
+# cause import errors.
 TORCH_VERSION=$(python3 -c "import torch; print(torch.__version__.split('+')[0])" 2>/dev/null || echo "0.0.0")
 TORCH_MINOR=$(echo "$TORCH_VERSION" | cut -d. -f2)
-if [[ "$(echo "$TORCH_VERSION" | cut -d. -f1)" -lt 2 ]] || [[ "$(echo "$TORCH_VERSION" | cut -d. -f1)" -eq 2 && "$TORCH_MINOR" -lt 5 ]]; then
-    warn "PyTorch ${TORCH_VERSION} detected — upgrading torch + torchvision + torchaudio to 2.6.0 …"
+if [[ "$(echo "$TORCH_VERSION" | cut -d. -f1)" -lt 2 ]] || \
+   [[ "$(echo "$TORCH_VERSION" | cut -d. -f1)" -eq 2 && "$TORCH_MINOR" -lt 7 ]]; then
+    warn "PyTorch ${TORCH_VERSION} detected — upgrading torch + torchvision + torchaudio to 2.7.0 (cu126) …"
     pip install \
-        torch==2.6.0 \
-        torchvision==0.21.0 \
-        torchaudio==2.6.0 \
-        --index-url "https://download.pytorch.org/whl/cu${CUDA_MAJOR}${CUDA_MINOR}" \
+        torch==2.7.0 \
+        torchvision==0.22.0 \
+        torchaudio==2.7.0 \
+        --index-url "https://download.pytorch.org/whl/cu126" \
         --quiet
 else
-    info "PyTorch ${TORCH_VERSION} OK (>= 2.5.1)"
+    info "PyTorch ${TORCH_VERSION} OK (>= 2.7.0)"
 fi
 
 # ---------------------------------------------------------------------------
-# 4. Install Unsloth from GitHub main
+# 5. Install unsloth_zoo from GitHub (no-deps avoids torchao conflict)
 # ---------------------------------------------------------------------------
-# PyPI Unsloth does NOT have the Gemma 4 gradient accumulation fix (landed in
-# v0.1.36-beta, only available from GitHub main as of April 2026).
-# Installing from PyPI will cause silent gradient corruption or "not supported"
-# errors when fine-tuning gemma-4-E4B-it (see Unsloth issue #4942).
-#
-# unsloth_zoo must be installed first — it is a required dep that pip does not
-# resolve automatically when installing Unsloth from a git URL.
-# The cu1xx-ampere extras are only defined on PyPI releases, not the git HEAD,
-# so we install without extras and rely on the pre-installed CUDA env.
-# ---------------------------------------------------------------------------
-info "Installing unsloth_zoo (required Unsloth dependency) …"
-pip install unsloth_zoo --quiet
+# The PyPI unsloth_zoo pulls in torchao 0.17.0 unconditionally. Installing
+# from GitHub with --no-deps avoids this and lets the existing torchao
+# (satisfied transitively) stay put.
+info "Installing unsloth_zoo from GitHub (--no-deps to avoid torchao conflict) …"
+pip install --no-deps "git+https://github.com/unslothai/unsloth-zoo.git" --quiet
 
+# ---------------------------------------------------------------------------
+# 6. Install Unsloth from GitHub main
+# ---------------------------------------------------------------------------
+# PyPI Unsloth lacks the Gemma 4 gradient accumulation fix.
+# --no-build-isolation uses the setuptools==80.9.0 we pinned above instead of
+# pip's isolated build environment which may ship a different setuptools.
 info "Installing Unsloth from GitHub main (required for Gemma 4 support) …"
-pip install "git+https://github.com/unslothai/unsloth.git" --quiet
+pip install \
+    "unsloth[cu124-torch260] @ git+https://github.com/unslothai/unsloth.git" \
+    --no-build-isolation \
+    --quiet
 
 # ---------------------------------------------------------------------------
-# 5. Core training deps
+# 7. Core training deps
 # ---------------------------------------------------------------------------
+# DO NOT install xformers here. xformers 0.0.35+ requires torch>=2.10, so
+# `pip install --upgrade xformers` will silently pull in torch 2.11.0 and
+# break unsloth_zoo (requires torch<2.11.0). H100 uses Flash Attention 2 /
+# SDPA natively — xformers is not needed.
 info "Installing training dependencies …"
 
 pip install \
@@ -149,7 +160,7 @@ pip install \
     --quiet
 
 # ---------------------------------------------------------------------------
-# 6. Smoke test — confirm Unsloth imports and recognises Gemma 4
+# 8. Smoke test — confirm Unsloth imports and recognises Gemma 4
 # ---------------------------------------------------------------------------
 info "Running Unsloth smoke test …"
 
@@ -163,19 +174,16 @@ except ImportError as e:
     print(f"  ✗ FastModel import failed: {e}", file=sys.stderr)
     sys.exit(1)
 
-# Confirm Gemma 4 is in the supported model list without downloading weights
 try:
     from unsloth.models._utils import SUPPORTED_MODELS  # type: ignore[import]
     gemma4_supported = any("gemma-4" in m.lower() for m in SUPPORTED_MODELS)
     if gemma4_supported:
         print("  ✓ Gemma 4 found in Unsloth SUPPORTED_MODELS")
     else:
-        # Not all Unsloth versions expose this — soft warning only
         print("  ⚠  Could not verify Gemma 4 in SUPPORTED_MODELS (may still work)")
 except Exception:
     print("  ⚠  Could not inspect SUPPORTED_MODELS (non-fatal)")
 
-# Confirm bitsandbytes is functional
 try:
     import bitsandbytes as bnb
     print(f"  ✓ bitsandbytes {bnb.__version__}")
@@ -183,7 +191,6 @@ except ImportError as e:
     print(f"  ✗ bitsandbytes import failed: {e}", file=sys.stderr)
     sys.exit(1)
 
-# Confirm TRL SFTConfig exists (trl >= 0.12 renamed TrainingArguments subclass)
 try:
     from trl import SFTConfig, SFTTrainer  # noqa: F401
     print("  ✓ trl SFTConfig + SFTTrainer available")
@@ -195,13 +202,13 @@ print("Smoke test passed.")
 PYEOF
 
 # ---------------------------------------------------------------------------
-# 7. Print usage hint
+# 9. Print usage hint
 # ---------------------------------------------------------------------------
 info "Setup complete. To start training:"
 echo ""
 echo "  python scripts/training/train_sft.py \\"
 echo "      --data data/sft/train.jsonl \\"
-echo "      --output-dir models/pokesage-lora \\"
+echo "      --output-dir /workspace/models/pokesage-lora \\"
 echo "      --epochs 3 \\"
 echo "      --run-name pokesage-v1"
 echo ""
