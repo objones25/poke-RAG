@@ -23,7 +23,7 @@ def get_pipeline(request: Request) -> RAGPipeline:
     return pipeline
 
 
-def build_pipeline() -> RAGPipeline:
+def build_pipeline() -> tuple[RAGPipeline, ModelLoader]:
     settings = Settings.from_env()
 
     embedder = BGEEmbedder.from_pretrained(model_name=settings.embed_model, device=settings.device)
@@ -57,4 +57,4 @@ def build_pipeline() -> RAGPipeline:
         loader=loader, prompt_builder=build_prompt, inferencer=inferencer, config=gen_config
     )
 
-    return RAGPipeline(retriever=retriever, generator=generator)
+    return RAGPipeline(retriever=retriever, generator=generator), loader

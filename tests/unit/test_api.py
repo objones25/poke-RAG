@@ -25,7 +25,8 @@ def _make_result(**overrides: object) -> PipelineResult:
 @pytest.fixture()
 def mock_pipeline(mocker):
     pipeline = mocker.MagicMock()
-    mocker.patch("src.api.app.build_pipeline", return_value=pipeline)
+    loader = mocker.MagicMock()
+    mocker.patch("src.api.app.build_pipeline", return_value=(pipeline, loader))
     return pipeline
 
 

@@ -21,10 +21,20 @@ load_dotenv()  # populate os.environ before lifespan runs
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     setup_logging()
     try:
-        app.state.pipeline = build_pipeline()
+        pipeline, loader = build_pipeline()
+        app.state.pipeline = pipeline
     except Exception as exc:
         raise RuntimeError(f"Failed to initialize RAG pipeline: {exc}") from exc
-    yield
+    try:
+        yield
+    finally:
+        loader.unload()
+        try:
+            from joblib.externals.loky import get_reusable_executor
+
+            get_reusable_executor().shutdown(wait=True)
+        except Exception:
+            pass
 
 
 app = FastAPI(title="poke-RAG", lifespan=lifespan)
