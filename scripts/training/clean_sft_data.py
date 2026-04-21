@@ -47,9 +47,7 @@ def _is_bad_text(text: str) -> bool:
         return True
     if _DB_ID_RE.search(text):
         return True
-    if _DYNAMAX_CRYSTAL_RE.search(text):
-        return True
-    return False
+    return bool(_DYNAMAX_CRYSTAL_RE.search(text))
 
 
 def _is_bad_answer(answer: str) -> bool:
@@ -58,10 +56,7 @@ def _is_bad_answer(answer: str) -> bool:
         return True
     if _BARE_POKEMON_RE.match(stripped):
         return True
-    for pat in _BAD_ANSWER_PATTERNS:
-        if pat.search(answer):
-            return True
-    return False
+    return any(pat.search(answer) for pat in _BAD_ANSWER_PATTERNS)
 
 
 def _normalize_messages(messages: list[dict]) -> list[dict] | None:

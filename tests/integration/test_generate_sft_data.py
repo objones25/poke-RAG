@@ -24,7 +24,10 @@ def _make_processed(tmp_path: Path) -> Path:
         d.mkdir(parents=True)
         (d / "pokemon.txt").write_text(
             "\n".join(
-                f"Entity{i} is a {source} Pokémon with base stats: HP 45, Attack 49, Defense 49, Sp. Atk 65, Sp. Def 65, Speed 45."
+                (
+                    f"Entity{i} is a {source} Pokemon"
+                    f" with base stats: HP 45, Atk 49, Def 49, SpA 65, SpD 65, Spe 45."
+                )
                 for i in range(100)
             )
         )
@@ -125,7 +128,10 @@ class TestRunGeneration:
         d.mkdir(parents=True)
         (d / "pokemon.txt").write_text(
             "\n".join(
-                f"Pikachu is a Electric-type Pokémon with base Speed 90 and base Attack 55, variant {i}."
+                (
+                    f"Pikachu is a Electric-type Pokemon"
+                    f" with base Speed 90 and base Attack 55, variant {i}."
+                )
                 for i in range(30)
             )
         )

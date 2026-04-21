@@ -19,12 +19,13 @@ Every mistake below was made live on a RunPod H100. Do not repeat them.
 `nvidia-smi` tells you the **driver's** maximum CUDA version. That is what matters.
 
 | What you see in nvidia-smi | Highest CUDA wheel you can use |
-|---|---|
-| CUDA Version: 12.4 | cu124 |
-| CUDA Version: 12.6 | cu126 |
-| CUDA Version: 13.0 | cu128 (and lower) |
+| -------------------------- | ------------------------------ |
+| CUDA Version: 12.4         | cu124                          |
+| CUDA Version: 12.6         | cu126                          |
+| CUDA Version: 13.0         | cu128 (and lower)              |
 
 RunPod H100 pods (as of April 2026) ship with driver 580.x → CUDA 13.0. This means:
+
 - **cu124 torch max = 2.6.0** — NOT enough for torchao >= 0.13.0
 - **cu126 torch 2.7.0 is available and works** — use this
 
@@ -68,6 +69,7 @@ python -c "from unsloth import FastModel; print('OK')"
 
 xformers 0.0.35+ requires `torch>=2.10`. Running `pip install --upgrade xformers` will
 silently pull in torch 2.11.0+cu126 and replace your carefully-pinned 2.7.0. This breaks:
+
 - unsloth_zoo (requires `torch<2.11.0`)
 - torchaudio 2.7.0 (requires `torch==2.7.0` exactly)
 - torchvision 0.22.0 (requires `torch==2.7.0` exactly)
@@ -76,6 +78,7 @@ silently pull in torch 2.11.0+cu126 and replace your carefully-pinned 2.7.0. Thi
 Do not install it.
 
 If you accidentally upgraded xformers and broke the stack, recover with:
+
 ```bash
 pip install torch==2.7.0 torchvision==0.22.0 torchaudio==2.7.0 \
     --index-url https://download.pytorch.org/whl/cu126
@@ -87,16 +90,16 @@ python -c "from unsloth import FastModel; print('OK')"
 
 ## Errors and What They Mean
 
-| Error | Cause | Fix |
-|---|---|---|
-| `AttributeError: module 'torch.utils._pytree' has no attribute 'register_constant'` | torchao >= 0.10.0 needs torch 2.7.0+. You have 2.6.0. | Upgrade torch to 2.7.0 via cu126 index |
-| `torch 2.6.0+cu124 not found` (when trying torch==2.7.0 on cu124 index) | 2.7.0 was never built for cu124. Max for cu124 is 2.6.0. | Use `--index-url https://download.pytorch.org/whl/cu126` |
-| `ImportError: Cannot import packaging.licenses` | setuptools >= 77 needs packaging >= 24.2 | `pip install "packaging>=24.2"` |
-| `configuration error: project.license must be valid exactly by one definition` | Unsloth's pyproject.toml uses SPDX license string; system setuptools rejects it | `pip install "setuptools==80.9.0"` first |
-| `Please install unsloth_zoo` on Unsloth import | Unsloth git install doesn't resolve unsloth_zoo automatically | Install unsloth_zoo from GitHub before Unsloth |
-| `torchvision requires torch==2.4.1` (or similar) | Only torch was upgraded; torchvision/torchaudio still pin the old version | Always upgrade all three together |
-| `torch._inductor has no attribute 'config'` | unsloth_zoo uses `torch._inductor.config` added in torch 2.5 | Upgrade torch (see sequence above) |
-| `unsloth_zoo 0.x.x requires torch<2.11.0, but torch 2.11.0 is installed` | `pip install --upgrade xformers` pulled in torch 2.11.0 | Reinstall torch 2.7.0 + uninstall xformers (see above) |
+| Error                                                                               | Cause                                                                           | Fix                                                      |
+| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| `AttributeError: module 'torch.utils._pytree' has no attribute 'register_constant'` | torchao >= 0.10.0 needs torch 2.7.0+. You have 2.6.0.                           | Upgrade torch to 2.7.0 via cu126 index                   |
+| `torch 2.6.0+cu124 not found` (when trying torch==2.7.0 on cu124 index)             | 2.7.0 was never built for cu124. Max for cu124 is 2.6.0.                        | Use `--index-url https://download.pytorch.org/whl/cu126` |
+| `ImportError: Cannot import packaging.licenses`                                     | setuptools >= 77 needs packaging >= 24.2                                        | `pip install "packaging>=24.2"`                          |
+| `configuration error: project.license must be valid exactly by one definition`      | Unsloth's pyproject.toml uses SPDX license string; system setuptools rejects it | `pip install "setuptools==80.9.0"` first                 |
+| `Please install unsloth_zoo` on Unsloth import                                      | Unsloth git install doesn't resolve unsloth_zoo automatically                   | Install unsloth_zoo from GitHub before Unsloth           |
+| `torchvision requires torch==2.4.1` (or similar)                                    | Only torch was upgraded; torchvision/torchaudio still pin the old version       | Always upgrade all three together                        |
+| `torch._inductor has no attribute 'config'`                                         | unsloth_zoo uses `torch._inductor.config` added in torch 2.5                    | Upgrade torch (see sequence above)                       |
+| `unsloth_zoo 0.x.x requires torch<2.11.0, but torch 2.11.0 is installed`            | `pip install --upgrade xformers` pulled in torch 2.11.0                         | Reinstall torch 2.7.0 + uninstall xformers (see above)   |
 
 ---
 
@@ -110,15 +113,15 @@ python -c "from unsloth import FastModel; print('OK')"
 
 ## Key Version Constraints (April 2026)
 
-| Package | Required version | Notes |
-|---|---|---|
-| torch | 2.7.0 | cu126 wheel; 2.6.0 is not enough |
-| torchvision | 0.22.0 | Must match torch |
-| torchaudio | 2.7.0 | Must match torch |
-| setuptools | 80.9.0 | Unsloth pyproject.toml build requirement |
-| packaging | >= 24.2 | Required by setuptools 80.9.0 |
-| unsloth_zoo | GitHub main | Install with --no-deps |
-| unsloth | GitHub main | Install with --no-build-isolation |
+| Package     | Required version | Notes                                    |
+| ----------- | ---------------- | ---------------------------------------- |
+| torch       | 2.7.0            | cu126 wheel; 2.6.0 is not enough         |
+| torchvision | 0.22.0           | Must match torch                         |
+| torchaudio  | 2.7.0            | Must match torch                         |
+| setuptools  | 80.9.0           | Unsloth pyproject.toml build requirement |
+| packaging   | >= 24.2          | Required by setuptools 80.9.0            |
+| unsloth_zoo | GitHub main      | Install with --no-deps                   |
+| unsloth     | GitHub main      | Install with --no-build-isolation        |
 
 ---
 

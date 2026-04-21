@@ -16,9 +16,9 @@ _ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from scripts.training.gemini_client import GeminiClient
-from scripts.training.sampler import ChunkSampler, extract_entity_name
-from scripts.training.schemas import SFTDatapoint, SFTMessage
+from scripts.training.gemini_client import GeminiClient  # noqa: E402
+from scripts.training.sampler import ChunkSampler, extract_entity_name  # noqa: E402
+from scripts.training.schemas import SFTDatapoint, SFTMessage  # noqa: E402
 
 logging.basicConfig(
     level=logging.INFO,
@@ -39,9 +39,7 @@ def _is_useful_chunk(chunk: str) -> bool:
         return False
     if _VAR_RE.search(chunk):
         return False
-    if _DB_ID_RE.search(chunk):
-        return False
-    return True
+    return not _DB_ID_RE.search(chunk)
 
 
 def _count_lines(path: Path) -> int:
@@ -123,7 +121,8 @@ def run(
             generated += 1
             if generated % 100 == 0:
                 logger.info(
-                    "Progress: %d / %d (attempted=%d, skipped_chunk=%d, skipped_quality=%d, dedup=%d)",
+                    "Progress: %d / %d (attempted=%d, skipped_chunk=%d,"
+                    " skipped_quality=%d, dedup=%d)",
                     generated,
                     goal,
                     attempted,

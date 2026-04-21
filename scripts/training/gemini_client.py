@@ -15,8 +15,13 @@ logger = logging.getLogger(__name__)
 
 _SOURCE_HINTS: dict[str, str] = {
     "pokeapi": "Ask about: base stats, types, abilities, evolution levels, move power/accuracy/PP.",
-    "smogon": "Ask about: competitive movesets (include moves/item/ability/EVs/role when present), tier placement, counters/checks.",
-    "bulbapedia": "Ask about: move effects, item effects, ability mechanics, lore, evolution methods.",
+    "smogon": (
+        "Ask about: competitive movesets (include moves/item/ability/EVs/role when"
+        " present), tier placement, counters/checks."
+    ),
+    "bulbapedia": (
+        "Ask about: move effects, item effects, ability mechanics, lore, evolution methods."
+    ),
 }
 
 _PROMPT_TEMPLATE = """\
@@ -72,10 +77,7 @@ def _is_quality_pair(pair: GeminiQAPair) -> bool:
         return False
     if _BARE_POKEMON_RE.match(pair.answer.strip()):
         return False
-    for pat in _BAD_ANSWER_PATTERNS:
-        if pat.search(pair.answer):
-            return False
-    return True
+    return all(not pat.search(pair.answer) for pat in _BAD_ANSWER_PATTERNS)
 
 
 class GeminiClient:

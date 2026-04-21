@@ -228,7 +228,12 @@ def train(args: argparse.Namespace) -> None:
 
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
     total = sum(p.numel() for p in model.parameters())
-    log.info("Trainable params: %s / %s (%.2f%%)", f"{trainable:,}", f"{total:,}", 100 * trainable / total)
+    log.info(
+        "Trainable params: %s / %s (%.2f%%)",
+        f"{trainable:,}",
+        f"{total:,}",
+        100 * trainable / total,
+    )
 
     # ------------------------------------------------------------------
     # Load and prepare dataset
