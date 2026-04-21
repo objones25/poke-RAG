@@ -102,9 +102,17 @@ python3 -m pip install --upgrade pip --quiet
 # v0.1.36-beta, only available from GitHub main as of April 2026).
 # Installing from PyPI will cause silent gradient corruption or "not supported"
 # errors when fine-tuning gemma-4-E4B-it (see Unsloth issue #4942).
+#
+# unsloth_zoo must be installed first — it is a required dep that pip does not
+# resolve automatically when installing Unsloth from a git URL.
+# The cu1xx-ampere extras are only defined on PyPI releases, not the git HEAD,
+# so we install without extras and rely on the pre-installed CUDA env.
 # ---------------------------------------------------------------------------
+info "Installing unsloth_zoo (required Unsloth dependency) …"
+pip install unsloth_zoo --quiet
+
 info "Installing Unsloth from GitHub main (required for Gemma 4 support) …"
-pip install "unsloth[${UNSLOTH_CUDA}] @ git+https://github.com/unslothai/unsloth.git" --quiet
+pip install "git+https://github.com/unslothai/unsloth.git" --quiet
 
 # ---------------------------------------------------------------------------
 # 5. Core training deps
