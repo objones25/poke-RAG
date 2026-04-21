@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -129,3 +131,137 @@ class TestQueryEndpoint:
         mock_pipeline.query.return_value = _make_result(confidence_score=None)
         response = client.post("/query", json={"query": "What type is Pikachu?"}).json()
         assert response["confidence_score"] is None
+
+    def test_entity_name_forwarded_to_pipeline(self, client, mock_pipeline) -> None:
+        mock_pipeline.query.return_value = _make_result()
+        client.post("/query", json={"query": "Stats?", "entity_name": "Pikachu"})
+        _, kwargs = mock_pipeline.query.call_args
+        assert kwargs["entity_name"] == "Pikachu"
+
+    def test_entity_name_none_by_default(self, client, mock_pipeline) -> None:
+        mock_pipeline.query.return_value = _make_result()
+        client.post("/query", json={"query": "Stats?"})
+        _, kwargs = mock_pipeline.query.call_args
+        assert kwargs["entity_name"] is None
+
+
+@pytest.mark.unit
+class TestSecurityHeaders:
+    def test_security_headers_present_on_health(self, client) -> None:
+        response = client.get("/health")
+        assert response.headers["X-Content-Type-Options"] == "nosniff"
+        assert response.headers["X-Frame-Options"] == "DENY"
+        assert "strict-origin-when-cross-origin" in response.headers["Referrer-Policy"]
+
+    def test_content_security_policy_present(self, client) -> None:
+        response = client.get("/health")
+        assert "Content-Security-Policy" in response.headers
+
+
+@pytest.mark.unit
+class TestBodySizeLimitMiddleware:
+    def test_returns_413_when_body_too_large(self) -> None:
+        from fastapi import FastAPI
+
+        from src.api.app import BodySizeLimitMiddleware
+
+        test_app = FastAPI()
+        test_app.add_middleware(BodySizeLimitMiddleware, max_bytes=10)
+
+        @test_app.post("/upload")
+        async def _upload() -> dict[str, bool]:
+            return {"ok": True}
+
+        with TestClient(test_app) as c:
+            response = c.post("/upload", content=b"a" * 11)
+            assert response.status_code == 413
+
+    def test_allows_request_within_limit(self) -> None:
+        from fastapi import FastAPI
+
+        from src.api.app import BodySizeLimitMiddleware
+
+        test_app = FastAPI()
+        test_app.add_middleware(BodySizeLimitMiddleware, max_bytes=100)
+
+        @test_app.post("/upload")
+        async def _upload() -> dict[str, bool]:
+            return {"ok": True}
+
+        with TestClient(test_app) as c:
+            response = c.post("/upload", content=b"small body")
+            assert response.status_code == 200
+
+
+@pytest.mark.unit
+class TestRateLimitMiddleware:
+    def test_returns_429_after_limit_exceeded(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from fastapi import FastAPI
+
+        from src.api.app import RateLimitMiddleware
+
+        monkeypatch.setenv("RATE_LIMIT_ENABLED", "true")
+        test_app = FastAPI()
+        test_app.add_middleware(RateLimitMiddleware, requests_per_minute=2)
+
+        @test_app.post("/query")
+        async def _query() -> dict[str, bool]:
+            return {"ok": True}
+
+        with TestClient(test_app) as c:
+            c.post("/query")
+            c.post("/query")
+            response = c.post("/query")
+            assert response.status_code == 429
+
+    def test_allows_requests_within_limit(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from fastapi import FastAPI
+
+        from src.api.app import RateLimitMiddleware
+
+        monkeypatch.setenv("RATE_LIMIT_ENABLED", "true")
+        test_app = FastAPI()
+        test_app.add_middleware(RateLimitMiddleware, requests_per_minute=5)
+
+        @test_app.post("/query")
+        async def _query() -> dict[str, bool]:
+            return {"ok": True}
+
+        with TestClient(test_app) as c:
+            for _ in range(5):
+                response = c.post("/query")
+                assert response.status_code == 200
+
+
+@pytest.mark.unit
+class TestGetClientIp:
+    def test_returns_client_host_without_proxy(self) -> None:
+        from src.api.app import _get_client_ip
+
+        request = MagicMock()
+        request.client.host = "1.2.3.4"
+        request.headers.get.return_value = ""
+        assert _get_client_ip(request, trusted_proxy_count=0) == "1.2.3.4"
+
+    def test_returns_xff_last_entry_with_one_trusted_proxy(self) -> None:
+        from src.api.app import _get_client_ip
+
+        request = MagicMock()
+        request.headers.get.return_value = "evil-spoof, 5.6.7.8"
+        assert _get_client_ip(request, trusted_proxy_count=1) == "5.6.7.8"
+
+    def test_falls_back_to_client_host_when_xff_too_short(self) -> None:
+        from src.api.app import _get_client_ip
+
+        request = MagicMock()
+        request.client.host = "9.10.11.12"
+        request.headers.get.return_value = ""
+        assert _get_client_ip(request, trusted_proxy_count=1) == "9.10.11.12"
+
+    def test_returns_client_host_when_no_client(self) -> None:
+        from src.api.app import _get_client_ip
+
+        request = MagicMock()
+        request.client = None
+        request.headers.get.return_value = ""
+        assert _get_client_ip(request, trusted_proxy_count=0) == "unknown"

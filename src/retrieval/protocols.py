@@ -67,6 +67,7 @@ class RetrieverProtocol(Protocol):
         *,
         top_k: int = 5,
         sources: list[Source] | None = None,
+        entity_name: str | None = None,
     ) -> RetrievalResult:
         """Retrieve top_k chunks for query across specified sources (None = all three).
 

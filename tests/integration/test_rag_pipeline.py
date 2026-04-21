@@ -356,6 +356,7 @@ class TestRAGPipelineProtocolCompliance:
             "test query",
             top_k=10,
             sources=["pokeapi"],
+            entity_name=None,
         )
 
     def test_pipeline_uses_generator_protocol(self, make_chunk: callable) -> None:

@@ -28,6 +28,18 @@ load_dotenv()  # populate os.environ before lifespan runs
 _LOG = logging.getLogger(__name__)
 
 _MAX_TRACKED_IPS = 10_000
+_MAX_BODY_BYTES = 64 * 1024  # 64 KB — far above any valid query payload
+
+
+def _get_client_ip(request: Request, trusted_proxy_count: int) -> str:
+    """Return the real client IP, honouring X-Forwarded-For when behind trusted proxies."""
+    if trusted_proxy_count > 0:
+        xff = request.headers.get("X-Forwarded-For", "")
+        ips = [ip.strip() for ip in xff.split(",") if ip.strip()]
+        if len(ips) >= trusted_proxy_count:
+            # The Nth-from-right entry is the one our trusted proxy saw as the client
+            return ips[-trusted_proxy_count]
+    return request.client.host if request.client else "unknown"
 
 
 class LatencyTrackingMiddleware(BaseHTTPMiddleware):
@@ -46,9 +58,17 @@ class LatencyTrackingMiddleware(BaseHTTPMiddleware):
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """Rate limiter for /query endpoint: 20 requests per minute per IP."""
 
-    def __init__(self, app: ASGIApp, requests_per_minute: int = 20) -> None:
+    def __init__(
+        self,
+        app: ASGIApp,
+        requests_per_minute: int = 20,
+        trusted_proxy_count: int | None = None,
+    ) -> None:
         super().__init__(app)
         self.requests_per_minute = requests_per_minute
+        self.trusted_proxy_count = trusted_proxy_count if trusted_proxy_count is not None else int(
+            os.getenv("TRUSTED_PROXY_COUNT", "0")
+        )
         self.request_times: OrderedDict[str, list[float]] = OrderedDict()
         self._lock = asyncio.Lock()
         self.enabled = os.getenv("RATE_LIMIT_ENABLED", "true").lower() != "false"
@@ -59,7 +79,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if not self.enabled or request.url.path != "/query":
             return await call_next(request)
 
-        client_ip = request.client.host if request.client else "unknown"
+        client_ip = _get_client_ip(request, self.trusted_proxy_count)
         now = time.time()
         window_start = now - 60
 
@@ -80,6 +100,36 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
             self.request_times[client_ip].append(now)
 
+        return await call_next(request)
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Adds security headers to every response."""
+
+    async def dispatch(
+        self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Content-Security-Policy"] = "default-src 'none'"
+        return response
+
+
+class BodySizeLimitMiddleware(BaseHTTPMiddleware):
+    """Rejects requests whose Content-Length exceeds max_bytes."""
+
+    def __init__(self, app: ASGIApp, max_bytes: int = _MAX_BODY_BYTES) -> None:
+        super().__init__(app)
+        self.max_bytes = max_bytes
+
+    async def dispatch(
+        self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        content_length = request.headers.get("Content-Length")
+        if content_length is not None and int(content_length) > self.max_bytes:
+            return JSONResponse(status_code=413, content={"detail": "Request body too large"})
         return await call_next(request)
 
 
@@ -125,6 +175,8 @@ app.add_middleware(
 
 app.add_middleware(LatencyTrackingMiddleware)
 app.add_middleware(RateLimitMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(BodySizeLimitMiddleware)
 
 
 @app.exception_handler(RetrievalError)
@@ -165,7 +217,9 @@ async def query(
     pipeline: RAGPipeline = Depends(get_pipeline),  # noqa: B008
 ) -> QueryResponse:
     parsed = parse_query(body.query)
-    result = await asyncio.to_thread(pipeline.query, parsed, sources=body.sources)
+    result = await asyncio.to_thread(
+        pipeline.query, parsed, sources=body.sources, entity_name=body.entity_name
+    )
     return QueryResponse(
         answer=result.answer,
         sources_used=list(result.sources_used),

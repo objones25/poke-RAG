@@ -176,6 +176,83 @@ class TestRAGPipelineQuery:
 
 
 @pytest.mark.unit
+class TestRAGPipelineEntityName:
+    def test_entity_name_forwarded_to_retriever(self, mocker) -> None:
+        from src.pipeline.rag_pipeline import RAGPipeline
+
+        retriever = mocker.MagicMock()
+        retriever.retrieve.return_value = _make_retrieval_result(chunks=(_make_chunk(),))
+        generator = mocker.MagicMock()
+        generator.generate.return_value = _make_generation_result()
+        pipeline = RAGPipeline(retriever=retriever, generator=generator)
+
+        pipeline.query("What is Pikachu?", entity_name="Pikachu")
+        _, kwargs = retriever.retrieve.call_args
+        assert kwargs["entity_name"] == "Pikachu"
+
+    def test_entity_name_none_by_default(self, mocker) -> None:
+        from src.pipeline.rag_pipeline import RAGPipeline
+
+        retriever = mocker.MagicMock()
+        retriever.retrieve.return_value = _make_retrieval_result(chunks=(_make_chunk(),))
+        generator = mocker.MagicMock()
+        generator.generate.return_value = _make_generation_result()
+        pipeline = RAGPipeline(retriever=retriever, generator=generator)
+
+        pipeline.query("Any question.")
+        _, kwargs = retriever.retrieve.call_args
+        assert kwargs["entity_name"] is None
+
+
+@pytest.mark.unit
+class TestRAGPipelineConfidenceScore:
+    def test_confidence_score_is_in_zero_one_range(self, mocker) -> None:
+        from src.pipeline.rag_pipeline import RAGPipeline
+
+        chunks = (
+            _make_chunk(original_doc_id="doc_0", chunk_index=0, score=10.0),
+            _make_chunk(original_doc_id="doc_1", chunk_index=1, score=-5.0),
+        )
+        retriever = mocker.MagicMock()
+        retriever.retrieve.return_value = _make_retrieval_result(chunks=chunks)
+        generator = mocker.MagicMock()
+        generator.generate.return_value = _make_generation_result(num_chunks_used=2)
+        pipeline = RAGPipeline(retriever=retriever, generator=generator)
+
+        result = pipeline.query("Any question.")
+        assert result.confidence_score is not None
+        assert 0.0 <= result.confidence_score <= 1.0
+
+    def test_confidence_score_higher_for_better_chunks(self, mocker) -> None:
+        from src.pipeline.rag_pipeline import RAGPipeline
+
+        def _pipeline_with_score(score: float, mocker):
+            chunks = (_make_chunk(original_doc_id="doc_0", chunk_index=0, score=score),)
+            retriever = mocker.MagicMock()
+            retriever.retrieve.return_value = _make_retrieval_result(chunks=chunks)
+            generator = mocker.MagicMock()
+            generator.generate.return_value = _make_generation_result()
+            return RAGPipeline(retriever=retriever, generator=generator)
+
+        high = _pipeline_with_score(5.0, mocker).query("q.").confidence_score
+        low = _pipeline_with_score(-5.0, mocker).query("q.").confidence_score
+        assert high is not None and low is not None
+        assert high > low
+
+    def test_confidence_score_none_when_no_chunks(self, mocker) -> None:
+        from src.pipeline.rag_pipeline import RAGPipeline
+
+        retriever = mocker.MagicMock()
+        retriever.retrieve.return_value = _make_retrieval_result(chunks=())
+        generator = mocker.MagicMock()
+        generator.generate.return_value = _make_generation_result()
+        pipeline = RAGPipeline(retriever=retriever, generator=generator)
+
+        result = pipeline.query("Any question.")
+        assert result.confidence_score is None
+
+
+@pytest.mark.unit
 class TestRAGPipelineValidation:
     def test_raises_value_error_on_empty_query(self, mocker) -> None:
         from src.pipeline.rag_pipeline import RAGPipeline

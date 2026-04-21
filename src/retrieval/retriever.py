@@ -33,6 +33,7 @@ class Retriever:
         *,
         top_k: int = 5,
         sources: list[Source] | None = None,
+        entity_name: str | None = None,
     ) -> RetrievalResult:
         active_sources = sources if sources is not None else _ALL_SOURCES
         _LOG.info(
@@ -63,6 +64,7 @@ class Retriever:
                     query_dense=query_dense,
                     query_sparse=query_sparse,
                     top_k=self._candidates_per_source,
+                    entity_name=entity_name,
                 )
                 _LOG.debug("Search '%s' → %d candidates", source, len(chunks))
                 candidates.extend(chunks)

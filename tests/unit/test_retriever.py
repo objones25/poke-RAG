@@ -245,6 +245,28 @@ class TestRetrieverRetrieve:
         with pytest.raises(EmbeddingError):
             retriever.retrieve("query")
 
+    def test_entity_name_passed_to_search(self) -> None:
+        vector_store = _make_vector_store()
+        retriever = Retriever(
+            embedder=_make_embedder(),
+            vector_store=vector_store,
+            reranker=_make_reranker(),
+        )
+        retriever.retrieve("query", entity_name="Pikachu")
+        for call in vector_store.search.call_args_list:
+            assert call[1]["entity_name"] == "Pikachu"
+
+    def test_entity_name_none_by_default_in_search(self) -> None:
+        vector_store = _make_vector_store()
+        retriever = Retriever(
+            embedder=_make_embedder(),
+            vector_store=vector_store,
+            reranker=_make_reranker(),
+        )
+        retriever.retrieve("query")
+        for call in vector_store.search.call_args_list:
+            assert call[1]["entity_name"] is None
+
     def test_reranker_exception_propagates_as_retrieval_error(self) -> None:
         reranker = MagicMock()
         reranker.rerank.side_effect = RuntimeError("reranker crashed")

@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 class QueryRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=2000)
     sources: list[Literal["bulbapedia", "pokeapi", "smogon"]] | None = None
+    entity_name: str | None = Field(default=None, max_length=200)
 
 
 class QueryResponse(BaseModel):

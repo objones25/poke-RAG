@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import math
 import statistics
 
 from src.generation.protocols import GeneratorProtocol
 from src.pipeline.types import PipelineResult
 from src.retrieval.protocols import RetrieverProtocol
 from src.types import Source
+
+
+def _sigmoid(x: float) -> float:
+    return 1.0 / (1.0 + math.exp(-x))
 
 
 class RAGPipeline:
@@ -26,6 +31,7 @@ class RAGPipeline:
         *,
         top_k: int = 5,
         sources: list[Source] | None = None,
+        entity_name: str | None = None,
     ) -> PipelineResult:
         """Run a RAG query.
 
@@ -36,14 +42,15 @@ class RAGPipeline:
         if not query.strip():
             raise ValueError("query must not be empty or whitespace-only")
 
-        retrieval_result = self._retriever.retrieve(query, top_k=top_k, sources=sources)
+        retrieval_result = self._retriever.retrieve(
+            query, top_k=top_k, sources=sources, entity_name=entity_name
+        )
         chunks = retrieval_result.documents
 
         gen_result = self._generator.generate(query, chunks)
 
-        # Compute confidence score as mean of chunk scores
         confidence_score: float | None = (
-            statistics.mean(c.score for c in chunks) if chunks else None
+            statistics.mean(_sigmoid(c.score) for c in chunks) if chunks else None
         )
 
         return PipelineResult(
