@@ -36,8 +36,9 @@ def _get_client_ip(request: Request, trusted_proxy_count: int) -> str:
     if trusted_proxy_count > 0:
         xff = request.headers.get("X-Forwarded-For", "")
         ips = [ip.strip() for ip in xff.split(",") if ip.strip()]
-        if len(ips) >= trusted_proxy_count:
-            # The Nth-from-right entry is the one our trusted proxy saw as the client
+        # Accept exactly trusted_proxy_count or trusted_proxy_count+1 IPs.
+        # More IPs than that means an attacker injected extra entries — fall back to socket IP.
+        if trusted_proxy_count <= len(ips) <= trusted_proxy_count + 1:
             return ips[-trusted_proxy_count]
     return request.client.host if request.client else "unknown"
 
@@ -66,11 +67,19 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     ) -> None:
         super().__init__(app)
         self.requests_per_minute = requests_per_minute
-        self.trusted_proxy_count = (
-            trusted_proxy_count
-            if trusted_proxy_count is not None
-            else int(os.getenv("TRUSTED_PROXY_COUNT", "0"))
-        )
+        if trusted_proxy_count is not None:
+            self.trusted_proxy_count = trusted_proxy_count
+        else:
+            raw = os.getenv("TRUSTED_PROXY_COUNT", "0")
+            try:
+                parsed = int(raw)
+                if parsed < 0:
+                    raise ValueError("must be non-negative")
+            except ValueError:
+                raise ValueError(
+                    f"TRUSTED_PROXY_COUNT must be a non-negative integer, got: {raw!r}"
+                ) from None
+            self.trusted_proxy_count = parsed
         self.request_times: OrderedDict[str, list[float]] = OrderedDict()
         self._lock = asyncio.Lock()
         self.enabled = os.getenv("RATE_LIMIT_ENABLED", "true").lower() != "false"
@@ -116,6 +125,10 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Content-Security-Policy"] = "default-src 'none'"
+        if os.getenv("HTTPS_ENABLED", "false").lower() == "true":
+            response.headers["Strict-Transport-Security"] = (
+                "max-age=31536000; includeSubDomains"
+            )
         return response
 
 
@@ -127,12 +140,21 @@ class BodySizeLimitMiddleware(BaseHTTPMiddleware):
         self.max_bytes = max_bytes
 
     async def dispatch(
-        self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
-    ) -> Response:
-        content_length = request.headers.get("Content-Length")
-        if content_length is not None and int(content_length) > self.max_bytes:
-            return JSONResponse(status_code=413, content={"detail": "Request body too large"})
-        return await call_next(request)
+            self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
+        ) -> Response:
+            content_length = request.headers.get("Content-Length")
+            if content_length is not None:
+                try:
+                    size = int(content_length)
+                except ValueError:
+                    return JSONResponse(
+                        status_code=400, content={"detail": "Invalid Content-Length header"}
+                    )
+                if size > self.max_bytes:
+                    return JSONResponse(
+                        status_code=413, content={"detail": "Request body too large"}
+                    )
+            return await call_next(request)
 
 
 @asynccontextmanager
@@ -143,7 +165,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         app.state.pipeline = pipeline
         app.state.qdrant_client = client
     except Exception as exc:
-        _LOG.error("Failed to initialize RAG pipeline: %s", exc, exc_info=True)
+        _LOG.error("Failed to initialize RAG pipeline: %s", exc)
         raise RuntimeError("Failed to initialize pipeline. Check server logs for details.") from exc
     try:
         yield
@@ -193,6 +215,12 @@ async def value_error_handler(request: Request, exc: ValueError) -> JSONResponse
     return JSONResponse(status_code=422, content={"detail": "Invalid input"})
 
 
+@app.exception_handler(TimeoutError)
+async def timeout_error_handler(request: Request, exc: TimeoutError) -> JSONResponse:
+    _LOG.warning("Request timed out: %s %s", request.method, request.url.path)
+    return JSONResponse(status_code=504, content={"detail": "Request timed out"})
+
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     _LOG.error("Unhandled exception: %s", exc, exc_info=True)
@@ -205,11 +233,16 @@ def health() -> dict[str, str]:
 
 
 @app.get("/stats")
-def stats(request: Request) -> dict[str, bool]:
+async def stats(request: Request) -> dict[str, bool]:
+    stats_api_key = os.getenv("STATS_API_KEY")
+    if stats_api_key:
+        auth = request.headers.get("Authorization", "")
+        if not auth.startswith("Bearer ") or auth[7:] != stats_api_key:
+            return JSONResponse(status_code=401, content={"detail": "Unauthorized"})  # type: ignore[return-value]
     client: QdrantClient | None = getattr(request.app.state, "qdrant_client", None)
     if client is None:
         raise RuntimeError("Qdrant client not initialized")
-    collections = client.get_collections()
+    collections = await asyncio.to_thread(client.get_collections)
     return {col.name: True for col in collections.collections}
 
 
@@ -219,8 +252,11 @@ async def query(
     pipeline: RAGPipeline = Depends(get_pipeline),  # noqa: B008
 ) -> QueryResponse:
     parsed = parse_query(body.query)
-    result = await asyncio.to_thread(
-        pipeline.query, parsed, sources=body.sources, entity_name=body.entity_name
+    result = await asyncio.wait_for(
+        asyncio.to_thread(
+            pipeline.query, parsed, sources=body.sources, entity_name=body.entity_name
+        ),
+        timeout=30.0,
     )
     return QueryResponse(
         answer=result.answer,

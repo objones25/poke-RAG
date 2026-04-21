@@ -316,3 +316,94 @@ class TestSettingsFromEnv:
         assert hasattr(settings, "return_tensors")
         assert hasattr(settings, "truncation")
         assert hasattr(settings, "device")
+
+
+@pytest.mark.unit
+class TestConfigParameterBounds:
+    def test_temperature_must_be_in_range_0_to_2(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("TEMPERATURE", "-0.1")
+        with pytest.raises(ValueError, match="TEMPERATURE"):
+            Settings.from_env()
+
+    def test_temperature_upper_bound_2_0(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("TEMPERATURE", "2.1")
+        with pytest.raises(ValueError, match="TEMPERATURE"):
+            Settings.from_env()
+
+    def test_temperature_valid_at_0(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("TEMPERATURE", "0.0")
+        settings = Settings.from_env()
+        assert settings.temperature == 0.0
+
+    def test_temperature_valid_at_2(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("TEMPERATURE", "2.0")
+        settings = Settings.from_env()
+        assert settings.temperature == 2.0
+
+    def test_top_p_must_be_in_range_0_to_1(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("TOP_P", "-0.1")
+        with pytest.raises(ValueError, match="TOP_P"):
+            Settings.from_env()
+
+    def test_top_p_upper_bound_1_0(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("TOP_P", "1.1")
+        with pytest.raises(ValueError, match="TOP_P"):
+            Settings.from_env()
+
+    def test_top_p_valid_at_0(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("TOP_P", "0.0")
+        settings = Settings.from_env()
+        assert settings.top_p == 0.0
+
+    def test_top_p_valid_at_1(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("TOP_P", "1.0")
+        settings = Settings.from_env()
+        assert settings.top_p == 1.0
+
+    def test_max_new_tokens_must_be_positive(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("MAX_NEW_TOKENS", "0")
+        with pytest.raises(ValueError, match="MAX_NEW_TOKENS"):
+            Settings.from_env()
+
+    def test_max_new_tokens_must_be_greater_than_zero(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("MAX_NEW_TOKENS", "-1")
+        with pytest.raises(ValueError, match="MAX_NEW_TOKENS"):
+            Settings.from_env()
+
+    def test_max_new_tokens_valid_at_1(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("MAX_NEW_TOKENS", "1")
+        settings = Settings.from_env()
+        assert settings.max_new_tokens == 1

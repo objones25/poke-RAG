@@ -290,3 +290,74 @@ class TestRetrieverProtocolCompliance:
             reranker=_make_reranker(),
         )
         assert isinstance(retriever, RetrieverProtocol)
+
+
+@pytest.mark.unit
+class TestRetrieverExceptionHandling:
+    """Test that Retriever wraps exceptions with __cause__ and uses specific exception types."""
+
+    def test_retrieve_wraps_embedding_error_with_cause(self) -> None:
+        """Embedder raising EmbeddingError → RetrievalError with __cause__ set."""
+        from src.types import EmbeddingError
+
+        embedder = MagicMock()
+        embedder.encode.side_effect = EmbeddingError("Model failed")
+        retriever = Retriever(
+            embedder=embedder,
+            vector_store=_make_vector_store(),
+            reranker=_make_reranker(),
+        )
+        try:
+            retriever.retrieve("query")
+            raise AssertionError("Should have raised RetrievalError")
+        except RetrievalError as e:
+            assert e.__cause__ is not None
+            assert isinstance(e.__cause__, EmbeddingError)
+
+    def test_retrieve_wraps_runtime_error_from_embedder_with_cause(self) -> None:
+        """Embedder raising RuntimeError → RetrievalError with __cause__ set."""
+        embedder = MagicMock()
+        embedder.encode.side_effect = RuntimeError("OOM")
+        retriever = Retriever(
+            embedder=embedder,
+            vector_store=_make_vector_store(),
+            reranker=_make_reranker(),
+        )
+        try:
+            retriever.retrieve("query")
+            raise AssertionError("Should have raised RetrievalError")
+        except RetrievalError as e:
+            assert e.__cause__ is not None
+            assert isinstance(e.__cause__, RuntimeError)
+
+    def test_retrieve_wraps_vector_store_error_with_cause(self) -> None:
+        """Vector store raising Exception → RetrievalError with __cause__ set."""
+        vector_store = MagicMock()
+        vector_store.search.side_effect = RuntimeError("DB connection failed")
+        retriever = Retriever(
+            embedder=_make_embedder(),
+            vector_store=vector_store,
+            reranker=_make_reranker(),
+        )
+        try:
+            retriever.retrieve("query")
+            raise AssertionError("Should have raised RetrievalError")
+        except RetrievalError as e:
+            assert e.__cause__ is not None
+            assert isinstance(e.__cause__, RuntimeError)
+
+    def test_retrieve_wraps_reranker_error_with_cause(self) -> None:
+        """Reranker raising Exception → RetrievalError with __cause__ set."""
+        reranker = MagicMock()
+        reranker.rerank.side_effect = ValueError("Invalid chunks")
+        retriever = Retriever(
+            embedder=_make_embedder(),
+            vector_store=_make_vector_store(),
+            reranker=reranker,
+        )
+        try:
+            retriever.retrieve("query")
+            raise AssertionError("Should have raised RetrievalError")
+        except RetrievalError as e:
+            assert e.__cause__ is not None
+            assert isinstance(e.__cause__, ValueError)

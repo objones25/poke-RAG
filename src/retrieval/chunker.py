@@ -6,6 +6,7 @@ import logging
 import re
 from pathlib import Path
 
+from src.retrieval.constants import WORDS_PER_TOKEN as _WORDS_PER_TOKEN
 from src.types import EntityType, RetrievedChunk, Source
 
 _LOG = logging.getLogger(__name__)
@@ -18,7 +19,7 @@ _RE_BULBA_DOC_SPLIT = re.compile(r"\n(?=Title:)")
 _SMOGON_TARGET_TOKENS = 400
 _BULBA_TARGET_TOKENS = 512
 _OVERLAP_RATIO = 0.1
-_WORDS_PER_TOKEN = 0.75  # rough approximation: 1 token ≈ 0.75 words
+
 
 _STEM_TO_ENTITY_TYPE: dict[str, EntityType] = {
     "ability": "ability",

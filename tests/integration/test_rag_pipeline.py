@@ -235,20 +235,21 @@ class TestRAGPipelineQuery:
         call_kwargs = mock_retriever.retrieve.call_args[1]
         assert call_kwargs["sources"] is None
 
-    def test_empty_chunks_returned_from_retrieval(
+    def test_empty_chunks_returned_from_retrieval_raises_error(
         self,
         mock_retriever: RetrieverProtocol,
         mock_generator: GeneratorProtocol,
     ) -> None:
-        """Pipeline handles retrieval returning zero chunks (edge case)."""
+        """Pipeline raises RetrievalError when retrieval returns zero chunks."""
         mock_retriever.retrieve.return_value = RetrievalResult(
             documents=(),
             query="test",
         )
         pipeline = RAGPipeline(retriever=mock_retriever, generator=mock_generator)
-        result = pipeline.query("test")
-        assert result.num_chunks_used == 0
-        assert result.sources_used == ()
+        with pytest.raises(RetrievalError, match="no documents"):
+            pipeline.query("test")
+        # Generator must never be called when documents are empty
+        mock_generator.generate.assert_not_called()
 
 
 @pytest.mark.integration

@@ -6,6 +6,7 @@ from src.retrieval.chunker import (
     chunk_pokeapi_line,
     chunk_smogon_line,
 )
+from src.retrieval.constants import WORDS_PER_TOKEN
 from src.retrieval.context_assembler import ContextAssembler
 from src.retrieval.embedder import BGEEmbedder
 from src.retrieval.protocols import (
@@ -23,13 +24,14 @@ __all__ = [
     "BGEEmbedder",
     "BGEReranker",
     "ContextAssembler",
-    "EmbeddingOutput",
     "EmbedderProtocol",
+    "EmbeddingOutput",
     "QdrantVectorStore",
     "RerankerProtocol",
-    "RetrieverProtocol",
     "Retriever",
+    "RetrieverProtocol",
     "VectorStoreProtocol",
+    "WORDS_PER_TOKEN",
     "chunk_bulbapedia_doc",
     "chunk_file",
     "chunk_pokeapi_line",

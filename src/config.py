@@ -43,6 +43,8 @@ class Settings:
             raise ValueError(
                 f"TEMPERATURE must be a valid float, got: {os.getenv('TEMPERATURE')!r}"
             ) from None
+        if not 0.0 <= temperature <= 2.0:
+            raise ValueError(f"TEMPERATURE must be between 0.0 and 2.0, got: {temperature}")
 
         try:
             max_new_tokens = int(os.getenv("MAX_NEW_TOKENS", "512"))
@@ -50,11 +52,15 @@ class Settings:
             raise ValueError(
                 f"MAX_NEW_TOKENS must be a valid int, got: {os.getenv('MAX_NEW_TOKENS')!r}"
             ) from None
+        if max_new_tokens <= 0:
+            raise ValueError(f"MAX_NEW_TOKENS must be a positive integer, got: {max_new_tokens}")
 
         try:
             top_p = float(os.getenv("TOP_P", "0.9"))
         except ValueError:
             raise ValueError(f"TOP_P must be a valid float, got: {os.getenv('TOP_P')!r}") from None
+        if not 0.0 <= top_p <= 1.0:
+            raise ValueError(f"TOP_P must be between 0.0 and 1.0, got: {top_p}")
 
         try:
             tokenizer_max_length = int(os.getenv("TOKENIZER_MAX_LENGTH", "8192"))

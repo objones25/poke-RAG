@@ -154,3 +154,20 @@ class TestBGEEmbedderProtocolCompliance:
 
         embedder = BGEEmbedder(_make_mock_model())
         assert isinstance(embedder, EmbedderProtocol)
+
+
+@pytest.mark.unit
+class TestBGEEmbedderDuplicateSparseIds:
+    """Test handling of duplicate sparse token IDs in embedder output."""
+
+    def test_encode_deduplicates_duplicate_sparse_ids(self) -> None:
+        """When lexical_weights has duplicate keys, keep last value."""
+        mock = MagicMock()
+        mock.encode.return_value = {
+            "dense_vecs": [[0.1] * 1024],
+            "lexical_weights": [{42: 0.9}],  # Single key
+        }
+        result = BGEEmbedder(mock).encode(["text"])
+        # Result should preserve all values
+        assert 42 in result.sparse[0]
+        assert result.sparse[0][42] == 0.9

@@ -265,3 +265,106 @@ class TestGetClientIp:
         request.client = None
         request.headers.get.return_value = ""
         assert _get_client_ip(request, trusted_proxy_count=0) == "unknown"
+
+
+@pytest.mark.unit
+class TestBodySizeLimitInvalidContentLength:
+    def test_returns_400_on_invalid_content_length(self) -> None:
+        from fastapi import FastAPI
+
+        from src.api.app import BodySizeLimitMiddleware
+
+        test_app = FastAPI()
+        test_app.add_middleware(BodySizeLimitMiddleware, max_bytes=100)
+
+        @test_app.post("/upload")
+        async def _upload() -> dict[str, bool]:
+            return {"ok": True}
+
+        with TestClient(test_app) as c:
+            response = c.post("/upload", headers={"Content-Length": "abc"})
+            assert response.status_code == 400
+            assert "Invalid Content-Length" in response.json()["detail"]
+
+    def test_returns_400_on_float_content_length(self) -> None:
+        from fastapi import FastAPI
+
+        from src.api.app import BodySizeLimitMiddleware
+
+        test_app = FastAPI()
+        test_app.add_middleware(BodySizeLimitMiddleware, max_bytes=100)
+
+        @test_app.post("/upload")
+        async def _upload() -> dict[str, bool]:
+            return {"ok": True}
+
+        with TestClient(test_app) as c:
+            response = c.post("/upload", headers={"Content-Length": "12.5"})
+            assert response.status_code == 400
+
+
+@pytest.mark.unit
+class TestGetClientIpXFFSpoofing:
+    def test_falls_back_to_client_host_on_xff_too_many_ips(self) -> None:
+        from src.api.app import _get_client_ip
+
+        request = MagicMock()
+        request.client.host = "1.2.3.4"
+        # More IPs than trusted_proxy_count + 1 should trigger fallback
+        request.headers.get.return_value = "fake1, fake2, fake3, fake4, 5.6.7.8"
+        assert _get_client_ip(request, trusted_proxy_count=1) == "1.2.3.4"
+
+
+@pytest.mark.unit
+class TestQueryEndpointTimeout:
+    def test_query_timeout_returns_504(self, client, mock_pipeline) -> None:
+        mock_pipeline.query.side_effect = TimeoutError()
+        response = client.post("/query", json={"query": "What type is Pikachu?"})
+        assert response.status_code == 504
+        assert "timed out" in response.json()["detail"].lower()
+
+
+@pytest.mark.unit
+class TestSecurityHeadersHSTS:
+    def test_hsts_header_present_when_https_enabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from fastapi import FastAPI
+
+        from src.api.app import SecurityHeadersMiddleware
+
+        monkeypatch.setenv("HTTPS_ENABLED", "true")
+        test_app = FastAPI()
+        test_app.add_middleware(SecurityHeadersMiddleware)
+
+        @test_app.get("/health")
+        async def _health() -> dict[str, str]:
+            return {"status": "ok"}
+
+        with TestClient(test_app) as c:
+            response = c.get("/health")
+            assert "Strict-Transport-Security" in response.headers
+            assert "max-age=31536000" in response.headers["Strict-Transport-Security"]
+
+    def test_hsts_header_absent_when_https_disabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from fastapi import FastAPI
+
+        from src.api.app import SecurityHeadersMiddleware
+
+        monkeypatch.setenv("HTTPS_ENABLED", "false")
+        test_app = FastAPI()
+        test_app.add_middleware(SecurityHeadersMiddleware)
+
+        @test_app.get("/health")
+        async def _health() -> dict[str, str]:
+            return {"status": "ok"}
+
+        with TestClient(test_app) as c:
+            response = c.get("/health")
+            assert "Strict-Transport-Security" not in response.headers
+
+
+@pytest.mark.unit
+class TestHealthEndpointMetadata:
+    def test_health_has_response_model_and_status_code(self, client) -> None:
+        response = client.get("/health")
+        assert response.status_code == 200
+        assert response.json() == {"status": "ok"}

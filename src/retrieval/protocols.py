@@ -16,7 +16,11 @@ from src.types import RetrievalResult, RetrievedChunk, Source
 @runtime_checkable
 class EmbedderProtocol(Protocol):
     def encode(self, texts: list[str]) -> EmbeddingOutput:
-        """Embed a batch of texts. Returns dense (n×1024) and sparse (token_id→weight)."""
+        """Embed a batch of texts. Returns dense (n×1024) and sparse (token_id→weight).
+
+        Raises:
+            EmbeddingError: If embedding fails.
+        """
         ...
 
 
@@ -43,7 +47,11 @@ class VectorStoreProtocol(Protocol):
         top_k: int,
         entity_name: str | None = None,
     ) -> list[RetrievedChunk]:
-        """Hybrid dense+sparse search with optional entity_name payload filter."""
+        """Hybrid dense+sparse search with optional entity_name payload filter.
+
+        Raises:
+            OSError: If vector store is unavailable or connection fails.
+        """
         ...
 
 
@@ -55,7 +63,12 @@ class RerankerProtocol(Protocol):
         documents: list[RetrievedChunk],
         top_k: int,
     ) -> list[RetrievedChunk]:
-        """Rerank documents by relevance to query. Returns new frozen chunks with updated scores."""
+        """Rerank documents by relevance to query. Returns new frozen chunks with updated scores.
+
+        Raises:
+            ValueError: If chunks are invalid or reranking fails.
+            RuntimeError: If reranker model inference fails.
+        """
         ...
 
 
@@ -71,6 +84,7 @@ class RetrieverProtocol(Protocol):
     ) -> RetrievalResult:
         """Retrieve top_k chunks for query across specified sources (None = all three).
 
-        Raises RetrievalError on any failure. Never returns an empty result silently.
+        Raises:
+            RetrievalError: If retrieval fails or no documents found.
         """
         ...

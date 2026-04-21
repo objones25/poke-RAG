@@ -52,8 +52,17 @@ class BGEEmbedder:
         )
 
         dense: list[list[float]] = [list(map(float, vec)) for vec in raw["dense_vecs"]]
-        sparse: list[dict[int, float]] = [
-            {int(k): float(v) for k, v in weights.items()} for weights in raw["lexical_weights"]
-        ]
+        sparse: list[dict[int, float]] = []
+        for i, weights in enumerate(raw["lexical_weights"]):
+            deduped: dict[int, float] = {}
+            for k, v in weights.items():
+                k_int = int(k)
+                if k_int in deduped:
+                    _LOG.debug(
+                        "Duplicate sparse token ID %s in embedding index %d; keeping last", k_int, i
+                    )
+                deduped[k_int] = float(v)
+            sparse.append(deduped)
+
         _LOG.debug("Encoded %d texts → dense_dim=%d", len(dense), len(dense[0]) if dense else 0)
         return EmbeddingOutput(dense=dense, sparse=sparse)

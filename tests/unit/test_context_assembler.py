@@ -154,3 +154,49 @@ class TestContextAssemblerDefaults:
         ]
         result = assembler.assemble(chunks)
         assert sep in result
+
+
+@pytest.mark.unit
+class TestContextAssemblerTokenBudget:
+    """Test that context assembler respects token budget strictly."""
+
+    def test_assembled_output_stays_within_token_budget(self) -> None:
+        """Verify that assembled output stays within the max_tokens budget."""
+        max_tokens = 50
+        assembler = ContextAssembler(max_tokens=max_tokens)
+
+        # Create a chunk with text longer than the budget
+        long_text = "word " * 200
+        chunk = _make_chunk(text=long_text)
+
+        result = assembler.assemble([chunk])
+
+        # Count approximate tokens: words / 0.75
+        word_count = len(result.split())
+        approx_tokens = word_count / 0.75
+
+        # With 5% safety margin, should be strictly under budget
+        assert approx_tokens <= max_tokens, (
+            f"Result has ~{approx_tokens} tokens but budget is {max_tokens}"
+        )
+
+    def test_assembled_chunks_respect_budget_with_multiple_chunks(self) -> None:
+        """Multiple chunks should respect the token budget when assembled."""
+        max_tokens = 100
+        assembler = ContextAssembler(max_tokens=max_tokens)
+
+        chunks = [
+            _make_chunk(text="word " * 100, original_doc_id="doc_0"),
+            _make_chunk(text="word " * 100, original_doc_id="doc_1", chunk_index=1),
+            _make_chunk(text="word " * 100, original_doc_id="doc_2", chunk_index=2),
+        ]
+
+        result = assembler.assemble(chunks)
+
+        # Approximate token count
+        word_count = len(result.split())
+        approx_tokens = word_count / 0.75
+
+        assert approx_tokens <= max_tokens, (
+            f"Result has ~{approx_tokens} tokens but budget is {max_tokens}"
+        )

@@ -82,3 +82,41 @@ class TestBuildPromptContent:
         )
         prompt = build_prompt("Question?", chunks)
         assert prompt.index("First.") < prompt.index("Second.") < prompt.index("Third.")
+
+
+@pytest.mark.unit
+class TestBuildPromptSanitization:
+    def test_control_chars_in_chunk_text_are_removed(self) -> None:
+        chunk = _chunk("Pikachu\x00is\x01Electric.", score=0.9)
+        prompt = build_prompt("What type?", (chunk,))
+        assert "\x00" not in prompt
+        assert "\x01" not in prompt
+        assert "Pikachu" in prompt
+        assert "Electric" in prompt
+
+    def test_nfkc_normalization_applied_to_chunk_text(self) -> None:
+        chunk = _chunk("The ﬁre type.", score=0.9)
+        prompt = build_prompt("What type?", (chunk,))
+        assert "fi" in prompt
+
+    def test_invalid_source_in_chunk_becomes_unknown(self) -> None:
+        from src.types import RetrievedChunk
+
+        chunk = RetrievedChunk(  # type: ignore[arg-type]
+            text="Some text.",
+            score=0.9,
+            source="wikipedia",
+            entity_name=None,
+            entity_type=None,
+            chunk_index=0,
+            original_doc_id="doc_0",
+        )
+        prompt = build_prompt("Question?", (chunk,))
+        assert "unknown" in prompt.lower()
+        assert "wikipedia" not in prompt
+
+    def test_control_chars_in_entity_name_are_removed(self) -> None:
+        chunk = _chunk("Pikachu text.", score=0.9, entity_name="Pika​chu")
+        prompt = build_prompt("Question?", (chunk,))
+        assert "​" not in prompt
+        assert "Pikachu" in prompt

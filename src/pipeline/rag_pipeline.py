@@ -6,7 +6,7 @@ import statistics
 from src.generation.protocols import GeneratorProtocol
 from src.pipeline.types import PipelineResult
 from src.retrieval.protocols import RetrieverProtocol
-from src.types import Source
+from src.types import RetrievalError, Source
 
 
 def _sigmoid(x: float) -> float:
@@ -46,6 +46,9 @@ class RAGPipeline:
             query, top_k=top_k, sources=sources, entity_name=entity_name
         )
         chunks = retrieval_result.documents
+
+        if not chunks:
+            raise RetrievalError("Retrieval returned no documents for query")
 
         gen_result = self._generator.generate(query, chunks)
 

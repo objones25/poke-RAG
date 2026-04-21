@@ -45,8 +45,12 @@ class Retriever:
 
         try:
             embedding = self._embedder.encode([query])
-        except Exception as exc:
+        except EmbeddingError as exc:
             raise RetrievalError(f"Embedding failed: {exc}") from exc
+        except (RuntimeError, ValueError) as exc:
+            raise RetrievalError(f"Embedding failed: {exc}") from exc
+        except Exception as exc:
+            raise RetrievalError(f"Embedding failed unexpectedly: {exc}") from exc
 
         if len(embedding.dense) != 1 or len(embedding.sparse) != 1:
             raise EmbeddingError(
@@ -68,8 +72,10 @@ class Retriever:
                 )
                 _LOG.debug("Search '%s' → %d candidates", source, len(chunks))
                 candidates.extend(chunks)
-        except Exception as exc:
+        except (RuntimeError, ValueError, OSError) as exc:
             raise RetrievalError(f"Vector search failed: {exc}") from exc
+        except Exception as exc:
+            raise RetrievalError(f"Vector search failed unexpectedly: {exc}") from exc
 
         _LOG.info("Total candidates: %d across %d source(s)", len(candidates), len(active_sources))
 
@@ -78,8 +84,10 @@ class Retriever:
 
         try:
             reranked = self._reranker.rerank(query, candidates, top_k=top_k)
-        except Exception as exc:
+        except (ValueError, RuntimeError) as exc:
             raise RetrievalError(f"Reranking failed: {exc}") from exc
+        except Exception as exc:
+            raise RetrievalError(f"Reranking failed unexpectedly: {exc}") from exc
 
         if not reranked:
             raise RetrievalError("No documents found for query.")

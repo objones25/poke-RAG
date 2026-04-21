@@ -242,14 +242,15 @@ class TestRAGPipelineConfidenceScore:
     def test_confidence_score_none_when_no_chunks(self, mocker) -> None:
         from src.pipeline.rag_pipeline import RAGPipeline
 
+        # With our new guard, empty chunks now raise RetrievalError instead
+        # This test verifies that the error is raised
         retriever = mocker.MagicMock()
         retriever.retrieve.return_value = _make_retrieval_result(chunks=())
         generator = mocker.MagicMock()
-        generator.generate.return_value = _make_generation_result()
         pipeline = RAGPipeline(retriever=retriever, generator=generator)
 
-        result = pipeline.query("Any question.")
-        assert result.confidence_score is None
+        with pytest.raises(RetrievalError, match="no documents"):
+            pipeline.query("Any question.")
 
 
 @pytest.mark.unit
@@ -273,3 +274,39 @@ class TestRAGPipelineValidation:
         )
         with pytest.raises(ValueError, match="query"):
             pipeline.query("   ")
+
+
+@pytest.mark.unit
+class TestRAGPipelineEmptyDocumentsGuard:
+    """Test that pipeline raises RetrievalError on empty documents from retrieval."""
+
+    def test_raises_retrieval_error_when_retriever_returns_empty_documents(self, mocker) -> None:
+        """When retriever returns empty documents tuple, pipeline raises RetrievalError."""
+        from src.pipeline.rag_pipeline import RAGPipeline
+
+        retriever = mocker.MagicMock()
+        retriever.retrieve.return_value = _make_retrieval_result(chunks=())
+        generator = mocker.MagicMock()
+
+        pipeline = RAGPipeline(retriever=retriever, generator=generator)
+
+        with pytest.raises(RetrievalError, match="no documents"):
+            pipeline.query("Any question.")
+
+        # Generator must never be called when retrieval documents are empty
+        generator.generate.assert_not_called()
+
+    def test_error_message_contains_diagnostic_info(self, mocker) -> None:
+        """Error message should indicate why retrieval failed (no documents)."""
+        from src.pipeline.rag_pipeline import RAGPipeline
+
+        retriever = mocker.MagicMock()
+        retriever.retrieve.return_value = _make_retrieval_result(chunks=())
+        generator = mocker.MagicMock()
+
+        pipeline = RAGPipeline(retriever=retriever, generator=generator)
+
+        with pytest.raises(RetrievalError) as exc_info:
+            pipeline.query("test")
+
+        assert "no documents" in str(exc_info.value).lower()

@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import math
+
+from src.retrieval.constants import WORDS_PER_TOKEN as _WORDS_PER_TOKEN
 from src.types import RetrievedChunk
 
-_WORDS_PER_TOKEN = 0.75
 _DEFAULT_MAX_TOKENS = 4096
 _DEFAULT_SEPARATOR = "\n\n---\n\n"
+_SAFETY_MARGIN = 0.95
 
 
 def _approx_tokens(text: str) -> int:
@@ -57,7 +60,7 @@ class ContextAssembler:
             block = _format_chunk(chunk)
             tokens = _approx_tokens(block)
             if tokens > budget:
-                words_allowed = int(budget * _WORDS_PER_TOKEN)
+                words_allowed = math.floor(budget * _WORDS_PER_TOKEN * _SAFETY_MARGIN)
                 if words_allowed == 0:
                     break
                 words = block.split()
