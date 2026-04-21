@@ -185,6 +185,7 @@ def main() -> None:
     from qdrant_client import QdrantClient
 
     from src.generation.loader import ModelLoader
+    from src.generation.models import GenerationConfig
     from src.retrieval.embedder import BGEEmbedder
     from src.retrieval.retriever import Retriever
     from src.retrieval.vector_store import QdrantVectorStore
@@ -206,8 +207,11 @@ def main() -> None:
         embedder=embedder, vector_store=vector_store, reranker=_PassthroughReranker()
     )
 
-    loader = ModelLoader(model_id=args.model)
-    base_model, processor = loader.load()
+    gen_config = GenerationConfig(model_id=args.model)
+    loader = ModelLoader(config=gen_config, device="cuda")
+    loader.load()
+    base_model = loader.get_model()
+    processor = loader.get_tokenizer()
 
     sft_model = PeftModel.from_pretrained(base_model, str(args.sft_adapter))
     dpo_model = PeftModel.from_pretrained(base_model, str(args.dpo_adapter))
