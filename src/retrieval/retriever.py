@@ -10,7 +10,7 @@ from src.types import EmbeddingError, RetrievalError, RetrievalResult, Source
 _LOG = logging.getLogger(__name__)
 
 _ALL_SOURCES: tuple[Source, ...] = ("bulbapedia", "pokeapi", "smogon")
-_DEFAULT_CANDIDATES_PER_SOURCE = 20
+_DEFAULT_CANDIDATES_PER_SOURCE = 25
 
 
 class Retriever:

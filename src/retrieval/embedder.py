@@ -57,11 +57,13 @@ class BGEEmbedder:
             deduped: dict[int, float] = {}
             for k, v in weights.items():
                 k_int = int(k)
+                new_val = float(v)
                 if k_int in deduped:
+                    new_val = max(deduped[k_int], new_val)
                     _LOG.debug(
-                        "Duplicate sparse token ID %s in embedding index %d; keeping last", k_int, i
+                        "Duplicate sparse token ID %s in embedding index %d; keeping max", k_int, i
                     )
-                deduped[k_int] = float(v)
+                deduped[k_int] = new_val
             sparse.append(deduped)
 
         _LOG.debug("Encoded %d texts → dense_dim=%d", len(dense), len(dense[0]) if dense else 0)

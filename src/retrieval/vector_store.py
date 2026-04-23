@@ -99,22 +99,14 @@ class QdrantVectorStore:
             )
         _LOG.debug("Upsert to '%s' complete", collection)
 
-    def search(
+    def _query(
         self,
         collection: Source,
         query_dense: list[float],
         query_sparse: dict[int, float],
         top_k: int,
-        entity_name: str | None = None,
+        query_filter: Filter | None,
     ) -> list[RetrievedChunk]:
-        _LOG.debug("Searching '%s': top_k=%d, entity_name=%s", collection, top_k, entity_name)
-
-        query_filter = (
-            Filter(must=[FieldCondition(key="entity_name", match=MatchValue(value=entity_name))])
-            if entity_name is not None
-            else None
-        )
-
         sparse_query = SparseVector(
             indices=list(query_sparse.keys()),
             values=list(query_sparse.values()),
@@ -123,16 +115,8 @@ class QdrantVectorStore:
         response = self._client.query_points(
             collection_name=collection,
             prefetch=[
-                Prefetch(
-                    query=query_dense,
-                    using=_DENSE_VECTOR_NAME,
-                    limit=top_k * 2,
-                ),
-                Prefetch(
-                    query=sparse_query,
-                    using=_SPARSE_VECTOR_NAME,
-                    limit=top_k * 2,
-                ),
+                Prefetch(query=query_dense, using=_DENSE_VECTOR_NAME, limit=top_k * 2),
+                Prefetch(query=sparse_query, using=_SPARSE_VECTOR_NAME, limit=top_k * 2),
             ],
             query=FusionQuery(fusion=Fusion.RRF),
             limit=top_k,
@@ -167,6 +151,34 @@ class QdrantVectorStore:
             _LOG.warning(
                 "Skipped %d malformed points out of %d total", skipped_count, len(response.points)
             )
+
+        return chunks
+
+    def search(
+        self,
+        collection: Source,
+        query_dense: list[float],
+        query_sparse: dict[int, float],
+        top_k: int,
+        entity_name: str | None = None,
+    ) -> list[RetrievedChunk]:
+        _LOG.debug("Searching '%s': top_k=%d, entity_name=%s", collection, top_k, entity_name)
+
+        query_filter = (
+            Filter(must=[FieldCondition(key="entity_name", match=MatchValue(value=entity_name))])
+            if entity_name is not None
+            else None
+        )
+
+        chunks = self._query(collection, query_dense, query_sparse, top_k, query_filter)
+
+        if not chunks and entity_name is not None:
+            _LOG.warning(
+                "Entity filter for '%s' in '%s' returned 0 results; retrying without filter",
+                entity_name,
+                collection,
+            )
+            chunks = self._query(collection, query_dense, query_sparse, top_k, None)
 
         _LOG.debug("Search '%s' → %d result(s)", collection, len(chunks))
         return chunks

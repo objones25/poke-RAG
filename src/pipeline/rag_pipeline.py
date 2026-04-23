@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import math
-import statistics
 
 from src.generation.protocols import GeneratorProtocol
 from src.pipeline.types import PipelineResult
@@ -52,9 +51,7 @@ class RAGPipeline:
 
         gen_result = self._generator.generate(query, chunks)
 
-        confidence_score: float | None = (
-            statistics.mean(_sigmoid(c.score) for c in chunks) if chunks else None
-        )
+        confidence_score: float | None = _sigmoid(chunks[0].score) if chunks else None
 
         return PipelineResult(
             answer=gen_result.answer,

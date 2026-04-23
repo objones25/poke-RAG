@@ -398,8 +398,18 @@ class TestSearchIntegration:
     def test_entity_name_filter_is_field_condition(self) -> None:
         """When entity_name given, query_filter is Filter with FieldCondition."""
         mock_client = MagicMock()
+        mock_point = MagicMock()
+        mock_point.score = 0.9
+        mock_point.payload = {
+            "text": "Pikachu text",
+            "source": "pokeapi",
+            "entity_name": "Pikachu",
+            "entity_type": None,
+            "chunk_index": 0,
+            "original_doc_id": "doc_0",
+        }
         mock_response = MagicMock()
-        mock_response.points = []
+        mock_response.points = [mock_point]
         mock_client.query_points.return_value = mock_response
 
         store = QdrantVectorStore(mock_client)

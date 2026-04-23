@@ -155,11 +155,27 @@ class TestSearch:
 
     def test_entity_name_filter_applied_when_given(self) -> None:
         client = _make_client()
-        client.query_points.return_value.points = []
+        client.query_points.return_value.points = [
+            self._make_scored_point("Pikachu text", 0.9, "Pikachu")
+        ]
         store = QdrantVectorStore(client)
         store.search("pokeapi", [0.1] * 1024, {1: 0.5}, top_k=5, entity_name="Pikachu")
         call_kwargs = client.query_points.call_args[1]
         assert call_kwargs.get("query_filter") is not None
+
+    def test_entity_filter_retries_without_filter_on_zero_results(self) -> None:
+        client = _make_client()
+        empty_response = MagicMock()
+        empty_response.points = []
+        result_response = MagicMock()
+        result_response.points = [self._make_scored_point("Pikachu is electric", 0.9, "Pikachu")]
+        client.query_points.side_effect = [empty_response, result_response]
+        store = QdrantVectorStore(client)
+        results = store.search("pokeapi", [0.1] * 1024, {1: 0.5}, top_k=5, entity_name="Pikachu")
+        assert client.query_points.call_count == 2
+        second_call_kwargs = client.query_points.call_args_list[1][1]
+        assert second_call_kwargs.get("query_filter") is None
+        assert len(results) == 1
 
     def test_no_filter_when_entity_name_is_none(self) -> None:
         client = _make_client()
