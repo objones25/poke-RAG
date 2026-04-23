@@ -28,6 +28,9 @@ def setup_logging(level: str | None = None) -> None:
     root = logging.getLogger()
     root.setLevel(effective)
 
+    # Suppress httpx per-request INFO logs (they expose internal service URLs).
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+
     # Re-entrant safety: if root logger already has handlers, don't add duplicates
     if root.handlers:
         return
