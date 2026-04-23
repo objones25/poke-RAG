@@ -53,5 +53,5 @@ class QueryResponse(BaseModel):
     query: str = Field(..., description="The parsed query that was processed")
     confidence_score: float | None = Field(
         default=None,
-        description="Mean sigmoid of chunk relevance scores; None if unavailable",
+        description="Sigmoid of the top-ranked chunk's reranker score; None if unavailable",
     )
