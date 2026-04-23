@@ -40,12 +40,22 @@ The `train` group is RunPod-only. Don't install it locally unless you have a CUD
 
 ```text
 src/
-  retrieval/    embedding, indexing, vector search, optional reranker
+  retrieval/    embedding, indexing, vector search, reranking, routing, query transformation
+    protocols.py          abstract interface definitions
+    query_router.py       keyword-based source router (pokeapi/smogon/bulbapedia)
+    query_transformer.py  HyDE and passthrough transformers
+    embedder.py, indexer.py, reranker.py, searcher.py  ...
   generation/   model loading, inference wrapper
+    protocols.py          GeneratorProtocol
   pipeline/     RAG orchestration, multi-round retrieval
+    rag_pipeline.py       RAGPipeline orchestrates retrieval → generation
+    types.py              PipelineResult (with confidence_score field)
   api/          FastAPI app
-  config.py     environment configuration
+    app.py                FastAPI instance with rate limiting middleware
+    models.py             QueryRequest, QueryResponse (with confidence_score field)
+  config.py     environment configuration (Settings dataclass)
   utils/        shared helpers, logging
+    logging.py            setup_logging(), suppresses httpx INFO logs
 
 tests/
   conftest.py            shared fixtures
@@ -61,8 +71,17 @@ tests/
   e2e/                   full pipeline, GPU required
 
 scripts/
-  build_index.py        embed and index processed/ data (run once)
-  training/             LoRA fine-tuning scripts (RunPod only)
+  build_index.py              embed and index processed/ data (run once)
+  training/
+    generate_sft_data.py      SFT data generation via Gemini API
+    train_sft.py              SFT training with Unsloth on RunPod
+    clean_sft_data.py         data cleaning/validation
+    gemini_client.py          Gemini API wrapper
+    sampler.py                sampling utilities
+    schemas.py                training data types
+    pokesage_system.py         system prompt constant
+    runpod_setup.sh           RunPod environment provisioning
+    RUNPOD_SETUP_NOTES.md      RunPod setup guide
 
 processed/              READ ONLY
 ```
@@ -79,42 +98,81 @@ Every chunk must carry these metadata fields in its Qdrant payload: `source` (`b
 
 `_aug.txt` variants are paraphrased rewrites for training/retrieval diversity. Read-only like the originals.
 
-## Embedding and retrieval
+## Retrieval pipeline
 
-**Model**: `BAAI/bge-m3` via `FlagEmbedding.BGEM3FlagModel`
-**Vector DB**: Qdrant (local Docker in dev, hosted or RunPod-attached in prod)
-**Retrieval mode**: hybrid — dense + sparse in a single BGE-M3 pass, fused with Qdrant `Prefetch` + `Fusion.RRF` (RRF chosen over weighted sum — no per-collection tuning required), then reranked with `BAAI/bge-reranker-v2-m3`
+**Query routing** (optional, enabled via `ROUTING_ENABLED=true`):
+- `QueryRouter` in `src/retrieval/query_router.py` classifies queries into sources via keyword patterns
+- Patterns use whole-word (`\b...\b`), phrase-prefix, and stem matching (case-insensitive)
+- If no patterns match, routes to all three sources
+- Implements `QueryRouterProtocol`
 
-BGE-M3 output types and what to store in Qdrant:
+**Query transformation** (optional, enabled via `HYDE_ENABLED=true`):
+- `HyDETransformer` in `src/retrieval/query_transformer.py` generates hypothetical answers before embedding
+- Shifts retrieval from query-to-doc to answer-to-answer similarity
+- Configurable max tokens via `HYDE_MAX_TOKENS` (default 150)
+- Falls back to original query on inference failure
+- Implements `QueryTransformerProtocol`; `PassthroughTransformer` is the identity function
 
-- **Dense** (1024-dim): always index — primary semantic search
-- **Sparse**: always index — keyword/lexical search, free alongside dense
-- **ColBERT multi-vector**: optional — higher recall, significantly more storage and query cost; add later if recall is insufficient
+**Embedding**:
+- **Model**: `BAAI/bge-m3` via `FlagEmbedding.BGEM3FlagModel`
+- **Output types**: Dense (1024-dim, always indexed), Sparse (keyword/lexical, free), ColBERT multi-vector (optional, higher recall/cost)
 
-Each source (`bulbapedia`, `pokeapi`, `smogon`) is a **separate Qdrant collection**. Queries target one or more collections via namespace parameter. This enables source-specific retrieval (e.g. stats-only queries hit `pokeapi` only).
+**Vector storage**:
+- **DB**: Qdrant (local Docker in dev, hosted or RunPod-attached in prod)
+- **Collections**: Each source (`bulbapedia`, `pokeapi`, `smogon`) is a separate Qdrant collection
+- **Retrieval**: Hybrid dense + sparse in a single BGE-M3 pass, fused with Qdrant `Prefetch` + `Fusion.RRF` (RRF chosen over weighted sum — no per-collection tuning required)
+- **Reranking**: Optional BGE-M3 reranker (`BAAI/bge-reranker-v2-m3`) applied post-retrieval
+
+**Error handling**:
+- If retrieval returns no documents, `RAGPipeline.query()` raises `RetrievalError("Retrieval returned no documents for query")`
+- Generator is never called if retrieval fails
+
+## Protocols
+
+All major components implement protocols from `src/retrieval/protocols.py` and `src/generation/protocols.py`:
+
+- `EmbedderProtocol` — `encode(texts: list[str]) -> EmbeddingOutput`
+- `VectorStoreProtocol` — `ensure_collections()`, `upsert()`, `search()`
+- `RerankerProtocol` — `rerank(query, documents, top_k) -> list[RetrievedChunk]`
+- `RetrieverProtocol` — `retrieve(query, top_k, sources, entity_name) -> RetrievalResult`
+- `QueryRouterProtocol` — `route(query: str) -> list[Source]` (returns non-empty sorted list)
+- `QueryTransformerProtocol` — `transform(query: str) -> str` (returns original on failure)
+- `GeneratorProtocol` — `generate(query, chunks) -> GenerationResult`
+
+These protocols enable unit testing with mocks instead of loading real models.
 
 ## Pipeline and API
 
 **`build_pipeline()` return type**: `tuple[RAGPipeline, ModelLoader, QdrantClient]`
 
+**RAGPipeline constructor**:
+- Requires: `retriever: RetrieverProtocol`, `generator: GeneratorProtocol`
+- Optional: `query_router: QueryRouterProtocol | None = None`
+- If `query_router` is provided and `sources=None` in `query()` call, router classifies the query
+
 **Response types**:
 
-- `PipelineResult` (in `src/pipeline/types.py`): includes `confidence_score: float | None = None`
+- `PipelineResult` (in `src/pipeline/types.py`): includes `confidence_score: float | None = None` (sigmoid of top chunk score)
 - `QueryResponse` (in `src/api/models.py`): includes `confidence_score: float | None = None`
 
 **API endpoints**:
 
-- `POST /query` — Main RAG endpoint (20 req/min/IP rate limit)
+- `POST /query` — Main RAG endpoint (20 req/min/IP rate limit via `RATE_LIMIT_ENABLED`)
 - `GET /stats` — Returns dict of Qdrant collection names → bool
 
-**Config changes**:
+**Environment configuration** (in `src/config.py` Settings):
 
-- `qdrant_api_key` in `src/config.py` is now `SecretStr` (Pydantic) — masked in logs/repr
+- `ROUTING_ENABLED=true/false` — Enable QueryRouter (default: false)
+- `HYDE_ENABLED=true/false` — Enable HyDETransformer (default: false)
+- `HYDE_MAX_TOKENS=N` — Max tokens for HyDE output (default: 150)
+- `LORA_ADAPTER_PATH=/path/to/adapter` — Path to LoRA weights (optional, only if fine-tuned on RunPod)
+- `qdrant_api_key` — `SecretStr` (Pydantic), masked in logs/repr
 
-**Security & rate limiting**:
+**Security & logging**:
 
 - Query prompt injection: `src/generation/prompt_builder.py` strips newlines from user queries
 - Rate limiting via `RateLimitMiddleware` in `src/api/app.py` (configurable via `RATE_LIMIT_ENABLED`)
+- `httpx` INFO logs suppressed in `setup_logging()` — prevents Qdrant URL leakage in server logs
 
 ## Non-negotiable rules
 

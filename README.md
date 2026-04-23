@@ -1,6 +1,6 @@
 # poke-RAG
 
-Agentic retrieval-augmented generation (RAG) system for Pokémon knowledge, powered by `google/gemma-4-E4B-it` and grounded in three authoritative sources: Bulbapedia, PokéAPI, and Smogon.
+Agentic retrieval-augmented generation (RAG) system for Pokémon knowledge, powered by `google/gemma-4-E4B-it` and grounded in three authoritative sources: Bulbapedia, PokéAPI, and Smogon. Optional supervised fine-tuning (SFT) with LoRA on RunPod.
 
 ## Overview
 
@@ -12,6 +12,10 @@ poke-RAG is a production-ready RAG pipeline that answers Pokémon questions with
 User Query
     ↓
 [Query Parser] — parse source/filter constraints
+    ↓
+[Query Router] (optional) — classify query into sources via keyword patterns
+    ↓
+[HyDE Transformer] (optional) — generate hypothetical document embedding
     ↓
 [BGE-M3 Embedder] — dense + sparse vectors in one pass
     ↓
@@ -26,12 +30,12 @@ bulbapedia     pokeapi        smogon
     ↓
 [Context Assembler] — token-bounded context
     ↓
-[Gemma 4 Generator] — answer + attribution
+[Gemma 4 Generator] — answer + attribution (optional LoRA adapter)
     ↓
 QueryResponse (answer, sources, chunks_used, confidence_score, model_name)
 ```
 
-Each query hits one or more collections via source filtering. Dense and sparse vectors are fused with Qdrant's reciprocal rank fusion (RRF), avoiding per-collection tuning.
+Each query hits one or more collections via source filtering or keyword routing. Dense and sparse vectors are fused with Qdrant's reciprocal rank fusion (RRF), avoiding per-collection tuning. Optional query transformation (HyDE) and source routing for smarter retrieval.
 
 ## Data Sources
 
@@ -160,6 +164,8 @@ print(f"Confidence: {result.get('confidence_score')}")
 }
 ```
 
+The `confidence_score` is the sigmoid of the top-ranked chunk's BGE Reranker v2-m3 score (0.0–1.0), indicating how confident the system is in the retrieved evidence. Use this to filter low-confidence responses in production. If reranking is skipped or disabled, `confidence_score` is `null`.
+
 ## Commands Reference
 
 ### Development
@@ -209,19 +215,27 @@ poke-RAG/
 │   │   ├── dependencies.py     # Dependency injection (pipeline construction)
 │   │   └── query_parser.py     # Query string parsing & source extraction
 │   │
-│   ├── retrieval/              # Embedding, indexing, vector search
+│   ├── retrieval/              # Embedding, indexing, vector search, routing, transformation
 │   │   ├── embedder.py         # BGEEmbedder wrapper (BGE-M3)
 │   │   ├── chunker.py          # Source-specific chunking logic
 │   │   ├── vector_store.py     # QdrantVectorStore (wrapper)
 │   │   ├── retriever.py        # Orchestrates embed → search → rerank
 │   │   ├── reranker.py         # BGE Reranker v2-m3
+│   │   ├── query_router.py     # Keyword-based source classification (optional)
+│   │   ├── query_transformer.py # HyDE & passthrough transformers (optional)
+│   │   ├── context_assembler.py # Token-bounded context assembly
 │   │   ├── types.py            # EmbeddingOutput, etc.
-│   │   └── protocols.py        # Interfaces (RetrieverProtocol, etc.)
+│   │   ├── protocols.py        # Interfaces (RetrieverProtocol, etc.)
+│   │   ├── _compat.py          # FlagEmbedding + transformers 5.x compatibility shims
+│   │   └── constants.py        # Retrieval constants
 │   │
-│   ├── generation/             # Model inference
+│   ├── generation/             # Model loading and inference
+│   │   ├── loader.py           # ModelLoader for base model + LoRA adapter
 │   │   ├── generator.py        # Gemma 4 generation wrapper
-│   │   ├── protocols.py        # GeneratorProtocol, PromptBuilderProtocol
-│   │   └── prompts.py          # System prompts, context assembly
+│   │   ├── inference.py        # Low-level inference execution
+│   │   ├── prompt_builder.py   # System prompts, prompt injection guards
+│   │   ├── models.py           # Generation request/response models
+│   │   └── protocols.py        # GeneratorProtocol, PromptBuilderProtocol
 │   │
 │   ├── pipeline/               # RAG orchestration
 │   │   ├── rag_pipeline.py     # Main query orchestrator
@@ -254,9 +268,16 @@ poke-RAG/
 │
 ├── scripts/
 │   ├── build_index.py          # Embed processed/ and upsert to Qdrant (main script)
-│   ├── training/               # LoRA fine-tuning (RunPod only, not imported by src/)
-│   │   ├── train_lora.py
-│   │   └── ...
+│   ├── training/               # SFT fine-tuning (RunPod only, not imported by src/)
+│   │   ├── train_sft.py        # QLoRA SFT training via Unsloth + TRL
+│   │   ├── generate_sft_data.py # Generate SFT pairs from retrieval chunks
+│   │   ├── clean_sft_data.py   # Data cleaning & deduplication
+│   │   ├── gemini_client.py    # Gemini API client for QA generation
+│   │   ├── sampler.py          # Stratified data sampling
+│   │   ├── pokesage_system.py  # System prompt definition
+│   │   ├── schemas.py          # Data class schemas
+│   │   ├── runpod_setup.sh     # RunPod environment setup
+│   │   └── RUNPOD_SETUP_NOTES.md # RunPod instructions
 │   └── __init__.py
 │
 ├── processed/                  # READ-ONLY knowledge sources (never write here)
@@ -289,10 +310,22 @@ QDRANT_API_KEY=                            # Optional, for cloud
 
 # Embedding & generation models
 EMBED_MODEL=BAAI/bge-m3                    # BGE-M3, don't change
+RERANK_MODEL=BAAI/bge-reranker-v2-m3       # BGE Reranker v2-m3, don't change
 GEN_MODEL=google/gemma-4-E4B-it            # Gemma 4, don't change
 
 # LoRA fine-tuning
 LORA_ADAPTER_PATH=                         # Optional: path to local LoRA adapter
+
+# Query transformation & routing (optional)
+ROUTING_ENABLED=false                      # Enable keyword-based query router
+HYDE_ENABLED=false                         # Enable HyDE query transformation
+HYDE_MAX_TOKENS=150                        # Max tokens for HyDE pseudo-answer
+
+# Generation parameters
+TEMPERATURE=0.7                            # Model temperature (0.0-2.0)
+MAX_NEW_TOKENS=512                         # Max tokens to generate
+TOP_P=0.9                                  # Top-P nucleus sampling (0.0-1.0)
+DO_SAMPLE=true                             # Use sampling vs. greedy decoding
 
 # Device / GPU
 DEVICE=cuda                                # cpu, cuda, or mps
@@ -301,7 +334,8 @@ DEVICE=cuda                                # cpu, cuda, or mps
 RATE_LIMIT_ENABLED=true                    # Enable/disable rate limiting
 QUERY_TIMEOUT_SECONDS=120                  # Query timeout (increase for MPS)
 ALLOWED_ORIGINS=*                          # CORS allowed origins
-LOG_LEVEL=INFO                             # Log level (INFO, DEBUG, WARNING, ERROR)
+LOG_LEVEL=INFO                             # Log level (DEBUG, INFO, WARNING, ERROR)
+TRUSTED_PROXY_COUNT=0                      # Number of trusted proxies (for X-Forwarded-For)
 ```
 
 Load these in code via:
@@ -318,27 +352,38 @@ settings = Settings.from_env()
 | `QDRANT_URL` | `http://localhost:6333` | Yes | Qdrant vector DB URL (Docker locally, hosted in prod) |
 | `QDRANT_API_KEY` | (none) | No | API key for cloud Qdrant; omit for local |
 | `EMBED_MODEL` | `BAAI/bge-m3` | No | BGE-M3 embedding model (do not change) |
+| `RERANK_MODEL` | `BAAI/bge-reranker-v2-m3` | No | BGE Reranker v2-m3 model (do not change) |
 | `GEN_MODEL` | `google/gemma-4-E4B-it` | No | Gemma 4 generation model (do not change) |
 | `LORA_ADAPTER_PATH` | (none) | No | Path to local PEFT LoRA adapter (e.g. `models/pokesage-lora`). If set but path doesn't exist, falls back to `objones25/pokesage-lora` on HF Hub. Omit to run base model only. |
+| `ROUTING_ENABLED` | `false` | No | Enable keyword-based query router to classify queries into sources |
+| `HYDE_ENABLED` | `false` | No | Enable HyDE query transformation (generates pseudo-answer for better retrieval) |
+| `HYDE_MAX_TOKENS` | `150` | No | Maximum tokens for HyDE pseudo-answer generation |
+| `TEMPERATURE` | `0.7` | No | Model temperature for generation (0.0–2.0, higher = more creative) |
+| `MAX_NEW_TOKENS` | `512` | No | Maximum tokens to generate in response |
+| `TOP_P` | `0.9` | No | Top-P nucleus sampling (0.0–1.0) |
+| `DO_SAMPLE` | `true` | No | Use sampling vs. greedy decoding |
 | `DEVICE` | `cuda` | No | Device: `cpu`, `cuda`, or `mps` (Apple Silicon) |
-| `RATE_LIMIT_ENABLED` | `true` | No | Enable/disable rate limiting on `/query` endpoint |
+| `RATE_LIMIT_ENABLED` | `true` | No | Enable/disable rate limiting on `/query` endpoint (20 req/min/IP) |
 | `QUERY_TIMEOUT_SECONDS` | `120` | No | Timeout for inference. Increase for MPS (e.g. `300`). |
 | `ALLOWED_ORIGINS` | `*` | No | CORS allowed origins (comma-separated or `*` for all) |
-| `LOG_LEVEL` | `INFO` | No | Log level: `DEBUG`, `INFO`, `WARNING`, `ERROR` |
+| `LOG_LEVEL` | `INFO` | No | Log level: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` |
+| `TRUSTED_PROXY_COUNT` | `0` | No | Number of trusted proxies for X-Forwarded-For header parsing |
 
 ## Core Dependencies
 
 | Group     | Key Packages                             | Purpose                            |
 | --------- | ---------------------------------------- | ---------------------------------- |
-| **core**  | `transformers`, `torch`, `accelerate`    | Model loading & inference          |
+| **core**  | `transformers` ≥5.5.0, `torch` ≥2.11.0  | Model loading & inference          |
+|           | `accelerate`                             | Multi-GPU inference support        |
 |           | `FlagEmbedding` ≥1.3.5                   | BGE-M3 embeddings (dense + sparse) |
 |           | `qdrant-client` ≥1.17.1                  | Vector DB client                   |
-|           | `peft`                                   | LoRA adapter loading at inference  |
-|           | `pydantic`, `numpy`                      | Data validation, numerics          |
-| **api**   | `fastapi`, `uvicorn[standard]`           | HTTP server                        |
-| **dev**   | `pytest`, `pytest-mock`, `pytest-cov`    | Testing                            |
-|           | `ruff`, `mypy`                           | Linting & type checking            |
-| **train** | `unsloth`, `trl`, `bitsandbytes`         | LoRA fine-tuning (RunPod only)     |
+|           | `peft` ≥0.14.0                           | LoRA adapter loading at inference  |
+|           | `pydantic` ≥2.13.3, `numpy` ≥2.4.4      | Data validation, numerics          |
+| **api**   | `fastapi` ≥0.136.0, `uvicorn[standard]`  | HTTP server with standard middleware |
+| **dev**   | `pytest` ≥9.0.3, `pytest-mock`, `pytest-cov` | Testing & coverage                |
+|           | `ruff` ≥0.15.11, `mypy` ≥1.20.1         | Linting & type checking (strict)   |
+| **train** | `unsloth`, `trl`, `bitsandbytes`         | SFT fine-tuning (RunPod only)      |
+|           | `datasets`                               | Dataset handling for training      |
 
 Never use `pip install` — use `uv add` only. See `CONTRIBUTING.md` for dependency management.
 
@@ -378,11 +423,34 @@ Each collection stores both `vectors_config` (dense, 1024-dim, cosine) and `spar
 
 ### Retrieval Pipeline
 
-1. **Embed query** — BGE-M3 dense + sparse
-2. **Hybrid search** — Qdrant searches all or selected collections with RRF fusion
-3. **Rerank** — Top-K candidates reranked with `BAAI/bge-reranker-v2-m3`
-4. **Assemble context** — Chunks truncated to token budget, ordered by score
-5. **Generate** — Gemma 4 answers with retrieved context
+1. **Classify query** (optional) — Keyword-based router classifies query into one or more sources via regex patterns (enable with `ROUTING_ENABLED=true`)
+2. **Transform query** (optional) — HyDE transformer generates a hypothetical document embedding instead of raw query (enable with `HYDE_ENABLED=true`)
+3. **Embed query** — BGE-M3 dense + sparse (original or HyDE-transformed query)
+4. **Hybrid search** — Qdrant searches selected or all collections with RRF fusion
+5. **Rerank** — Top-K candidates reranked with `BAAI/bge-reranker-v2-m3`
+6. **Assemble context** — Chunks truncated to token budget, ordered by score, with metadata
+7. **Generate** — Gemma 4 answers with retrieved context, optionally using LoRA adapter
+
+### Query Router (Optional)
+
+The keyword-based `QueryRouter` in `src/retrieval/query_router.py` automatically classifies queries into sources without explicit user filtering:
+
+- **PokéAPI patterns**: stats, types, abilities, evolution, breeding info
+- **Bulbapedia patterns**: competitive movesets, type matchups, game mechanics, lore
+- **Smogon patterns**: competitive tiers, usage data, set recommendations
+
+Enable with `ROUTING_ENABLED=true`. Router outputs a `source_classification: dict[Source, float]` (confidence scores per source). If scores are low (no clear match), queries fallback to searching all sources.
+
+### HyDE Query Transformation (Optional)
+
+The `HyDETransformer` in `src/retrieval/query_transformer.py` generates a hypothetical document (pseudo-answer) and uses that text for retrieval instead of the raw query, shifting retrieval to answer-to-answer similarity. This often improves recall on conceptual questions.
+
+Enable with `HYDE_ENABLED=true`, configure max tokens with `HYDE_MAX_TOKENS=150` (default). The transformer:
+1. Sends query through Gemma 4 to generate a hypothetical answer
+2. Uses that answer text for embedding & retrieval
+3. Falls back to original query on any failure
+
+Recommended for complex Pokémon knowledge questions; disable for factual lookups.
 
 ## Generation: Gemma 4 4B-it
 
@@ -485,29 +553,35 @@ Test organization:
 
 See `TESTING.md` for mocking patterns (embedder, generator), the no-fallback invariant test, and fixtures.
 
-## Fine-Tuning with LoRA
+## Fine-Tuning with LoRA (SFT)
 
-The `pokesage-lora` adapter is a PEFT LoRA adapter trained with Supervised Fine-Tuning (SFT) on Gemma 4 4B-it using Unsloth + TRL on RunPod H100.
+The `pokesage-lora` adapter is a PEFT LoRA adapter trained with Supervised Fine-Tuning (SFT) on Gemma 4 4B-it using Unsloth + TRL on RunPod.
 
-### Training Details
+### Training Method
 
-**pokesage-v1** training run:
+**SFT (Supervised Fine-Tuning)** with QLoRA (quantized LoRA):
 
-- **Method**: Supervised Fine-Tuning (SFT) with Unsloth + TRL `SFTTrainer`
+- **Framework**: Unsloth + TRL `SFTTrainer` (4-bit quantization for memory efficiency)
+- **Model**: `google/gemma-4-E4B-it`
 - **Adapter Config**: LoRA with r=16, alpha=16, targeting all linear layers
 - **Adapter Size**: ~147MB
-- **Hardware**: RunPod H100 GPU
-- **Training Run**: [pokesage-sft on Weights & Biases](https://wandb.ai/objones25/pokesage-sft/runs/ht1h2qpd)
+- **Data Format**: JSONL with conversation messages (`role`/`content`)
+- **Data Source**: SFT pairs generated from retrieval chunks via `generate_sft_data.py` using Gemini API
 
-**Results**:
+### Training Data Pipeline
 
-| Epoch | eval_loss |
-|-------|-----------|
-| 1     | 2.920     |
-| 2     | 2.820     | ← best checkpoint saved |
-| 3     | 2.901     |
+1. **generate_sft_data.py** — Chunks from `processed/` → Gemini API to generate Q&A pairs
+2. **clean_sft_data.py** — Deduplication, validation, quality filtering
+3. **sampler.py** — Stratified sampling across sources (bulbapedia, pokeapi, smogon)
+4. **train_sft.py** — QLoRA training with TRL SFTTrainer
 
-The adapter is published to HF Hub as [`objones25/pokesage-lora`](https://huggingface.co/objones25/pokesage-lora).
+### Published Adapters
+
+| Adapter | Status | Base Model | Checkpoint |
+|---------|--------|-----------|------------|
+| `pokesage-lora` (objones25/pokesage-lora) | v1 | gemma-4-E4B-it | Epoch 2 (best val_loss) |
+
+Available on [HuggingFace Hub](https://huggingface.co/objones25/pokesage-lora).
 
 ### Using the LoRA Adapter at Inference
 
@@ -540,19 +614,22 @@ export QUERY_TIMEOUT_SECONDS=300  # 5 minutes
 uv run uvicorn src.api.app:app
 ```
 
-### Training on RunPod
+### Training on RunPod (SFT)
 
-LoRA adapter scripts are in `scripts/training/` (isolated from `src/`). Recommended GPU: **RTX 4090 (24GB)** on RunPod community (~$0.35–$0.69/hr). Gemma 4 4B requires ~8–10 GB VRAM with 4-bit quantization via Unsloth.
+SFT scripts are in `scripts/training/` (isolated from `src/`, no imports to or from `src/`). Recommended GPU: **RTX 4090 (24GB)** on RunPod community (~$0.35–$0.69/hr). Gemma 4 4B with 4-bit quantization requires ~8–10 GB VRAM.
 
-Steps:
+**Workflow**:
 
-1. Spin up RunPod with PyTorch template
-2. Attach network volume for checkpoints
-3. `git clone`, `uv sync --all-extras`
-4. `uv run python scripts/training/train_lora.py` (check `--adapter-path` argument)
-5. Save adapter to network volume; load at inference time
+1. Spin up RunPod with PyTorch template (CUDA 12.6, torch 2.7 recommended)
+2. Attach network volume for checkpoints and data
+3. `git clone`, `uv sync --all-extras` (includes `train` extra)
+4. Run `scripts/training/runpod_setup.sh` — patches Unsloth and installs exact dependencies
+5. Generate SFT data: `uv run python scripts/training/generate_sft_data.py --data-dir /mnt/volume/data/`
+6. Clean data: `uv run python scripts/training/clean_sft_data.py`
+7. Train: `uv run python scripts/training/train_sft.py --data data/sft/train.jsonl --output-dir models/pokesage-lora --epochs 3`
+8. Save adapter to network volume; load at inference time via `LORA_ADAPTER_PATH`
 
-See `CONTRIBUTING.md` for full RunPod workflow.
+See `scripts/training/RUNPOD_SETUP_NOTES.md` for detailed instructions and troubleshooting.
 
 ## See Also
 
@@ -561,7 +638,19 @@ See `CONTRIBUTING.md` for full RunPod workflow.
 - **[TESTING.md](./TESTING.md)** — Testing framework, TDD workflow, mocking patterns, coverage expectations
 - **[SECURITY.md](./SECURITY.md)** — Security checklist, secret management, vulnerability scanning
 
+## API Security & Rate Limiting
+
+The FastAPI application includes several security features:
+
+1. **Rate Limiting** — 20 requests per minute per IP on `/query` endpoint (configurable via `RATE_LIMIT_ENABLED`)
+2. **Prompt Injection Guards** — User queries are stripped of newlines in `prompt_builder.py` to prevent prompt injection
+3. **CORS Middleware** — Configurable allowed origins via `ALLOWED_ORIGINS` env var (default `*`)
+4. **Request Size Limits** — Max 64 KB per request body
+5. **X-Forwarded-For Parsing** — Trusted proxy support via `TRUSTED_PROXY_COUNT` for real IP detection
+6. **Response Latency Tracking** — `X-Response-Time-Ms` header added to all responses
+7. **Masked Secrets** — `QDRANT_API_KEY` masked in logs (Pydantic `SecretStr`)
+
 ---
 
-**Last updated**: 2026-04-21  
+**Last updated**: 2026-04-23  
 **Status**: Active development

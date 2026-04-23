@@ -1,6 +1,6 @@
 # Generation Subsystem Codemap
 
-**Last Updated:** 2026-04-21
+**Last Updated:** 2026-04-23
 **Entry Points:** `src/generation/__init__.py`
 
 ## Overview

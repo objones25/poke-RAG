@@ -66,9 +66,13 @@ train = [
     # RunPod only — requires CUDA
     "unsloth",
     "trl>=0.8.0",
-    "peft>=0.10.0",
+    "peft>=0.14.0",
     "bitsandbytes>=0.43.0",
     "datasets>=2.18.0",
+]
+gen = [
+    # Optional: Google Generative AI models
+    "google-genai>=1.0.0",
 ]
 ```
 
@@ -86,10 +90,10 @@ Commit both `pyproject.toml` and `uv.lock`.
 
 ## Vector DB and embeddings
 
-**Vector DB**: Qdrant. Run locally via Docker for development:
+**Vector DB**: Qdrant. In development and tests, Qdrant is a remote hosted instance accessed via `QDRANT_URL` environment variable. Set this before running tests:
 
 ```bash
-docker run -p 6333:6333 -p 6334:6334 qdrant/qdrant
+export QDRANT_URL="http://localhost:6333"  # or your remote Qdrant server
 ```
 
 Three separate collections — one per source namespace: `bulbapedia`, `pokeapi`, `smogon`. Never merge sources into a single flat collection.
@@ -126,7 +130,11 @@ Every chunk's Qdrant payload must include: `source`, `entity_name` (string, e.g.
 
 **Confidence scores**: `PipelineResult` and `QueryResponse` now include `confidence_score: float | None = None`, reflecting the confidence level of retrieval and generation.
 
-**Rate limiting**: `RateLimitMiddleware` enforces 20 requests per minute per IP on `/query` endpoints. The `RATE_LIMIT_ENABLED` environment variable can be set to `"false"` to disable rate limiting (used in tests via `monkeypatch.setenv("RATE_LIMIT_ENABLED", "false")`).
+**Rate limiting**: `RateLimitMiddleware` enforces 20 requests per minute per IP on `/query` endpoints. The `RATE_LIMIT_ENABLED` environment variable can be set to `"false"` to disable rate limiting. In the test suite, rate limiting is disabled by default in `tests/conftest.py` via an autouse fixture to prevent spurious failures during rapid test requests.
+
+**Query routing**: Optional per-query source selection via `QueryRouter` (keyword-based heuristics). Disabled by default; enable with `ROUTING_ENABLED=true`.
+
+**Query transformation**: Optional HyDE (Hypothetical Document Embeddings) expansion via `HyDETransformer`. Disabled by default; enable with `HYDE_ENABLED=true` and provide an inferencer instance to the transformer.
 
 ## Workflow
 
@@ -143,10 +151,18 @@ experiment/   LoRA/training work (relaxed test requirements, note this explicitl
 ### TDD — required for all `src/` changes
 
 1. Write a failing test
-2. Confirm it fails: `uv run pytest -k "your_test"`
+2. Confirm it fails: `uv run pytest -k "your_test" -m "not gpu"`
 3. Implement the minimum code to pass
 4. Refactor
 5. Commit test and implementation together
+
+Before committing, run the full test suite locally:
+
+```bash
+uv run ruff check .                    # zero errors
+uv run mypy src/                       # zero errors
+uv run pytest -m "not gpu" --tb=short  # all pass, coverage ≥80%
+```
 
 See `TESTING.md` for full details.
 

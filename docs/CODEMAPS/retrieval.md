@@ -1,6 +1,6 @@
 # Retrieval Subsystem Codemap
 
-**Last Updated:** 2026-04-21  
+**Last Updated:** 2026-04-23  
 **Entry Points:** `src/retrieval/__init__.py` → `BGEEmbedder`, `Retriever`, `BGEReranker`, `ContextAssembler`
 
 ## Overview
@@ -54,11 +54,12 @@ vector_store.py (QdrantVectorStore)
   └─ search: hybrid dense+sparse RRF fusion with optional entity_name filter
   ↓
 retriever.py (Retriever orchestrator)
-  1. embed query with BGEEmbedder
-  2. for each source: search vector_store (top_k=candidates_per_source, default 20)
-  3. merge candidates across sources
-  4. rerank all candidates with BGEReranker to top_k (default 5)
-  5. return RetrievalResult(documents, query)
+  1. optionally transform query with query_transformer (e.g., HyDE)
+  2. embed (transformed or original) query with BGEEmbedder
+  3. for each source (in parallel): search vector_store (top_k=candidates_per_source, default 25)
+  4. merge candidates across sources
+  5. rerank all candidates with BGEReranker to top_k (default 5)
+  6. return RetrievalResult(documents, query)
   ↓
 reranker.py (BGEReranker)
   → FlagReranker.compute_score(query-doc pairs)
@@ -154,6 +155,20 @@ def rerank(
     """Rerank documents by relevance to query. Returns new chunks with updated scores."""
 ```
 
+**`QueryRouterProtocol`**
+
+```python
+def route(self, query: str) -> list[Source]:
+    """Classify query into one or more sources. Returns sorted list; never empty."""
+```
+
+**`QueryTransformerProtocol`**
+
+```python
+def transform(self, query: str) -> str:
+    """Transform a query before embedding. Returns original query on failure."""
+```
+
 **`RetrieverProtocol`**
 
 ```python
@@ -162,6 +177,7 @@ def retrieve(
     *,
     top_k: int = 5,
     sources: list[Source] | None = None,
+    entity_name: str | None = None,
 ) -> RetrievalResult:
     """Retrieve top_k chunks for query across specified sources.
 
@@ -222,21 +238,30 @@ def __init__(
     embedder: EmbedderProtocol,
     vector_store: VectorStoreProtocol,
     reranker: RerankerProtocol,
-    candidates_per_source: int = _DEFAULT_CANDIDATES_PER_SOURCE,  # 20
+    candidates_per_source: int = _DEFAULT_CANDIDATES_PER_SOURCE,  # 25 (updated)
+    query_transformer: QueryTransformerProtocol | None = None,
 ) -> None:
-    """Inject dependencies (enables mocking in tests)."""
+    """Inject dependencies (enables mocking in tests).
+    
+    Args:
+        query_transformer: Optional transformer (e.g., HyDETransformer) to pre-process query
+                          before embedding. If provided, transforms query and embeds result
+                          instead of raw query. Falls back to original query on transform failure.
+    """
 
 def retrieve(
     query: str,
     *,
     top_k: int = 5,
     sources: list[Source] | None = None,
+    entity_name: str | None = None,
 ) -> RetrievalResult:
-    """1. Embed query (raises EmbeddingError if empty or fails).
-    2. Validate embedding: assert len(embedding.dense) == 1 before using.
-    3. Search each active source for candidates_per_source items.
-    4. Merge candidates (may exceed top_k at this stage).
-    5. Rerank to top_k.
+    """1. Optionally transform query (if query_transformer is set).
+    2. Embed transformed query (raises EmbeddingError if empty or fails).
+    3. Validate embedding: assert len(embedding.dense) == 1 before using.
+    4. Search each active source for candidates_per_source items (parallel via ThreadPoolExecutor).
+    5. Merge candidates (may exceed top_k at this stage).
+    6. Rerank to top_k.
     Raises RetrievalError if no candidates found or reranking fails.
     """
 ```
@@ -278,6 +303,47 @@ def assemble(chunks: list[RetrievedChunk]) -> str:
     5. Truncate last chunk to fit budget.
     6. Join with separator.
     """
+```
+
+**`QueryRouter`**
+
+```python
+class QueryRouter:
+    def route(self, query: str) -> list[Source]:
+        """Classify query into one or more retrieval sources via keyword pattern matching.
+        
+        Returns sorted list of Source names. If query is empty, returns all sources.
+        If no patterns match, returns all sources (fallback to full search).
+        
+        Pattern categories:
+        - pokeapi: base stats, types, moves, abilities, evolution, forms, breeding, game mechanics
+        - smogon: tiers, competitive meta, EV/IV spreads, movesets, strategy
+        - bulbapedia: lore, design, anime, history, flavor text, pokedex entries
+        """
+```
+
+**`HyDETransformer`**
+
+```python
+class HyDETransformer:
+    def __init__(
+        self,
+        inferencer: Any,  # Inferencer instance (duck-typed)
+        *,
+        max_new_tokens: int = 150
+    ) -> None:
+        """Initialize with an inferencer for generating hypothetical documents."""
+    
+    def transform(self, query: str) -> str:
+        """Transform a query via Hypothetical Document Embedding.
+        
+        Uses the LLM to generate a pseudo-answer to the query, then returns
+        that synthetic document for embedding instead of the raw query.
+        This shifts retrieval to answer-to-answer similarity, improving recall
+        on FAQ-style lookups.
+        
+        Falls back to original query on any inference failure or empty output.
+        """
 ```
 
 ### Chunking Functions (script-level, also exported)
@@ -336,7 +402,7 @@ def chunk_file(path: Path, *, source: Source) -> list[RetrievedChunk]:
 | `_BULBA_TARGET_TOKENS`                   | 512                                 | Bulbapedia chunk target (approx)        |
 | `_OVERLAP_RATIO`                         | 0.1                                 | Chunk overlap as fraction of target     |
 | `_WORDS_PER_TOKEN`                       | 0.75                                | Heuristic: 1 token ≈ 0.75 words         |
-| `_DEFAULT_CANDIDATES_PER_SOURCE`         | 20                                  | Pre-reranking candidates per collection |
+| `_DEFAULT_CANDIDATES_PER_SOURCE`         | 25                                  | Pre-reranking candidates per collection |
 | `_DEFAULT_MAX_TOKENS` (ContextAssembler) | 4096                                | Max context token budget                |
 | `_DEFAULT_SEPARATOR` (ContextAssembler)  | "\n\n---\n\n"                       | Chunk separator in context string       |
 
@@ -363,15 +429,23 @@ For each source:
 Input: query string
 
 ```text
-1. embedder.encode([query])
+0. Optional query transformation:
+   If query_transformer is set:
+     embed_text = query_transformer.transform(query)
+     (Falls back to original query on failure)
+   Else:
+     embed_text = query
+
+1. embedder.encode([embed_text])
    → EmbeddingOutput(dense=[...], sparse=[...])
 
-2. For each source in active_sources:
+2. For each source in active_sources (parallel via ThreadPoolExecutor):
      vector_store.search(
        collection=source,
        query_dense=embedding.dense[0],
        query_sparse=embedding.sparse[0],
-       top_k=candidates_per_source,  # default 20
+       top_k=candidates_per_source,  # default 25
+       entity_name=entity_name,  # optional payload filter
      )
    Accumulate candidates across sources (may exceed top_k)
 
@@ -419,7 +493,7 @@ Output: context_string for LLM prompt
 
 6. **Token-based chunking**: Uses rough heuristic `len(text.split()) / 0.75` to estimate tokens. Merges segments with ~10% overlap to preserve context across boundaries.
 
-7. **Two-pass reranking**: Retriever fetches `candidates_per_source × num_sources` candidates (default 20 per source = 60 total), then reranks to final `top_k` (default 5). Balances recall (more initial candidates) with precision (reranker refines).
+7. **Two-pass reranking**: Retriever fetches `candidates_per_source × num_sources` candidates (default 25 per source = 75 total across 3 sources), then reranks to final `top_k` (default 5). Balances recall (more initial candidates) with precision (reranker refines).
 
 8. **Fail-fast retrieval**: Any exception in embedding, search, or reranking raises `RetrievalError`. Generator layer must never be called on failure—documented in error class docstring.
 

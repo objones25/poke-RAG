@@ -39,17 +39,35 @@ Local Qdrant (Docker) does not require an API key. `QDRANT_API_KEY` is only need
 
 ## Rate limiting
 
-The API enforces rate limiting on `/query` endpoints via `RateLimitMiddleware`:
+The API enforces rate limiting on all endpoints via `RateLimitMiddleware` in `src/api/app.py`:
 
 - **Limit**: 20 requests per minute per IP address
-- **Enforcement**: Headers check via `RATE_LIMIT_ENABLED` environment variable
+- **Configuration**: Controlled via `RATE_LIMIT_ENABLED` environment variable (default: `true`)
 - **Testing**: Set `RATE_LIMIT_ENABLED=false` via `monkeypatch.setenv()` in tests to disable rate limiting and prevent spurious failures
+- **Header inspection**: Middleware inspects `X-Forwarded-For` header for reverse-proxy deployments
 
-See `src/api/middleware.py` for implementation details.
+The rate limiter uses an in-memory store and is safe for single-instance deployments. For multi-instance production deployments, consider externalizing to Redis or Memcached.
 
 ## Prompt injection prevention
 
-The `src/generation/prompt_builder.py` module strips newline characters (`\n`, `\r`, `\t`) from user-supplied query strings before building the prompt. This mitigates prompt injection attacks that attempt to break out of the prompt template via multi-line input.
+**Primary defense**: The `src/generation/prompt_builder.py` module strips newline characters (`\n`, `\r`, `\t`) from user-supplied query strings before building the prompt. This mitigates prompt injection attacks that attempt to break out of the prompt template via multi-line input.
+
+**Request validation**: The `QueryRequest` model in `src/api/models.py` enforces:
+- `query`: required, length 1–2000 characters
+- `entity_name`: optional, regex-validated (letters, digits, spaces, hyphens, underscores, apostrophes only)
+
+**Response sanitization**: Generated answers are not HTML-escaped by default. If deploying a web UI, ensure HTML entities in `answer` and other string fields are escaped on the client side.
+
+## Logging
+
+The `src/utils/logging.py` module configures centralized logging:
+
+- **Root level**: Controlled via `LOG_LEVEL` environment variable (default: `INFO`)
+- **httpx suppressed**: `httpx` is set to `WARNING` level to prevent per-request INFO logs from leaking internal Qdrant instance URLs or other sensitive connection details
+- **Format**: Human-readable: `%(asctime)s %(levelname)-8s %(name)s — %(message)s`
+- **Output**: Always to `stdout` for container/serverless compatibility
+
+Ensure logs are not persisted to disk in production without proper access controls, as they may contain PII or entity information from queries.
 
 ## Dependencies
 

@@ -1,6 +1,6 @@
 # Pipeline, API & Scripts Codemap
 
-**Last Updated:** 2026-04-21
+**Last Updated:** 2026-04-23
 
 **Entry Points:**
 
@@ -72,10 +72,13 @@ RAGPipeline(
     *,
     retriever: RetrieverProtocol,
     generator: GeneratorProtocol,
+    query_router: QueryRouterProtocol | None = None,
 ) -> None
 ```
 
 **Key Invariant:** If `retriever.retrieve()` raises `RetrievalError`, the generator is never called. The exception propagates immediately.
+
+**Query Router Integration:** If `query_router` is set and `sources` is not explicitly specified in the request, the router classifies the query and selects the target sources. This enables keyword-based source routing (e.g., "stats" → pokeapi only, "tier" → smogon only).
 
 **query() Method:**
 
@@ -86,14 +89,17 @@ def query(
     *,
     top_k: int = 5,
     sources: list[Source] | None = None,
+    entity_name: str | None = None,
 ) -> PipelineResult
 ```
 
 - Validates `query` is non-empty/non-whitespace; raises `ValueError` if not
-- Calls `retriever.retrieve(query, top_k=top_k, sources=sources)`
+- If `sources` is None and `query_router` is set, calls `query_router.route(query)` to determine sources
+- Calls `retriever.retrieve(query, top_k=top_k, sources=sources, entity_name=entity_name)`
 - If retrieval succeeds, calls `generator.generate(query, chunks)`
+- Computes confidence score: `sigmoid(top_chunk.score)` if chunks exist, else None
 - Deduplicates and sorts sources from chunks: `tuple(sorted({c.source for c in chunks}))`
-- Returns `PipelineResult` with answer, sources used, chunk count, model name, and original query
+- Returns `PipelineResult` with answer, sources used, chunk count, model name, query, and confidence_score
 
 **Raises:**
 
@@ -114,6 +120,7 @@ class PipelineResult:
     num_chunks_used: int             # Count of retrieved chunks passed to generator
     model_name: str                  # Name of the generation model used
     query: str                        # Original query string
+    confidence_score: float | None = None  # Sigmoid of top-ranked chunk's score; None if unavailable
 ```
 
 ---
@@ -292,25 +299,27 @@ def query(
 class QueryRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=2000)
     sources: list[Literal["bulbapedia", "pokeapi", "smogon"]] | None = None
+    entity_name: str | None = Field(None, max_length=50)  # Optional Pokémon name filter
 ```
 
 **Response (QueryResponse):**
 
 ```python
 class QueryResponse(BaseModel):
-    answer: str
-    sources_used: list[str]              # List (not tuple) of unique sources
-    num_chunks_used: int
-    model_name: str
-    query: str
-    confidence_score: float | None = None
+    answer: str                      # Generated answer text
+    sources_used: list[str]          # List (not tuple) of unique sources
+    num_chunks_used: int             # Count of chunks passed to generator
+    model_name: str                  # Model identifier
+    query: str                        # Parsed query that was processed
+    confidence_score: float | None = None  # Sigmoid of top chunk's reranker score; None if unavailable
 ```
 
 **Behavior:**
 
-- `QueryRequest.query` is validated by Pydantic (min_length=1)
+- `QueryRequest.query` is validated by Pydantic (min_length=1, max_length=2000)
+- `QueryRequest.entity_name` is optional; validated against alphanumeric + hyphens/underscores/apostrophes/spaces
 - Calls `parse_query(body.query)` to strip and re-validate
-- Calls `pipeline.query(normalized_query, sources=body.sources)`
+- Calls `pipeline.query(normalized_query, sources=body.sources, entity_name=body.entity_name)`
 - Converts `PipelineResult` fields to `QueryResponse` (tuple → list for sources)
 - Includes `confidence_score` from `PipelineResult` (may be None)
 - On `ValueError`: returns HTTP 422 with error detail
@@ -360,7 +369,23 @@ def build_pipeline() -> tuple[RAGPipeline, ModelLoader, QdrantClient]:
    )
    client = QdrantClient(url=settings.qdrant_url, api_key=settings.qdrant_api_key)
    vector_store = QdrantVectorStore(client)
-   retriever = Retriever(embedder=embedder, vector_store=vector_store, reranker=reranker)
+   vector_store.ensure_collections()
+   
+   # Optional query transformation (HyDE)
+   if settings.hyde_enabled:
+       query_transformer = HyDETransformer(
+           inferencer,  # Created below
+           max_new_tokens=settings.hyde_max_tokens
+       )
+   else:
+       query_transformer = None
+   
+   retriever = Retriever(
+       embedder=embedder,
+       vector_store=vector_store,
+       reranker=reranker,
+       query_transformer=query_transformer,
+   )
    ```
 
 3. **Generation Pipeline:**
@@ -383,10 +408,24 @@ def build_pipeline() -> tuple[RAGPipeline, ModelLoader, QdrantClient]:
    )
    ```
 
-4. **Combine into RAGPipeline and return 3-tuple:**
+4. **Optional Query Router (keyword-based source routing):**
 
    ```python
-   return RAGPipeline(retriever=retriever, generator=generator), loader, client
+   if settings.routing_enabled:
+       query_router = QueryRouter()
+   else:
+       query_router = None
+   ```
+
+5. **Combine into RAGPipeline and return 3-tuple:**
+
+   ```python
+   pipeline = RAGPipeline(
+       retriever=retriever,
+       generator=generator,
+       query_router=query_router,
+   )
+   return pipeline, loader, client
    ```
 
 **Dependencies Wired:**
@@ -651,17 +690,20 @@ def group_by_source(
 
 4. **RAGPipeline.query():**
    - Validates query non-empty
-   - Calls `retriever.retrieve(query, top_k=5, sources=["pokeapi"])`
-     - BGEEmbedder encodes query → dense + sparse vectors
-     - QdrantVectorStore.search() on "pokeapi" collection using hybrid search
+   - If sources not specified and query_router is set: calls `query_router.route(query)` to determine sources
+   - Calls `retriever.retrieve(query, top_k=5, sources=["pokeapi"], entity_name=...)`
+     - If query_transformer set (e.g., HyDE): transforms query before embedding
+     - BGEEmbedder encodes (transformed or original) query → dense + sparse vectors
+     - QdrantVectorStore.search() on "pokeapi" collection using hybrid search (parallel)
      - BGEReranker reranks top results
      - Returns RetrievalResult with top_k chunks
    - Calls `generator.generate(query, chunks)`
      - Builds prompt with context via `build_prompt()`
      - Loads/infers Gemma 4 with temperature=0.7, max_tokens=512
      - Returns GenerationResult
+   - Computes confidence_score = sigmoid(top_chunk.score)
    - Deduplicates sources from chunks → `("pokeapi",)`
-   - Returns PipelineResult
+   - Returns PipelineResult with confidence_score
 
 5. **Response Handler:**
    - Converts PipelineResult to QueryResponse
@@ -705,6 +747,16 @@ class Settings:
 
     # Device
     device: str                    # DEVICE (auto-detected if not set)
+
+    # Optional: Fine-tuning
+    lora_adapter_path: str | None  # LORA_ADAPTER_PATH (optional, path to adapter)
+
+    # Optional: Query transformation (HyDE)
+    hyde_enabled: bool             # HYDE_ENABLED (default: false)
+    hyde_max_tokens: int           # HYDE_MAX_TOKENS (default: 150)
+
+    # Optional: Query routing
+    routing_enabled: bool          # ROUTING_ENABLED (default: false)
 ```
 
 **from_env()** classmethod:
@@ -745,6 +797,17 @@ class GeneratorProtocol(Protocol):
 ```
 
 Implemented by: `src/generation/generator.py:Generator`
+
+### QueryRouterProtocol
+
+```python
+class QueryRouterProtocol(Protocol):
+    def route(self, query: str) -> list[Source]:
+        """Classify query into one or more sources via keyword patterns.
+        Returns sorted list; never empty (fallback to all sources if no match)."""
+```
+
+Implemented by: `src/retrieval/query_router.py:QueryRouter`
 
 ---
 
