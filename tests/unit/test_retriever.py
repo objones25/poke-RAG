@@ -1,4 +1,4 @@
-"""Unit tests for src/retrieval/retriever.py — RED until implemented."""
+"""Unit tests for src/retrieval/retriever.py."""
 
 from __future__ import annotations
 
@@ -429,3 +429,82 @@ class TestRetrieverQueryTransformer:
         )
         retriever.retrieve("plain query")
         embedder.encode.assert_called_once_with(["plain query"])
+
+
+@pytest.mark.unit
+class TestRetrieverParallelSearch:
+    def test_all_three_sources_searched_concurrently(self) -> None:
+        vector_store = _make_vector_store()
+        retriever = Retriever(
+            embedder=_make_embedder(),
+            vector_store=vector_store,
+            reranker=_make_reranker(),
+        )
+        retriever.retrieve("query")
+        sources_called: set[str] = {
+            call[1]["collection"] for call in vector_store.search.call_args_list
+        }
+        assert sources_called == {"bulbapedia", "pokeapi", "smogon"}
+        assert vector_store.search.call_count == 3
+
+    def test_results_from_all_sources_merged(self) -> None:
+        chunk_a = make_chunk(text="from bulbapedia", chunk_index=0)
+        chunk_b = make_chunk(text="from pokeapi", chunk_index=1)
+        chunk_c = make_chunk(text="from smogon", chunk_index=2)
+
+        source_chunks = {
+            "bulbapedia": [chunk_a],
+            "pokeapi": [chunk_b],
+            "smogon": [chunk_c],
+        }
+
+        vector_store = MagicMock()
+        vector_store.search.side_effect = lambda **kw: source_chunks[kw["collection"]]
+
+        reranker = MagicMock()
+        reranker.rerank.return_value = [chunk_a, chunk_b, chunk_c]
+
+        retriever = Retriever(
+            embedder=_make_embedder(),
+            vector_store=vector_store,
+            reranker=reranker,
+        )
+        retriever.retrieve("query")
+
+        candidates_passed = reranker.rerank.call_args[0][1]
+        texts = {c.text for c in candidates_passed}
+        assert texts == {"from bulbapedia", "from pokeapi", "from smogon"}
+
+    def test_single_source_still_works(self) -> None:
+        vector_store = _make_vector_store()
+        retriever = Retriever(
+            embedder=_make_embedder(),
+            vector_store=vector_store,
+            reranker=_make_reranker(),
+        )
+        result = retriever.retrieve("query", sources=["pokeapi"])
+        assert isinstance(result, RetrievalResult)
+        assert vector_store.search.call_count == 1
+
+    def test_retrieval_error_raised_when_one_source_fails(self) -> None:
+        vector_store = MagicMock()
+        vector_store.search.side_effect = RuntimeError("connection reset")
+        retriever = Retriever(
+            embedder=_make_embedder(),
+            vector_store=vector_store,
+            reranker=_make_reranker(),
+        )
+        with pytest.raises(RetrievalError):
+            retriever.retrieve("query")
+
+    def test_error_message_names_failing_source(self) -> None:
+        vector_store = MagicMock()
+        vector_store.search.side_effect = RuntimeError("timeout")
+        retriever = Retriever(
+            embedder=_make_embedder(),
+            vector_store=vector_store,
+            reranker=_make_reranker(),
+            candidates_per_source=5,
+        )
+        with pytest.raises(RetrievalError, match=r"bulbapedia|pokeapi|smogon"):
+            retriever.retrieve("query")
