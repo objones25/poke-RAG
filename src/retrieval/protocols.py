@@ -95,3 +95,10 @@ class RetrieverProtocol(Protocol):
             RetrievalError: If retrieval fails or no documents found.
         """
         ...
+
+
+@runtime_checkable
+class QueryRouterProtocol(Protocol):
+    def route(self, query: str) -> list[Source]:
+        """Classify query into one or more sources. Returns sorted list; never empty."""
+        ...

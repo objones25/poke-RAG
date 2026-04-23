@@ -277,6 +277,53 @@ class TestRAGPipelineValidation:
 
 
 @pytest.mark.unit
+class TestRAGPipelineQueryRouter:
+    """Router wired into pipeline: routes when sources=None, explicit sources wins."""
+
+    def _make_pipeline_with_router(self, mocker, router_sources: list):
+        from src.pipeline.rag_pipeline import RAGPipeline
+
+        retriever = mocker.MagicMock()
+        retriever.retrieve.return_value = _make_retrieval_result(chunks=(_make_chunk(),))
+        generator = mocker.MagicMock()
+        generator.generate.return_value = _make_generation_result()
+        router = mocker.MagicMock()
+        router.route.return_value = router_sources
+        pipeline = RAGPipeline(retriever=retriever, generator=generator, query_router=router)
+        return pipeline, retriever, router
+
+    def test_router_called_when_sources_none(self, mocker) -> None:
+        pipeline, _, router = self._make_pipeline_with_router(mocker, ["pokeapi"])
+        pipeline.query("What are Charizard's base stats?")
+        router.route.assert_called_once_with("What are Charizard's base stats?")
+
+    def test_router_result_forwarded_to_retriever(self, mocker) -> None:
+        pipeline, retriever, _ = self._make_pipeline_with_router(mocker, ["pokeapi", "smogon"])
+        pipeline.query("What EV spread for Garchomp's stats?")
+        _, kwargs = retriever.retrieve.call_args
+        assert kwargs["sources"] == ["pokeapi", "smogon"]
+
+    def test_explicit_sources_overrides_router(self, mocker) -> None:
+        pipeline, retriever, router = self._make_pipeline_with_router(mocker, ["smogon"])
+        pipeline.query("Any query.", sources=["bulbapedia"])
+        router.route.assert_not_called()
+        _, kwargs = retriever.retrieve.call_args
+        assert kwargs["sources"] == ["bulbapedia"]
+
+    def test_no_router_preserves_none_sources(self, mocker) -> None:
+        from src.pipeline.rag_pipeline import RAGPipeline
+
+        retriever = mocker.MagicMock()
+        retriever.retrieve.return_value = _make_retrieval_result(chunks=(_make_chunk(),))
+        generator = mocker.MagicMock()
+        generator.generate.return_value = _make_generation_result()
+        pipeline = RAGPipeline(retriever=retriever, generator=generator)
+        pipeline.query("Any query.")
+        _, kwargs = retriever.retrieve.call_args
+        assert kwargs["sources"] is None
+
+
+@pytest.mark.unit
 class TestRAGPipelineEmptyDocumentsGuard:
     """Test that pipeline raises RetrievalError on empty documents from retrieval."""
 

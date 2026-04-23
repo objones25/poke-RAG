@@ -13,6 +13,7 @@ from src.generation.models import GenerationConfig
 from src.generation.prompt_builder import build_prompt
 from src.pipeline.rag_pipeline import RAGPipeline
 from src.retrieval.embedder import BGEEmbedder
+from src.retrieval.query_router import QueryRouter
 from src.retrieval.query_transformer import HyDETransformer
 from src.retrieval.reranker import BGEReranker
 from src.retrieval.retriever import Retriever
@@ -79,4 +80,12 @@ def build_pipeline() -> tuple[RAGPipeline, ModelLoader, QdrantClient]:
         loader=loader, prompt_builder=build_prompt, inferencer=inferencer, config=gen_config
     )
 
-    return RAGPipeline(retriever=retriever, generator=generator), loader, client
+    if settings.routing_enabled:
+        query_router = QueryRouter()
+        _LOG.info("Query routing enabled: keyword-based source routing active")
+    else:
+        query_router = None
+        _LOG.info("Query routing disabled: all sources searched for every query")
+
+    pipeline = RAGPipeline(retriever=retriever, generator=generator, query_router=query_router)
+    return pipeline, loader, client

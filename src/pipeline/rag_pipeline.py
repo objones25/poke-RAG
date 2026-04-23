@@ -4,7 +4,7 @@ import math
 
 from src.generation.protocols import GeneratorProtocol
 from src.pipeline.types import PipelineResult
-from src.retrieval.protocols import RetrieverProtocol
+from src.retrieval.protocols import QueryRouterProtocol, RetrieverProtocol
 from src.types import RetrievalError, Source
 
 
@@ -20,9 +20,11 @@ class RAGPipeline:
         *,
         retriever: RetrieverProtocol,
         generator: GeneratorProtocol,
+        query_router: QueryRouterProtocol | None = None,
     ) -> None:
         self._retriever = retriever
         self._generator = generator
+        self._query_router = query_router
 
     def query(
         self,
@@ -40,6 +42,9 @@ class RAGPipeline:
         """
         if not query.strip():
             raise ValueError("query must not be empty or whitespace-only")
+
+        if sources is None and self._query_router is not None:
+            sources = self._query_router.route(query)
 
         retrieval_result = self._retriever.retrieve(
             query, top_k=top_k, sources=sources, entity_name=entity_name
