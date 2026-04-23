@@ -35,6 +35,8 @@ class Settings:
     truncation: bool
     device: str
     lora_adapter_path: str | None = None
+    hyde_enabled: bool = False
+    hyde_max_tokens: int = 150
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -98,4 +100,6 @@ class Settings:
             truncation=os.getenv("TRUNCATION", "true").lower() == "true",
             device=device,
             lora_adapter_path=os.getenv("LORA_ADAPTER_PATH"),
+            hyde_enabled=os.getenv("HYDE_ENABLED", "false").lower() == "true",
+            hyde_max_tokens=int(os.getenv("HYDE_MAX_TOKENS", "150")),
         )

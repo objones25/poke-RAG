@@ -73,6 +73,13 @@ class RerankerProtocol(Protocol):
 
 
 @runtime_checkable
+class QueryTransformerProtocol(Protocol):
+    def transform(self, query: str) -> str:
+        """Transform a query before embedding. Returns original query on failure."""
+        ...
+
+
+@runtime_checkable
 class RetrieverProtocol(Protocol):
     def retrieve(
         self,

@@ -334,6 +334,47 @@ class TestSettingsFromEnv:
         settings = Settings.from_env()
         assert settings.lora_adapter_path is None
 
+    def test_hyde_enabled_defaults_to_false(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.delenv("HYDE_ENABLED", raising=False)
+        settings = Settings.from_env()
+        assert settings.hyde_enabled is False
+
+    def test_hyde_enabled_true_when_set(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("HYDE_ENABLED", "true")
+        settings = Settings.from_env()
+        assert settings.hyde_enabled is True
+
+    def test_hyde_max_tokens_defaults_to_150(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.delenv("HYDE_MAX_TOKENS", raising=False)
+        settings = Settings.from_env()
+        assert settings.hyde_max_tokens == 150
+
+    def test_hyde_max_tokens_reads_from_env(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("HYDE_MAX_TOKENS", "200")
+        settings = Settings.from_env()
+        assert settings.hyde_max_tokens == 200
+
+    def test_all_settings_fields_include_hyde(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.delenv("LOG_LEVEL", raising=False)
+        settings = Settings.from_env()
+        assert hasattr(settings, "hyde_enabled")
+        assert hasattr(settings, "hyde_max_tokens")
+
 
 @pytest.mark.unit
 class TestConfigParameterBounds:

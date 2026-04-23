@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import Request
 from qdrant_client import QdrantClient
 
@@ -11,9 +13,12 @@ from src.generation.models import GenerationConfig
 from src.generation.prompt_builder import build_prompt
 from src.pipeline.rag_pipeline import RAGPipeline
 from src.retrieval.embedder import BGEEmbedder
+from src.retrieval.query_transformer import HyDETransformer
 from src.retrieval.reranker import BGEReranker
 from src.retrieval.retriever import Retriever
 from src.retrieval.vector_store import QdrantVectorStore
+
+_LOG = logging.getLogger(__name__)
 
 
 def get_pipeline(request: Request) -> RAGPipeline:
@@ -35,7 +40,6 @@ def build_pipeline() -> tuple[RAGPipeline, ModelLoader, QdrantClient]:
     client = QdrantClient(url=settings.qdrant_url, api_key=api_key_str)
     vector_store = QdrantVectorStore(client)
     vector_store.ensure_collections()
-    retriever = Retriever(embedder=embedder, vector_store=vector_store, reranker=reranker)
 
     gen_config = GenerationConfig(
         model_id=settings.gen_model,
@@ -55,6 +59,22 @@ def build_pipeline() -> tuple[RAGPipeline, ModelLoader, QdrantClient]:
         processor=loader.get_tokenizer(),
         config=gen_config,
     )
+
+    if settings.hyde_enabled:
+        query_transformer = HyDETransformer(inferencer, max_new_tokens=settings.hyde_max_tokens)
+        _LOG.info(
+            "HyDE enabled: query transformer active (max_new_tokens=%d)", settings.hyde_max_tokens
+        )
+    else:
+        query_transformer = None
+        _LOG.info("HyDE disabled: queries embedded directly without transformation")
+    retriever = Retriever(
+        embedder=embedder,
+        vector_store=vector_store,
+        reranker=reranker,
+        query_transformer=query_transformer,
+    )
+
     generator = Generator(
         loader=loader, prompt_builder=build_prompt, inferencer=inferencer, config=gen_config
     )

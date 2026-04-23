@@ -361,3 +361,71 @@ class TestRetrieverExceptionHandling:
         except RetrievalError as e:
             assert e.__cause__ is not None
             assert isinstance(e.__cause__, ValueError)
+
+
+def _make_transformer(return_value: str = "transformed query") -> MagicMock:
+    mock = MagicMock()
+    mock.transform.return_value = return_value
+    return mock
+
+
+@pytest.mark.unit
+class TestRetrieverQueryTransformer:
+    def test_transformer_is_called_before_embedding(self) -> None:
+        transformer = _make_transformer("hyde doc text")
+        embedder = _make_embedder()
+        retriever = Retriever(
+            embedder=embedder,
+            vector_store=_make_vector_store(),
+            reranker=_make_reranker(),
+            query_transformer=transformer,
+        )
+        retriever.retrieve("original query")
+        transformer.transform.assert_called_once_with("original query")
+        embedder.encode.assert_called_once_with(["hyde doc text"])
+
+    def test_transformer_output_used_for_embedding(self) -> None:
+        transformer = _make_transformer("hypothetical pokemon document")
+        embedder = _make_embedder()
+        retriever = Retriever(
+            embedder=embedder,
+            vector_store=_make_vector_store(),
+            reranker=_make_reranker(),
+            query_transformer=transformer,
+        )
+        retriever.retrieve("query")
+        embedder.encode.assert_called_once_with(["hypothetical pokemon document"])
+
+    def test_original_query_used_for_reranker(self) -> None:
+        transformer = _make_transformer("transformed text")
+        reranker = _make_reranker()
+        retriever = Retriever(
+            embedder=_make_embedder(),
+            vector_store=_make_vector_store(),
+            reranker=reranker,
+            query_transformer=transformer,
+        )
+        retriever.retrieve("original query")
+        call_args = reranker.rerank.call_args[0]
+        assert call_args[0] == "original query"
+
+    def test_original_query_preserved_in_result(self) -> None:
+        transformer = _make_transformer("some expanded text")
+        retriever = Retriever(
+            embedder=_make_embedder(),
+            vector_store=_make_vector_store(),
+            reranker=_make_reranker(),
+            query_transformer=transformer,
+        )
+        result = retriever.retrieve("original query")
+        assert result.query == "original query"
+
+    def test_no_transformer_uses_query_directly(self) -> None:
+        embedder = _make_embedder()
+        retriever = Retriever(
+            embedder=embedder,
+            vector_store=_make_vector_store(),
+            reranker=_make_reranker(),
+        )
+        retriever.retrieve("plain query")
+        embedder.encode.assert_called_once_with(["plain query"])

@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import logging
 
-from src.retrieval.protocols import EmbedderProtocol, RerankerProtocol, VectorStoreProtocol
+from src.retrieval.protocols import (
+    EmbedderProtocol,
+    QueryTransformerProtocol,
+    RerankerProtocol,
+    VectorStoreProtocol,
+)
 from src.types import EmbeddingError, RetrievalError, RetrievalResult, Source
 
 _LOG = logging.getLogger(__name__)
@@ -21,11 +26,13 @@ class Retriever:
         vector_store: VectorStoreProtocol,
         reranker: RerankerProtocol,
         candidates_per_source: int = _DEFAULT_CANDIDATES_PER_SOURCE,
+        query_transformer: QueryTransformerProtocol | None = None,
     ) -> None:
         self._embedder = embedder
         self._vector_store = vector_store
         self._reranker = reranker
         self._candidates_per_source = candidates_per_source
+        self._query_transformer = query_transformer
 
     def retrieve(
         self,
@@ -43,8 +50,18 @@ class Retriever:
             top_k,
         )
 
+        if self._query_transformer is not None:
+            embed_text = self._query_transformer.transform(query)
+            _LOG.debug(
+                "Query transformer applied: %d-char input → %d-char embed_text",
+                len(query),
+                len(embed_text),
+            )
+        else:
+            embed_text = query
+
         try:
-            embedding = self._embedder.encode([query])
+            embedding = self._embedder.encode([embed_text])
         except EmbeddingError as exc:
             raise RetrievalError(f"Embedding failed: {exc}") from exc
         except (RuntimeError, ValueError) as exc:
