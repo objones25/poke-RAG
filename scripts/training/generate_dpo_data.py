@@ -102,6 +102,14 @@ def run(
             scored.sort(key=lambda x: x[1])
             rejected, chosen = scored[0][0], scored[-1][0]
 
+            if chosen == rejected:
+                skipped += 1
+                logger.warning(
+                    "Skipping question (chosen == rejected, all candidates identical): %.60s",
+                    question,
+                )
+                continue
+
             datapoint = DPODatapoint(prompt=question, chosen=chosen, rejected=rejected)
             f.write(datapoint.model_dump_json() + "\n")
             generated += 1
