@@ -1,7 +1,7 @@
 """Win-rate evaluation for DPO-trained model vs SFT baseline.
 
-Generates one response from each model for every question, has Gemini judge
-pick the winner, and reports the win rate.
+Generates one response from each model for every question, scores both with
+GeminiJudge (same judge used during DPO data generation), and reports the win rate.
 
 Usage (RunPod, after both models are trained):
     python scripts/training/eval_dpo.py \
@@ -34,21 +34,6 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-_EVAL_PROMPT = """\
-You are evaluating two answers to a Pokémon question. Pick the better one.
-
-Question: {question}
-
-Retrieved context: {context}
-
-Answer A: {answer_a}
-
-Answer B: {answer_b}
-
-Which answer is better overall (accuracy, groundedness, and domain correctness)?
-Reply with ONLY "A" or "B".
-"""
-
 
 def _load_questions(path: Path) -> list[str]:
     return [ln.strip() for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
@@ -63,31 +48,10 @@ def _generate_response(
     from scripts.training.inference_runner import generate_candidates
 
     candidates = generate_candidates(question, retriever, model, processor, k=1)
+    if not candidates:
+        return "", []
     c = candidates[0]
     return c.response, c.retrieved_chunks
-
-
-def _judge_winner(
-    question: str,
-    answer_a: str,
-    answer_b: str,
-    context: list[str],
-    judge_client: Any,
-    judge_model: str,
-) -> str | None:
-    contents = _EVAL_PROMPT.format(
-        question=question,
-        context="\n".join(context),
-        answer_a=answer_a,
-        answer_b=answer_b,
-    )
-    try:
-        resp = judge_client.models.generate_content(model=judge_model, contents=contents)
-        verdict = resp.text.strip().upper()
-        return verdict if verdict in {"A", "B"} else None
-    except Exception as exc:
-        log.warning("Judge call failed: %s", exc)
-        return None
 
 
 def evaluate(
@@ -96,16 +60,18 @@ def evaluate(
     dpo_model: Any,
     processor: Any,
     retriever: Any,
-    judge_client: Any,
-    judge_model: str,
+    judge: Any,
     output: Path,
     delay: float = 0.5,
 ) -> dict[str, Any]:
     import time
 
+    from scripts.training.inference_runner import fetch_reference_context
+
     output.parent.mkdir(parents=True, exist_ok=True)
     wins_dpo = 0
     wins_sft = 0
+    ties = 0
     skipped = 0
 
     with output.open("w", encoding="utf-8") as f:
@@ -115,24 +81,43 @@ def evaluate(
             sft_resp, context = _generate_response(question, retriever, sft_model, processor)
             dpo_resp, _ = _generate_response(question, retriever, dpo_model, processor)
 
-            verdict = _judge_winner(
-                question, sft_resp, dpo_resp, context, judge_client, judge_model
+            reference_chunks = fetch_reference_context(question, retriever)
+
+            sft_score = judge.score_candidate(
+                question=question,
+                response=sft_resp,
+                retrieved_chunks=context,
+                reference_chunks=reference_chunks,
             )
+            dpo_score = judge.score_candidate(
+                question=question,
+                response=dpo_resp,
+                retrieved_chunks=context,
+                reference_chunks=reference_chunks,
+            )
+
+            if sft_score is None or dpo_score is None:
+                verdict = None
+                skipped += 1
+            elif dpo_score.total > sft_score.total:
+                verdict = "DPO"
+                wins_dpo += 1
+            elif sft_score.total > dpo_score.total:
+                verdict = "SFT"
+                wins_sft += 1
+            else:
+                verdict = "TIE"
+                ties += 1
 
             record: dict[str, Any] = {
                 "question": question,
                 "sft": sft_resp,
                 "dpo": dpo_resp,
+                "sft_score": sft_score.model_dump() if sft_score else None,
+                "dpo_score": dpo_score.model_dump() if dpo_score else None,
                 "verdict": verdict,
             }
             f.write(json.dumps(record) + "\n")
-
-            if verdict == "A":
-                wins_sft += 1
-            elif verdict == "B":
-                wins_dpo += 1
-            else:
-                skipped += 1
 
             time.sleep(delay)
 
@@ -144,6 +129,7 @@ def evaluate(
         "skipped": skipped,
         "dpo_wins": wins_dpo,
         "sft_wins": wins_sft,
+        "ties": ties,
         "dpo_win_rate": win_rate,
     }
     log.info("DPO win rate: %.1f%% (%d/%d)", 100 * win_rate, wins_dpo, scored)
@@ -157,7 +143,7 @@ def main() -> None:
     parser.add_argument("--sft-adapter", type=Path, required=True)
     parser.add_argument("--dpo-adapter", type=Path, required=True)
     parser.add_argument("--model", default="google/gemma-4-E4B-it")
-    parser.add_argument("--judge-model", default="gemini-2.0-flash")
+    parser.add_argument("--judge-model", default="gemini-3.1-flash-lite-preview")
     parser.add_argument("--output", type=Path, default=Path("results/dpo_eval.jsonl"))
     parser.add_argument("--delay", type=float, default=0.5)
     parser.add_argument("--no-4bit", action="store_true")
@@ -180,10 +166,10 @@ def main() -> None:
     if importlib.util.find_spec("unsloth") is None:
         parser.error("Unsloth required. Run runpod_setup.sh first.")
 
-    from google import genai
     from peft import PeftModel  # type: ignore[import]
     from qdrant_client import QdrantClient
 
+    from scripts.training.judge_protocol import GeminiJudge
     from src.generation.loader import ModelLoader
     from src.generation.models import GenerationConfig
     from src.retrieval.embedder import BGEEmbedder
@@ -216,7 +202,7 @@ def main() -> None:
     sft_model = PeftModel.from_pretrained(base_model, str(args.sft_adapter))
     dpo_model = PeftModel.from_pretrained(base_model, str(args.dpo_adapter))
 
-    judge_client = genai.Client(api_key=gemini_key)
+    judge = GeminiJudge(api_key=gemini_key, model=args.judge_model)
 
     summary = evaluate(
         questions=questions,
@@ -224,8 +210,7 @@ def main() -> None:
         dpo_model=dpo_model,
         processor=processor,
         retriever=retriever,
-        judge_client=judge_client,
-        judge_model=args.judge_model,
+        judge=judge,
         output=args.output,
         delay=args.delay,
     )

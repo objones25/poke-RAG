@@ -45,7 +45,7 @@ class GeminiJudge:
     def __init__(
         self,
         api_key: str,
-        model: str = "gemini-2.0-flash",
+        model: str = "gemini-3.1-flash-lite-preview",
         max_retries: int = 5,
     ) -> None:
         self._client = genai.Client(api_key=api_key)

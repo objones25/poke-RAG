@@ -35,7 +35,10 @@ def generate_candidates(
     k: int = 5,
     max_new_tokens: int = 512,
 ) -> list[CandidateWithContext]:
-    result = retriever.retrieve(question)
+    try:
+        result = retriever.retrieve(question)
+    except RetrievalError:
+        return []
     chunks = list(result.documents)
     retrieved_texts = format_context(chunks)
     prompt_text = build_prompt(question, tuple(chunks))

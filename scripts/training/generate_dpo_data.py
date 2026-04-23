@@ -131,7 +131,7 @@ def main() -> None:
         help="One question per line.",
     )
     parser.add_argument("--model-id", default="google/gemma-4-E4B-it")
-    parser.add_argument("--judge-model", default="gemini-2.0-flash")
+    parser.add_argument("--judge-model", default="gemini-3.1-flash-lite-preview")
     parser.add_argument("--k", type=int, default=5, help="Candidates per question.")
     parser.add_argument("--delay", type=float, default=0.5)
     parser.add_argument("--qdrant-url", default="http://localhost:6333")

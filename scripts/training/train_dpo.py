@@ -101,6 +101,23 @@ def _check_environment() -> None:
 def train(args: argparse.Namespace) -> None:
     _check_environment()
 
+    # Validate cheap preconditions before the expensive model load.
+    if args.sft_adapter is not None and not args.sft_adapter.exists():
+        log.error("SFT adapter path does not exist: %s", args.sft_adapter)
+        sys.exit(1)
+
+    log.info("Loading DPO dataset from %s", args.data)
+    records = _load_jsonl(args.data)
+    if not records:
+        log.error("No records found in %s", args.data)
+        sys.exit(1)
+    required_cols = {"prompt", "chosen", "rejected"}
+    missing = required_cols - records[0].keys()
+    if missing:
+        log.error("DPO dataset missing required columns: %s", missing)
+        sys.exit(1)
+    log.info("Dataset OK: %d DPO pairs", len(records))
+
     try:
         from unsloth import FastModel  # type: ignore[import]
     except ImportError:
@@ -134,10 +151,12 @@ def train(args: argparse.Namespace) -> None:
     )
 
     if args.sft_adapter is not None:
-        log.info("Loading SFT adapter from %s", args.sft_adapter)
+        log.info("Merging SFT adapter from %s into base weights", args.sft_adapter)
         from peft import PeftModel  # type: ignore[import]
 
-        model = PeftModel.from_pretrained(model, str(args.sft_adapter), is_trainable=True)
+        model = PeftModel.from_pretrained(model, str(args.sft_adapter))
+        model = model.merge_and_unload()
+        log.info("SFT adapter merged — will serve as implicit DPO reference")
 
     log.info("Attaching DPO LoRA adapter (r=%d, alpha=%d)", args.lora_r, args.lora_alpha)
     model = FastModel.get_peft_model(
@@ -162,13 +181,6 @@ def train(args: argparse.Namespace) -> None:
         f"{total:,}",
         100 * trainable / total,
     )
-
-    log.info("Loading DPO dataset from %s", args.data)
-    records = _load_jsonl(args.data)
-    if not records:
-        log.error("No records found in %s", args.data)
-        sys.exit(1)
-    log.info("Loaded %d DPO pairs", len(records))
 
     raw = Dataset.from_list(records)
     splits = raw.train_test_split(test_size=args.val_frac, seed=args.seed)
