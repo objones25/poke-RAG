@@ -131,8 +131,8 @@ class TestRunDPOGeneration:
         lines = [line for line in output.read_text().splitlines() if line.strip()]
         assert len(lines) == 1
         data = json.loads(lines[0])
-        assert data["chosen"] == "High quality detailed answer."
-        assert data["rejected"] == "Low quality answer."
+        assert data["chosen"] == [{"role": "assistant", "content": "High quality detailed answer."}]
+        assert data["rejected"] == [{"role": "assistant", "content": "Low quality answer."}]
 
     def test_skips_question_when_insufficient_scored_candidates(self, tmp_path: Path) -> None:
         output = tmp_path / "dpo.jsonl"
