@@ -68,6 +68,8 @@ def run(
         question_offset,
     )
 
+    _FALLBACK_FRAGMENT = "The provided context does not cover that"
+
     generated = start_count
     skipped = 0
 
@@ -110,7 +112,20 @@ def run(
                 )
                 continue
 
-            datapoint = DPODatapoint(prompt=question, chosen=chosen, rejected=rejected)
+            if _FALLBACK_FRAGMENT in chosen:
+                skipped += 1
+                logger.warning(
+                    "Skipping question (best response is fallback string): %.60s",
+                    question,
+                )
+                continue
+
+            prompt_messages = [{"role": "user", "content": candidates[0].prompt_text}]
+            datapoint = DPODatapoint(
+                prompt=prompt_messages,
+                chosen=[{"role": "assistant", "content": chosen}],
+                rejected=[{"role": "assistant", "content": rejected}],
+            )
             f.write(datapoint.model_dump_json() + "\n")
             generated += 1
             if generated % 50 == 0 or generated == goal:

@@ -37,6 +37,6 @@ class CandidateResponse(BaseModel):
 
 
 class DPODatapoint(BaseModel):
-    prompt: str
-    chosen: str
-    rejected: str
+    prompt: list[dict[str, str]]
+    chosen: list[dict[str, str]]
+    rejected: list[dict[str, str]]

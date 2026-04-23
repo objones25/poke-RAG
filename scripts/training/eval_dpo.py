@@ -56,8 +56,7 @@ def _generate_response(
 
 def evaluate(
     questions: list[str],
-    sft_model: Any,
-    dpo_model: Any,
+    peft_model: Any,
     processor: Any,
     retriever: Any,
     judge: Any,
@@ -78,8 +77,11 @@ def evaluate(
         for i, question in enumerate(questions):
             log.info("Evaluating question %d / %d", i + 1, len(questions))
 
-            sft_resp, context = _generate_response(question, retriever, sft_model, processor)
-            dpo_resp, _ = _generate_response(question, retriever, dpo_model, processor)
+            peft_model.set_adapter("sft")
+            sft_resp, context = _generate_response(question, retriever, peft_model, processor)
+
+            peft_model.set_adapter("dpo")
+            dpo_resp, _ = _generate_response(question, retriever, peft_model, processor)
 
             reference_chunks = fetch_reference_context(question, retriever)
 
@@ -199,15 +201,14 @@ def main() -> None:
     base_model = loader.get_model()
     processor = loader.get_tokenizer()
 
-    sft_model = PeftModel.from_pretrained(base_model, str(args.sft_adapter))
-    dpo_model = PeftModel.from_pretrained(base_model, str(args.dpo_adapter))
+    peft_model = PeftModel.from_pretrained(base_model, str(args.sft_adapter), adapter_name="sft")
+    peft_model.load_adapter(str(args.dpo_adapter), adapter_name="dpo")
 
     judge = GeminiJudge(api_key=gemini_key, model=args.judge_model)
 
     summary = evaluate(
         questions=questions,
-        sft_model=sft_model,
-        dpo_model=dpo_model,
+        peft_model=peft_model,
         processor=processor,
         retriever=retriever,
         judge=judge,

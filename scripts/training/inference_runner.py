@@ -12,6 +12,7 @@ from src.types import RetrievalError, RetrievedChunk
 class CandidateWithContext:
     response: str
     retrieved_chunks: list[str]
+    prompt_text: str
 
 
 def format_context(chunks: list[RetrievedChunk]) -> list[str]:
@@ -52,17 +53,22 @@ def generate_candidates(
             add_generation_prompt=True,
             enable_thinking=False,
         )
-        encoded = processor(text=templated, return_tensors="pt")
-        input_ids = encoded["input_ids"].to(model.device)
-        input_len = input_ids.shape[-1]
+        inputs = processor(text=templated, return_tensors="pt").to(model.device)
+        input_len = inputs["input_ids"].shape[-1]
         output_ids = model.generate(
-            input_ids=input_ids,
+            **inputs,
             max_new_tokens=max_new_tokens,
             do_sample=True,
             temperature=0.8,
             top_p=0.95,
         )
-        response = processor.decode(output_ids[0][input_len:], skip_special_tokens=True)
-        candidates.append(CandidateWithContext(response=response, retrieved_chunks=retrieved_texts))
+        response = processor.decode(output_ids[0][input_len:], skip_special_tokens=True).strip()
+        candidates.append(
+            CandidateWithContext(
+                response=response,
+                retrieved_chunks=retrieved_texts,
+                prompt_text=prompt_text,
+            )
+        )
 
     return candidates
