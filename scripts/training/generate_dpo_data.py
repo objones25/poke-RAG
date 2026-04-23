@@ -134,7 +134,7 @@ def main() -> None:
     parser.add_argument("--judge-model", default="gemini-3.1-flash-lite-preview")
     parser.add_argument("--k", type=int, default=5, help="Candidates per question.")
     parser.add_argument("--delay", type=float, default=0.5)
-    parser.add_argument("--qdrant-url", default="http://localhost:6333")
+    parser.add_argument("--qdrant-url", default=os.environ.get("QDRANT_URL", "http://localhost:6333"))
     args = parser.parse_args()
 
     gemini_key = os.environ.get("GEMINI_API_KEY")

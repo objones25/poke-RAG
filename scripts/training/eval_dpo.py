@@ -147,7 +147,7 @@ def main() -> None:
     parser.add_argument("--output", type=Path, default=Path("results/dpo_eval.jsonl"))
     parser.add_argument("--delay", type=float, default=0.5)
     parser.add_argument("--no-4bit", action="store_true")
-    parser.add_argument("--qdrant-url", default="http://localhost:6333")
+    parser.add_argument("--qdrant-url", default=os.environ.get("QDRANT_URL", "http://localhost:6333"))
     args = parser.parse_args()
 
     gemini_key = os.environ.get("GEMINI_API_KEY")
