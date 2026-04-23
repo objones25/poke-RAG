@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from src.retrieval.protocols import (
     EmbedderProtocol,
@@ -10,7 +11,7 @@ from src.retrieval.protocols import (
     RerankerProtocol,
     VectorStoreProtocol,
 )
-from src.types import EmbeddingError, RetrievalError, RetrievalResult, Source
+from src.types import EmbeddingError, RetrievalError, RetrievalResult, RetrievedChunk, Source
 
 _LOG = logging.getLogger(__name__)
 
@@ -33,6 +34,23 @@ class Retriever:
         self._reranker = reranker
         self._candidates_per_source = candidates_per_source
         self._query_transformer = query_transformer
+
+    def _search_one(
+        self,
+        source: Source,
+        query_dense: list[float],
+        query_sparse: dict[int, float],
+        entity_name: str | None,
+    ) -> tuple[Source, list[RetrievedChunk]]:
+        chunks = self._vector_store.search(
+            collection=source,
+            query_dense=query_dense,
+            query_sparse=query_sparse,
+            top_k=self._candidates_per_source,
+            entity_name=entity_name,
+        )
+        _LOG.debug("Search '%s' → %d candidates", source, len(chunks))
+        return source, chunks
 
     def retrieve(
         self,
@@ -78,21 +96,24 @@ class Retriever:
         query_sparse = embedding.sparse[0]
 
         candidates = []
-        try:
-            for source in active_sources:
-                chunks = self._vector_store.search(
-                    collection=source,
-                    query_dense=query_dense,
-                    query_sparse=query_sparse,
-                    top_k=self._candidates_per_source,
-                    entity_name=entity_name,
-                )
-                _LOG.debug("Search '%s' → %d candidates", source, len(chunks))
-                candidates.extend(chunks)
-        except (RuntimeError, ValueError, OSError) as exc:
-            raise RetrievalError(f"Vector search failed: {exc}") from exc
-        except Exception as exc:
-            raise RetrievalError(f"Vector search failed unexpectedly: {exc}") from exc
+        with ThreadPoolExecutor(max_workers=len(active_sources)) as executor:
+            futures = {
+                executor.submit(
+                    self._search_one, src, query_dense, query_sparse, entity_name
+                ): src
+                for src in active_sources
+            }
+            for future in as_completed(futures):
+                src = futures[future]
+                try:
+                    _, chunks = future.result()
+                    candidates.extend(chunks)
+                except (RuntimeError, ValueError, OSError) as exc:
+                    raise RetrievalError(f"Vector search failed for '{src}': {exc}") from exc
+                except Exception as exc:
+                    raise RetrievalError(
+                        f"Vector search failed unexpectedly for '{src}': {exc}"
+                    ) from exc
 
         _LOG.info("Total candidates: %d across %d source(s)", len(candidates), len(active_sources))
 
