@@ -153,6 +153,13 @@ class Settings:
     hyde_num_drafts: int = 1
     hyde_confidence_threshold: float | None = None
     routing_enabled: bool = False
+    cache_enabled: bool = False
+    cache_ttl_seconds: int = 3600
+    cache_max_size: int = 1000
+    redis_url: str | None = None
+    redis_username: str = "default"
+    redis_password: SecretStr | None = None
+    async_pipeline_enabled: bool = False
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -245,4 +252,17 @@ class Settings:
             hyde_num_drafts=hyde_num_drafts,
             hyde_confidence_threshold=hyde_confidence_threshold,
             routing_enabled=_parse_bool(os.getenv("ROUTING_ENABLED"), "ROUTING_ENABLED", False),
+            cache_enabled=_parse_bool(os.getenv("CACHE_ENABLED"), "CACHE_ENABLED", False),
+            cache_ttl_seconds=_parse_int_positive(
+                os.getenv("CACHE_TTL_SECONDS"), "CACHE_TTL_SECONDS", 3600
+            ),
+            cache_max_size=_parse_int_positive(
+                os.getenv("CACHE_MAX_SIZE"), "CACHE_MAX_SIZE", 1000
+            ),
+            redis_url=os.getenv("REDIS_URL"),
+            redis_username=os.getenv("REDIS_USERNAME", "default"),
+            redis_password=SecretStr(pw) if (pw := os.getenv("REDIS_PASSWORD")) else None,
+            async_pipeline_enabled=_parse_bool(
+                os.getenv("ASYNC_PIPELINE_ENABLED"), "ASYNC_PIPELINE_ENABLED", False
+            ),
         )

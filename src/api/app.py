@@ -10,19 +10,24 @@ from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
-from qdrant_client import QdrantClient
+from qdrant_client import AsyncQdrantClient, QdrantClient
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
-from src.api.dependencies import build_pipeline, get_pipeline
+from src.api.dependencies import (
+    build_async_pipeline,
+    build_pipeline,
+    get_async_pipeline,
+    get_pipeline,
+)
 from src.api.models import QueryRequest, QueryResponse
 from src.api.query_parser import parse_query
 from src.config import Settings, _parse_bool
 from src.generation.exceptions import GenerationError
-from src.pipeline.rag_pipeline import RAGPipeline
+from src.pipeline.rag_pipeline import AsyncRAGPipeline, RAGPipeline
 from src.types import RetrievalError
 from src.utils.logging import setup_logging
 
@@ -159,10 +164,22 @@ class BodySizeLimitMiddleware(BaseHTTPMiddleware):
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     setup_logging()
+    loader = None
+    async_qdrant_client: AsyncQdrantClient | None = None
     try:
         settings = Settings.from_env()
-        pipeline, loader, client = build_pipeline()
-        app.state.pipeline = pipeline
+        if settings.async_pipeline_enabled:
+            async_pipeline, loader, async_qdrant_client = build_async_pipeline()
+            app.state.async_pipeline = async_pipeline
+            api_key_str = (
+                None
+                if settings.qdrant_api_key is None
+                else settings.qdrant_api_key.get_secret_value()
+            )
+            client: QdrantClient = QdrantClient(url=settings.qdrant_url, api_key=api_key_str)
+        else:
+            pipeline, loader, client = build_pipeline()
+            app.state.pipeline = pipeline
         app.state.qdrant_client = client
         app.state.settings = settings
     except Exception as exc:
@@ -171,7 +188,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     try:
         yield
     finally:
-        loader.unload()
+        if loader is not None:
+            loader.unload()
+        if async_qdrant_client is not None:
+            await async_qdrant_client.close()
         try:
             from joblib.externals.loky import get_reusable_executor  # type: ignore[import-untyped]
 
@@ -258,16 +278,23 @@ async def stats(request: Request) -> dict[str, bool]:
 async def query(
     body: QueryRequest,
     request: Request,
-    pipeline: RAGPipeline = Depends(get_pipeline),  # noqa: B008
 ) -> QueryResponse:
     parsed = parse_query(body.query)
     settings: Settings = request.app.state.settings
-    result = await asyncio.wait_for(
-        asyncio.to_thread(
-            pipeline.query, parsed, sources=body.sources, entity_name=body.entity_name
-        ),
-        timeout=settings.query_timeout_seconds,
-    )
+    if settings.async_pipeline_enabled:
+        async_pipeline: AsyncRAGPipeline = get_async_pipeline(request)
+        result = await asyncio.wait_for(
+            async_pipeline.query(parsed, sources=body.sources, entity_name=body.entity_name),
+            timeout=settings.query_timeout_seconds,
+        )
+    else:
+        sync_pipeline: RAGPipeline = get_pipeline(request)
+        result = await asyncio.wait_for(
+            asyncio.to_thread(
+                sync_pipeline.query, parsed, sources=body.sources, entity_name=body.entity_name
+            ),
+            timeout=settings.query_timeout_seconds,
+        )
     return QueryResponse(
         answer=result.answer,
         sources_used=list(result.sources_used),

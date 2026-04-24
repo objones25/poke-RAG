@@ -109,3 +109,62 @@ class TestQueryNormalisation:
         mock_pipeline.query.return_value = _make_result(confidence_score=0.87)
         response = client.post("/query", json={"query": "What type is Pikachu?"}).json()
         assert response["confidence_score"] == 0.87
+
+
+@pytest.fixture()
+def mock_async_pipeline_dep(mocker):
+    from unittest.mock import AsyncMock as _AsyncMock
+
+    pipeline = _AsyncMock()
+    loader = mocker.MagicMock()
+    mock_async_client = _AsyncMock()
+    mocker.patch(
+        "src.api.app.build_async_pipeline",
+        return_value=(pipeline, loader, mock_async_client),
+    )
+    return pipeline
+
+
+@pytest.fixture()
+def async_client(mock_async_pipeline_dep, monkeypatch):
+    monkeypatch.setenv("RATE_LIMIT_ENABLED", "false")
+    monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+    monkeypatch.setenv("ASYNC_PIPELINE_ENABLED", "true")
+    with TestClient(app) as c:
+        yield c
+
+
+@pytest.mark.integration
+class TestAsyncPipelineWiring:
+    def test_async_path_returns_200(self, async_client, mock_async_pipeline_dep) -> None:
+        mock_async_pipeline_dep.query.return_value = _make_result()
+        response = async_client.post("/query", json={"query": "What type is Pikachu?"})
+        assert response.status_code == 200
+
+    def test_async_path_calls_async_query(self, async_client, mock_async_pipeline_dep) -> None:
+        mock_async_pipeline_dep.query.return_value = _make_result()
+        async_client.post("/query", json={"query": "What type is Pikachu?"})
+        mock_async_pipeline_dep.query.assert_called_once()
+
+    def test_async_path_response_contains_answer(
+        self, async_client, mock_async_pipeline_dep
+    ) -> None:
+        mock_async_pipeline_dep.query.return_value = _make_result()
+        response = async_client.post("/query", json={"query": "What type is Pikachu?"}).json()
+        assert response["answer"] == "Pikachu is Electric-type."
+
+    def test_async_path_confidence_score_in_response(
+        self, async_client, mock_async_pipeline_dep
+    ) -> None:
+        mock_async_pipeline_dep.query.return_value = _make_result(confidence_score=0.92)
+        response = async_client.post("/query", json={"query": "What type is Pikachu?"}).json()
+        assert response["confidence_score"] == 0.92
+
+    def test_async_path_retrieval_error_returns_503(
+        self, async_client, mock_async_pipeline_dep
+    ) -> None:
+        from src.types import RetrievalError
+
+        mock_async_pipeline_dep.query.side_effect = RetrievalError("no docs")
+        response = async_client.post("/query", json={"query": "test"})
+        assert response.status_code == 503

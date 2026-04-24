@@ -6,12 +6,24 @@ from collections.abc import Callable
 
 import pytest
 
+
+@pytest.fixture
+def anyio_backend() -> str:
+    """Use asyncio as the anyio backend for all async tests."""
+    return "asyncio"
+
 # Apply FlagEmbedding 1.3.5 + transformers 5.x compatibility shims before any
 # FlagEmbedding import.  The shims are canonical in src/retrieval/_compat.py;
 # importing that module here keeps both paths (test runner + production server)
 # consistent without duplicating the patch logic.
-import src.retrieval._compat  # noqa: F401
-from src.types import EntityType, GenerationResult, RetrievalResult, RetrievedChunk, Source
+import src.retrieval._compat  # noqa: F401, E402
+from src.types import (  # noqa: E402
+    EntityType,
+    GenerationResult,
+    RetrievalResult,
+    RetrievedChunk,
+    Source,
+)
 
 
 def make_chunk(

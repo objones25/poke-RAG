@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import math
 
 from src.generation.protocols import GeneratorProtocol
 from src.pipeline.types import PipelineResult
-from src.retrieval.protocols import QueryRouterProtocol, RetrieverProtocol
+from src.retrieval.protocols import AsyncRetrieverProtocol, QueryRouterProtocol, RetrieverProtocol
 from src.types import RetrievalError, Source
 
 
@@ -58,6 +59,63 @@ class RAGPipeline:
             raise RetrievalError("Retrieval returned no documents for query")
 
         gen_result = self._generator.generate(query, chunks)
+
+        raw_score = chunks[0].score
+        confidence_score: float | None = _sigmoid(raw_score) if math.isfinite(raw_score) else None
+
+        return PipelineResult(
+            answer=gen_result.answer,
+            sources_used=gen_result.sources_used,
+            num_chunks_used=gen_result.num_chunks_used,
+            model_name=gen_result.model_name,
+            query=query,
+            confidence_score=confidence_score,
+        )
+
+
+class AsyncRAGPipeline:
+    """Async RAG pipeline: await retrieval, run generation in a thread pool."""
+
+    def __init__(
+        self,
+        *,
+        retriever: AsyncRetrieverProtocol,
+        generator: GeneratorProtocol,
+        query_router: QueryRouterProtocol | None = None,
+    ) -> None:
+        self._retriever = retriever
+        self._generator = generator
+        self._query_router = query_router
+
+    async def query(
+        self,
+        query: str,
+        *,
+        top_k: int = 5,
+        sources: list[Source] | None = None,
+        entity_name: str | None = None,
+    ) -> PipelineResult:
+        """Run an async RAG query.
+
+        Raises:
+            ValueError: If query is empty or whitespace-only.
+            RetrievalError: Propagated immediately if retrieval fails.
+        """
+        if not query.strip():
+            raise ValueError("query must not be empty or whitespace-only")
+
+        if sources is None and self._query_router is not None:
+            sources = self._query_router.route(query)
+
+        retrieval_result = await self._retriever.retrieve(
+            query, top_k=top_k, sources=sources, entity_name=entity_name
+        )
+        chunks = retrieval_result.documents
+
+        if not chunks:
+            raise RetrievalError("Retrieval returned no documents for query")
+
+        gen_result = await asyncio.to_thread(self._generator.generate, query, chunks)
 
         raw_score = chunks[0].score
         confidence_score: float | None = _sigmoid(raw_score) if math.isfinite(raw_score) else None

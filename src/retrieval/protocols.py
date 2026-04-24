@@ -3,11 +3,14 @@
 Every concrete class (BGEEmbedder, QdrantVectorStore, BGEReranker, Retriever)
 must satisfy the corresponding protocol. This enables unit tests to inject
 mocks without importing heavy ML dependencies.
+
+Async variants (AsyncVectorStoreProtocol, AsyncRetrieverProtocol) are additive —
+existing sync protocols are unchanged (Open/Closed Principle).
 """
 
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from src.retrieval.types import EmbeddingOutput
 from src.types import RetrievalResult, RetrievedChunk, Source
@@ -101,4 +104,73 @@ class RetrieverProtocol(Protocol):
 class QueryRouterProtocol(Protocol):
     def route(self, query: str) -> list[Source]:
         """Classify query into one or more sources. Returns sorted list; never empty."""
+        ...
+
+
+# ---------------------------------------------------------------------------
+# Async protocol variants (additive — sync protocols above are unchanged)
+# ---------------------------------------------------------------------------
+
+
+@runtime_checkable
+class AsyncVectorStoreProtocol(Protocol):
+    async def ensure_collections(self) -> None:
+        """Create the three source collections if they don't exist."""
+        ...
+
+    async def upsert(
+        self,
+        collection: Source,
+        documents: list[RetrievedChunk],
+        embeddings: EmbeddingOutput,
+    ) -> None:
+        """Upsert documents with their precomputed embeddings into a collection."""
+        ...
+
+    async def search(
+        self,
+        collection: Source,
+        query_dense: list[float],
+        query_sparse: dict[int, float],
+        top_k: int,
+        entity_name: str | None = None,
+    ) -> list[RetrievedChunk]:
+        """Hybrid dense+sparse search with optional entity_name payload filter.
+
+        Raises:
+            OSError: If vector store is unavailable or connection fails.
+        """
+        ...
+
+
+@runtime_checkable
+class AsyncRetrieverProtocol(Protocol):
+    async def retrieve(
+        self,
+        query: str,
+        *,
+        top_k: int = 5,
+        sources: list[Source] | None = None,
+        entity_name: str | None = None,
+    ) -> RetrievalResult:
+        """Retrieve top_k chunks for query across specified sources (None = all three).
+
+        Raises:
+            RetrievalError: If retrieval fails or no documents found.
+        """
+        ...
+
+
+@runtime_checkable
+class CacheProtocol(Protocol):
+    async def get(self, key: str) -> Any | None:
+        """Return cached value or None if key is missing."""
+        ...
+
+    async def set(self, key: str, value: Any, ttl_seconds: int | None = None) -> None:
+        """Store value. TTL of None means no expiry (or backend default)."""
+        ...
+
+    async def delete(self, key: str) -> None:
+        """Remove key from cache. No-op if key does not exist."""
         ...
