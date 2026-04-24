@@ -46,26 +46,32 @@ class ModelLoader:
         dtype = _dtype_for_device(self._device)
         _LOG.info("Loading '%s' on %s (dtype=%s)", self._model_id, self._device, dtype)
 
-        self._processor = AutoProcessor.from_pretrained(self._model_id)  # type: ignore[no-untyped-call]
+        try:
+            self._processor = AutoProcessor.from_pretrained(self._model_id)  # type: ignore[no-untyped-call]
+        except Exception as exc:
+            raise RuntimeError(f"Failed to load processor for '{self._model_id}': {exc}") from exc
         _LOG.debug("Processor for '%s' ready", self._model_id)
 
-        if self._device == "mps":
-            # transformers 5.5 caching_allocator_warmup has no MPS-specific logic and
-            # blindly tries to torch.empty() the full model size (~15 GiB), which MPS
-            # rejects. The warmup is skipped when device_map is None, so load on CPU
-            # then move to MPS — the documented pattern for non-CUDA devices.
-            raw_model: PreTrainedModel = AutoModelForImageTextToText.from_pretrained(
-                self._model_id,
-                dtype=dtype,
-                attn_implementation="sdpa",
-            ).to(self._device)  # type: ignore[arg-type]
-        else:
-            raw_model = AutoModelForImageTextToText.from_pretrained(
-                self._model_id,
-                device_map="auto",
-                dtype=dtype,
-                attn_implementation="sdpa",
-            )
+        try:
+            if self._device == "mps":
+                # transformers 5.5 caching_allocator_warmup has no MPS-specific logic and
+                # blindly tries to torch.empty() the full model size (~15 GiB), which MPS
+                # rejects. The warmup is skipped when device_map is None, so load on CPU
+                # then move to MPS — the documented pattern for non-CUDA devices.
+                raw_model: PreTrainedModel = AutoModelForImageTextToText.from_pretrained(
+                    self._model_id,
+                    dtype=dtype,
+                    attn_implementation="sdpa",
+                ).to(self._device)  # type: ignore[arg-type]
+            else:
+                raw_model = AutoModelForImageTextToText.from_pretrained(
+                    self._model_id,
+                    device_map="auto",
+                    dtype=dtype,
+                    attn_implementation="sdpa",
+                )
+        except Exception as exc:
+            raise RuntimeError(f"Failed to load model '{self._model_id}': {exc}") from exc
         self._model = self._apply_lora_adapter(raw_model)
         _LOG.info("Model '%s' ready", self._model_id)
 

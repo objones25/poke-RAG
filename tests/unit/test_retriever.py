@@ -758,3 +758,17 @@ class TestRetrieverMultiDraftHyDE:
         retriever.retrieve("my query")
         transformer.transform.assert_called_once_with("my query")
         embedder.encode.assert_called_once_with(["transformed query"])
+
+    def test_raises_retrieval_error_when_search_times_out(self) -> None:
+        """ThreadPoolExecutor timeout should raise RetrievalError with timeout message."""
+        from concurrent.futures import TimeoutError as FuturesTimeoutError
+
+        vector_store = MagicMock()
+        vector_store.search.side_effect = FuturesTimeoutError("Search timed out")
+        retriever = Retriever(
+            embedder=_make_embedder(),
+            vector_store=vector_store,
+            reranker=_make_reranker(),
+        )
+        with pytest.raises(RetrievalError, match="timeout"):
+            retriever.retrieve("query")

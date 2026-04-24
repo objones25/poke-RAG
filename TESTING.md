@@ -45,35 +45,38 @@ open htmlcov/index.html
 
 ```text
 tests/
-  conftest.py             shared fixtures (make_chunk, make_retrieval_result, make_generation_result, autouse rate limit disable)
+  conftest.py             shared fixtures; autouse fixture disables rate limiting + sets QDRANT_URL
   unit/                   pure logic — no disk, no network, no model loading
+    test_api.py                          FastAPI route handlers with mocks
     test_chunker.py
-    test_retriever.py
-    test_reranker.py
+    test_clean_sft_data.py               SFT data validation logic
+    test_config.py                       Settings validation, device detection, SecretStr masking
     test_context_assembler.py
+    test_embedder.py                     BGEEmbedder API shape (mocks only)
+    test_eval_metrics.py
+    test_gemini_client.py                Gemini API client wrapper
+    test_generate_sft_data.py            SFT data generation logic
+    test_generator.py
+    test_inference.py                    Inferencer model lifecycle
+    test_loader.py                       ModelLoader coverage
+    test_logging_setup.py
+    test_models.py
     test_pipeline.py
+    test_prompt_builder.py
     test_query_parser.py
     test_query_router.py                 QueryRouter keyword-based routing (~79 tests)
     test_query_transformer.py            HyDE and passthrough transformers
-    test_config.py                       Settings validation, device detection, SecretStr masking
-    test_inference.py                    Inferencer model lifecycle
-    test_loader.py                       ModelLoader coverage
-    test_api.py                          FastAPI route handlers with mocks
-    test_embedder.py                     BGEEmbedder API shape (mocks only)
-    test_vector_store.py                 VectorStore interface and argument shapes
-    test_generator.py
-    test_models.py
-    test_prompt_builder.py
+    test_reranker.py
+    test_retriever.py
     test_sampler.py
+    test_vector_store.py                 VectorStore interface and argument shapes
   integration/            real I/O, mocked models, or fixture data
-    test_embedder.py                     BGE-M3 real model: dense + sparse shapes, types (marked @pytest.mark.slow)
-    test_qdrant_store.py                 Qdrant client API shapes (uses MagicMock client, not real Qdrant)
-    test_rag_pipeline.py
     test_api.py                          FastAPI with mocked pipeline
     test_api_lifespan.py                 FastAPI lifespan (startup/shutdown/failure)
     test_build_index.py
     test_generation_pipeline.py
-    test_generate_sft_data.py
+    test_generate_sft_data.py            SFT generation integration test
+    test_rag_pipeline.py
   e2e/                    full query → answer with real Qdrant and real models
     test_pokemon_queries.py              (requires QDRANT_URL and CUDA GPU; marked @pytest.mark.gpu)
   fixtures/               small sample data files committed to the repo
@@ -176,7 +179,11 @@ E2E tests that need real generation are marked `@pytest.mark.gpu` and excluded f
 
 ## API integration tests and rate limiting
 
-Rate limiting is disabled by default for all tests via the autouse fixture `_disable_rate_limiting` in `conftest.py`, which sets `RATE_LIMIT_ENABLED=false`. This prevents the `RateLimitMiddleware` (20 req/min/IP on `/query`) from blocking rapid test requests.
+Rate limiting is disabled by default for all tests via the autouse fixture `_disable_rate_limiting` in `conftest.py`, which sets:
+- `RATE_LIMIT_ENABLED=false` — prevents the `RateLimitMiddleware` (20 req/min/IP on `/query`) from blocking rapid test requests
+- `QDRANT_URL=http://localhost:6333` — required because `Settings.from_env()` is called eagerly in the FastAPI lifespan
+
+This ensures that any test instantiating `TestClient(app)` has a valid Qdrant endpoint configured.
 
 If you need to test rate limiting behavior itself, re-enable it in that specific test:
 
@@ -205,17 +212,17 @@ def test_pipeline_does_not_call_generator_when_retrieval_fails(mocker):
     generator.generate.assert_not_called()
 ```
 
-## Test count
+## Test files and count
 
-Approximately **~613 tests** total across unit, integration, and e2e markers.
+**33 test files** across unit, integration, and e2e suites. Total test cases: approximately **~650+** across all markers.
 
 ## Fixtures
 
 Shared fixtures in `tests/conftest.py`:
-- **`make_chunk`** — factory fixture for creating `RetrievedChunk` objects with customizable fields
+- **`make_chunk`** — factory fixture for creating `RetrievedChunk` objects with customizable fields (score, source, entity_name, etc.)
 - **`make_retrieval_result`** — factory fixture for `RetrievalResult` objects
 - **`make_generation_result`** — factory fixture for `GenerationResult` objects
-- **`_disable_rate_limiting`** (autouse) — disables rate limiting for all tests to prevent spurious failures
+- **`_disable_rate_limiting`** (autouse, all tests) — disables rate limiting AND sets `QDRANT_URL=http://localhost:6333` to prevent spurious failures during test lifespan initialization
 
 Small sample data files in `tests/fixtures/` — a handful of representative entries from each source, enough to exercise parsing and indexing logic.
 

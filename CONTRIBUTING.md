@@ -130,7 +130,7 @@ Every chunk's Qdrant payload must include: `source`, `entity_name` (string, e.g.
 
 **Confidence scores**: `PipelineResult` and `QueryResponse` now include `confidence_score: float | None = None`, reflecting the confidence level of retrieval and generation.
 
-**Rate limiting**: `RateLimitMiddleware` enforces 20 requests per minute per IP on `/query` endpoints. The `RATE_LIMIT_ENABLED` environment variable can be set to `"false"` to disable rate limiting. In the test suite, rate limiting is disabled by default in `tests/conftest.py` via an autouse fixture to prevent spurious failures during rapid test requests.
+**Rate limiting**: `RateLimitMiddleware` enforces 20 requests per minute per IP on `/query` endpoints. The `RATE_LIMIT_ENABLED` environment variable can be set to `"false"` to disable rate limiting. In the test suite, rate limiting is disabled by default in `tests/conftest.py` via an autouse fixture (`_disable_rate_limiting`), which also sets `QDRANT_URL=http://localhost:6333` to ensure the FastAPI lifespan can initialize settings correctly.
 
 **Query routing**: Optional per-query source selection via `QueryRouter` (keyword-based heuristics). Disabled by default; enable with `ROUTING_ENABLED=true`.
 

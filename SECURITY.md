@@ -42,19 +42,27 @@ Local Qdrant (Docker) does not require an API key. `QDRANT_API_KEY` is only need
 The API enforces rate limiting on all endpoints via `RateLimitMiddleware` in `src/api/app.py`:
 
 - **Limit**: 20 requests per minute per IP address
-- **Configuration**: Controlled via `RATE_LIMIT_ENABLED` environment variable (default: `true`)
+- **Configuration**: Controlled via `RATE_LIMIT_ENABLED` environment variable (default: `true`, enabled by default)
+- **Health check exempt**: `/health` endpoint is not rate-limited
+- **Trusted proxies**: Middleware respects `X-Forwarded-For` header via `TRUSTED_PROXY_COUNT` environment variable (default: 0). Set this correctly if behind a reverse proxy (e.g., load balancer).
 - **Testing**: Set `RATE_LIMIT_ENABLED=false` via `monkeypatch.setenv()` in tests to disable rate limiting and prevent spurious failures
-- **Header inspection**: Middleware inspects `X-Forwarded-For` header for reverse-proxy deployments
 
 The rate limiter uses an in-memory store and is safe for single-instance deployments. For multi-instance production deployments, consider externalizing to Redis or Memcached.
 
 ## Prompt injection prevention
 
-**Primary defense**: The `src/generation/prompt_builder.py` module strips newline characters (`\n`, `\r`, `\t`) from user-supplied query strings before building the prompt. This mitigates prompt injection attacks that attempt to break out of the prompt template via multi-line input.
+**Primary defense**: The `build_prompt()` function in `src/generation/prompt_builder.py` sanitizes all user input before building the prompt via the `_sanitize_for_prompt()` helper. This function:
+- Normalizes Unicode via `unicodedata.normalize("NFKC")` to prevent homograph attacks
+- Removes all control characters (Unicode category "C": Cc, Cf, Co, Cs, Cn) to strip newlines, tabs, and other whitespace-like characters that might break out of the prompt template
+- Strips leading/trailing whitespace
+
+This comprehensive sanitization prevents prompt injection attacks while preserving printable Unicode characters.
 
 **Request validation**: The `QueryRequest` model in `src/api/models.py` enforces:
 - `query`: required, length 1–2000 characters
 - `entity_name`: optional, regex-validated (letters, digits, spaces, hyphens, underscores, apostrophes only)
+
+The `parse_query()` function in `src/api/query_parser.py` further validates that the query is non-empty after stripping whitespace.
 
 **Response sanitization**: Generated answers are not HTML-escaped by default. If deploying a web UI, ensure HTML entities in `answer` and other string fields are escaped on the client side.
 
@@ -66,8 +74,17 @@ The `src/utils/logging.py` module configures centralized logging:
 - **httpx suppressed**: `httpx` is set to `WARNING` level to prevent per-request INFO logs from leaking internal Qdrant instance URLs or other sensitive connection details
 - **Format**: Human-readable: `%(asctime)s %(levelname)-8s %(name)s — %(message)s`
 - **Output**: Always to `stdout` for container/serverless compatibility
+- **Re-entrant safe**: Multiple calls to `setup_logging()` are safe; handlers are not duplicated
 
 Ensure logs are not persisted to disk in production without proper access controls, as they may contain PII or entity information from queries.
+
+## Request validation and size limits
+
+The API enforces request size and structure validation via middleware in `src/api/app.py`:
+
+- **Body size limit**: `BodySizeLimitMiddleware` rejects requests with `Content-Length` exceeding 64 KB (far above any valid query payload)
+- **Negative Content-Length guard**: Requests with negative `Content-Length` are rejected with 413 (Request Entity Too Large)
+- **Invalid Content-Length header**: Non-numeric `Content-Length` headers are rejected with 400 (Bad Request)
 
 ## Dependencies
 
@@ -94,6 +111,33 @@ This project uses ML libraries (`transformers`, `torch`, `unsloth`, `trl`, `peft
 - Community Cloud is acceptable for this project given no PII is involved
 - Do not hardcode `RUNPOD_API_KEY` in any training script — load from environment
 - Terminate pods when not in use to avoid unnecessary exposure
+
+## HTTP security headers
+
+The API adds security headers to all responses via `SecurityHeadersMiddleware` in `src/api/app.py`:
+
+- **X-Content-Type-Options**: `nosniff` — prevents MIME type sniffing
+- **X-Frame-Options**: `DENY` — prevents clickjacking by forbidding iframes
+- **Referrer-Policy**: `strict-origin-when-cross-origin` — limits referrer leakage
+- **Content-Security-Policy**: `default-src 'none'` — restricts inline scripts and external resources
+- **Strict-Transport-Security**: `max-age=31536000; includeSubDomains` — enforced only if `HTTPS_ENABLED=true`
+
+## CORS and origin control
+
+The API configures CORS via `CORSMiddleware` in `src/api/app.py`:
+
+- **Default**: Allow all origins (`ALLOWED_ORIGINS="*"`) with credentials disabled
+- **Custom origins**: Set `ALLOWED_ORIGINS` to a comma-separated list (e.g., `https://example.com, https://app.example.com`) to restrict and enable credentials
+- **Methods**: Only `GET` and `POST` are allowed
+- **Headers**: Only `Content-Type` and `Authorization` are allowed in requests
+
+## Stats endpoint authorization
+
+The `/stats` endpoint requires authentication if `STATS_API_KEY` environment variable is set:
+
+- **Query format**: `GET /stats` with `Authorization: Bearer <STATS_API_KEY>` header
+- **Validation**: Uses constant-time comparison (`hmac.compare_digest()`) to prevent timing attacks
+- **Default**: If `STATS_API_KEY` is not set, the endpoint is public
 
 ## Supported versions
 

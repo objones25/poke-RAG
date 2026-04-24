@@ -482,3 +482,61 @@ class TestModelLoaderLoraAdapter:
             loader.load()
 
         mock_peft.assert_not_called()
+
+    def test_raises_runtime_error_when_processor_load_fails(self) -> None:
+        from src.generation.loader import ModelLoader
+        from src.generation.models import GenerationConfig
+
+        with patch(
+            "src.generation.loader.AutoProcessor.from_pretrained",
+            side_effect=OSError("Model not found on hub"),
+        ):
+            loader = ModelLoader(
+                config=GenerationConfig(model_id="google/gemma-4-E4B-it"), device="cpu"
+            )
+            with pytest.raises(RuntimeError, match="google/gemma-4-E4B-it|Processor"):
+                loader.load()
+
+    def test_raises_runtime_error_when_model_load_fails_on_cuda(self) -> None:
+        from src.generation.loader import ModelLoader
+        from src.generation.models import GenerationConfig
+
+        fake_processor = MagicMock()
+
+        with (
+            patch(
+                "src.generation.loader.AutoProcessor.from_pretrained",
+                return_value=fake_processor,
+            ),
+            patch(
+                "src.generation.loader.AutoModelForImageTextToText.from_pretrained",
+                side_effect=RuntimeError("CUDA out of memory"),
+            ),
+        ):
+            loader = ModelLoader(
+                config=GenerationConfig(model_id="google/gemma-4-E4B-it"), device="cuda"
+            )
+            with pytest.raises(RuntimeError, match="google/gemma-4-E4B-it"):
+                loader.load()
+
+    def test_raises_runtime_error_when_model_load_fails_on_mps(self) -> None:
+        from src.generation.loader import ModelLoader
+        from src.generation.models import GenerationConfig
+
+        fake_processor = MagicMock()
+
+        with (
+            patch(
+                "src.generation.loader.AutoProcessor.from_pretrained",
+                return_value=fake_processor,
+            ),
+            patch(
+                "src.generation.loader.AutoModelForImageTextToText.from_pretrained",
+                side_effect=ValueError("Unsupported device"),
+            ),
+        ):
+            loader = ModelLoader(
+                config=GenerationConfig(model_id="google/gemma-4-E4B-it"), device="mps"
+            )
+            with pytest.raises(RuntimeError, match="google/gemma-4-E4B-it"):
+                loader.load()

@@ -63,5 +63,12 @@ class Inferencer:
         if not isinstance(response, str):
             raise TypeError(f"Processor returned {type(response).__name__}, expected str")
 
-        _LOG.debug("Generated %d chars", len(response))
-        return response.strip()
+        stripped_response = response.strip()
+        if not stripped_response:
+            raise RuntimeError(
+                f"Model generated only whitespace/empty output (input_len={input_len}, "
+                f"output_tokens={response_ids.shape[-1]}, decoded_len={len(response)})"
+            )
+
+        _LOG.debug("Generated %d chars", len(stripped_response))
+        return stripped_response

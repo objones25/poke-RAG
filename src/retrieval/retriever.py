@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, TimeoutError, as_completed
 from typing import cast
 
 from src.retrieval.protocols import (
@@ -20,6 +20,7 @@ _LOG = logging.getLogger(__name__)
 _ALL_SOURCES: tuple[Source, ...] = ("bulbapedia", "pokeapi", "smogon")
 _DEFAULT_CANDIDATES_PER_SOURCE = 25
 _TARGET_TOTAL_CANDIDATES = 75
+_SEARCH_TIMEOUT_SECONDS = 30
 
 
 class Retriever:
@@ -122,17 +123,27 @@ class Retriever:
                 ): src
                 for src in active_sources
             }
-            for future in as_completed(futures):
-                src = futures[future]
-                try:
-                    _, chunks = future.result()
-                    candidates.extend(chunks)
-                except (RuntimeError, ValueError, OSError) as exc:
-                    raise RetrievalError(f"Vector search failed for '{src}': {exc}") from exc
-                except Exception as exc:
-                    raise RetrievalError(
-                        f"Vector search failed unexpectedly for '{src}': {exc}"
-                    ) from exc
+            try:
+                for future in as_completed(futures, timeout=_SEARCH_TIMEOUT_SECONDS):
+                    src = futures[future]
+                    try:
+                        _, chunks = future.result(timeout=_SEARCH_TIMEOUT_SECONDS)
+                        candidates.extend(chunks)
+                    except TimeoutError as exc:
+                        raise RetrievalError(
+                            f"Vector search timed out for '{src}' "
+                            f"(timeout={_SEARCH_TIMEOUT_SECONDS}s)"
+                        ) from exc
+                    except (RuntimeError, ValueError, OSError) as exc:
+                        raise RetrievalError(f"Vector search failed for '{src}': {exc}") from exc
+                    except Exception as exc:
+                        raise RetrievalError(
+                            f"Vector search failed unexpectedly for '{src}': {exc}"
+                        ) from exc
+            except TimeoutError as exc:
+                raise RetrievalError(
+                    f"Vector search timed out (timeout={_SEARCH_TIMEOUT_SECONDS}s)"
+                ) from exc
         return candidates
 
     def retrieve(

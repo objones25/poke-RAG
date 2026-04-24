@@ -199,3 +199,13 @@ class TestInferencerInfer:
 
         _, kwargs = fake_model.generate.call_args
         assert kwargs["max_new_tokens"] == 256
+
+    def test_raises_runtime_error_when_decode_returns_empty_string(self) -> None:
+        inferencer, _, fake_processor, _ = _make_inferencer(decoded="   ")
+        with pytest.raises(RuntimeError, match="empty"):
+            inferencer.infer("prompt")
+
+    def test_raises_runtime_error_when_decode_returns_only_whitespace(self) -> None:
+        inferencer, _, fake_processor, _ = _make_inferencer(decoded="\n\t  \r\n")
+        with pytest.raises(RuntimeError, match="empty|whitespace"):
+            inferencer.infer("prompt")

@@ -49,7 +49,19 @@ This module MUST be imported before FlagEmbedding is first imported.
   - Do not remove these imports or reorder module initialization
 """
 
+import logging
+
+from transformers import BatchEncoding
+from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 from transformers.utils import import_utils as _tf_import_utils
+
+__all__ = []
+
+
+def _get_logger() -> logging.Logger:
+    """Get logger lazily to avoid affecting root logger at module import time."""
+    return logging.getLogger(__name__)
+
 
 # Patch 1: transformers.utils.import_utils.is_torch_fx_available
 # ==============================================================
@@ -72,10 +84,10 @@ if not hasattr(_tf_import_utils, "is_torch_fx_available"):
             return False
 
     _tf_import_utils.is_torch_fx_available = _is_torch_fx_available  # type: ignore[attr-defined]
+    _get_logger().debug("Patched transformers.utils.import_utils.is_torch_fx_available")
+else:
+    _get_logger().debug("is_torch_fx_available already exists; skipping patch")
 
-
-from transformers import BatchEncoding
-from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 # Patch 2: PreTrainedTokenizerBase.prepare_for_model
 # ==================================================
@@ -217,3 +229,6 @@ if not hasattr(PreTrainedTokenizerBase, "prepare_for_model"):
 
     # Attach the shim method to the tokenizer base class (idempotent via hasattr check above)
     PreTrainedTokenizerBase.prepare_for_model = _prepare_for_model  # type: ignore[attr-defined]
+    _get_logger().debug("Patched PreTrainedTokenizerBase.prepare_for_model")
+else:
+    _get_logger().debug("prepare_for_model already exists; skipping patch")

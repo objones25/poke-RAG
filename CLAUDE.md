@@ -58,11 +58,14 @@ src/
     logging.py            setup_logging(), suppresses httpx INFO logs
 
 tests/
-  conftest.py            shared fixtures
+  conftest.py            shared fixtures; autouse fixture `_disable_rate_limiting` disables rate limiting and sets QDRANT_URL to localhost
   unit/                  no I/O, no model, fast
     test_config.py
     test_inference.py
     test_loader.py
+    test_clean_sft_data.py
+    test_gemini_client.py
+    test_generate_sft_data.py
     ... (other unit tests)
   integration/           real disk/index I/O, uses fixture data
     test_api.py
@@ -107,9 +110,11 @@ Every chunk must carry these metadata fields in its Qdrant payload: `source` (`b
 - Implements `QueryRouterProtocol`
 
 **Query transformation** (optional, enabled via `HYDE_ENABLED=true`):
-- `HyDETransformer` in `src/retrieval/query_transformer.py` generates hypothetical answers before embedding
+- `HyDETransformer` in `src/retrieval/query_transformer.py` generates a single hypothetical answer before embedding
+- `MultiDraftHyDETransformer` generates multiple hypothetical passages, embeds them all, and fuses vectors (dense mean, sparse max per token)
 - Shifts retrieval from query-to-doc to answer-to-answer similarity
 - Configurable max tokens via `HYDE_MAX_TOKENS` (default 150)
+- Number of drafts (for MultiDraft) via `HYDE_NUM_DRAFTS` (default 1)
 - Falls back to original query on inference failure
 - Implements `QueryTransformerProtocol`; `PassthroughTransformer` is the identity function
 
@@ -162,11 +167,14 @@ These protocols enable unit testing with mocks instead of loading real models.
 
 **Environment configuration** (in `src/config.py` Settings):
 
+- `QDRANT_URL` — Required; Qdrant endpoint URL (e.g. `http://localhost:6333` or hosted instance)
 - `ROUTING_ENABLED=true/false` — Enable QueryRouter (default: false)
 - `HYDE_ENABLED=true/false` — Enable HyDETransformer (default: false)
 - `HYDE_MAX_TOKENS=N` — Max tokens for HyDE output (default: 150)
+- `HYDE_NUM_DRAFTS=N` — Number of hypothetical passages for MultiDraftHyDE (default: 1)
+- `HYDE_CONFIDENCE_THRESHOLD=F` — Optional threshold (0.0–1.0) to gate weak answers; None if unset
 - `LORA_ADAPTER_PATH=/path/to/adapter` — Path to LoRA weights (optional, only if fine-tuned on RunPod)
-- `qdrant_api_key` — `SecretStr` (Pydantic), masked in logs/repr
+- `qdrant_api_key` — `SecretStr` (Pydantic), masked in logs/repr (optional, only if Qdrant requires auth)
 
 **Security & logging**:
 

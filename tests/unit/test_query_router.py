@@ -348,3 +348,194 @@ class TestQueryRouterCaseInsensitivity:
     def test_uppercase_ev_matches_smogon(self) -> None:
         router = QueryRouter()
         assert router.route("Best EV spread for Tyranitar?") == ["smogon"]
+
+
+@pytest.mark.unit
+class TestQueryRouterRegexEdgeCases:
+    def test_pokemon_name_with_regex_metacharacters(self) -> None:
+        """Query containing Pokemon name with regex special chars should not crash."""
+        router = QueryRouter()
+        # Nidoran has special chars, but query mentions stats (pokeapi match)
+        result = router.route("Does Nidoran♂ have high stats?")
+        assert result == ["pokeapi"]
+
+    def test_query_with_tab_character(self) -> None:
+        """Tab character in query should not prevent regex matching."""
+        router = QueryRouter()
+        result = router.route("what are the stats\t")
+        assert result == ["pokeapi"]
+
+    def test_query_with_newline_character(self) -> None:
+        """Newline character in query should not prevent regex matching."""
+        router = QueryRouter()
+        result = router.route("what are the stats\n")
+        assert result == ["pokeapi"]
+
+    def test_query_with_mixed_whitespace(self) -> None:
+        """Mixed whitespace (tabs, newlines, spaces) should be handled."""
+        router = QueryRouter()
+        result = router.route("  what\t\nare the\rstats  ")
+        assert result == ["pokeapi"]
+
+    def test_query_only_special_characters(self) -> None:
+        """Query with only special characters should fall back to all sources."""
+        router = QueryRouter()
+        result = router.route("!!!")
+        assert set(result) == {"bulbapedia", "pokeapi", "smogon"}
+
+    def test_query_with_unicode_special_chars(self) -> None:
+        """Unicode special characters should not crash regex."""
+        router = QueryRouter()
+        result = router.route("What about Pokémon stats? (2024)")
+        assert result == ["pokeapi"]
+
+    def test_very_long_query_with_keyword(self) -> None:
+        """Very long query (2000+ chars) containing keyword should match efficiently."""
+        long_query = "x" * 1000 + " stats " + "y" * 1000
+        router = QueryRouter()
+        result = router.route(long_query)
+        assert result == ["pokeapi"]
+
+    def test_very_long_query_no_keyword(self) -> None:
+        """Very long query without keywords should fall back to all sources."""
+        long_query = "x" * 2500
+        router = QueryRouter()
+        result = router.route(long_query)
+        assert set(result) == {"bulbapedia", "pokeapi", "smogon"}
+
+    def test_query_with_multiple_newlines_and_keyword(self) -> None:
+        """Multiple newlines should not prevent keyword matching."""
+        router = QueryRouter()
+        result = router.route("what\n\n\nare\n\nstats\n\n")
+        assert result == ["pokeapi"]
+
+
+@pytest.mark.unit
+class TestQueryRouterReturnValueConsistency:
+    def test_empty_query_vs_no_match_same_sources(self) -> None:
+        """Both empty query and no-match query return same sources."""
+        router = QueryRouter()
+        empty_result = set(router.route(""))
+        no_match_result = set(router.route("xyz_no_match_abc"))
+        assert empty_result == no_match_result == {"bulbapedia", "pokeapi", "smogon"}
+
+    def test_fallback_always_sorted(self) -> None:
+        """Fallback (all sources) should always be in sorted order."""
+        router = QueryRouter()
+        result = router.route("no match here")
+        assert result == ["bulbapedia", "pokeapi", "smogon"]
+        assert result == sorted(result)
+
+    def test_pokeapi_single_source_no_duplicates(self) -> None:
+        """Single source match should not have duplicates."""
+        router = QueryRouter()
+        result = router.route("What are the stats?")
+        assert result == ["pokeapi"]
+        assert len(result) == len(set(result))
+
+    def test_multi_source_result_no_duplicates(self) -> None:
+        """Multi-source result should have no duplicates."""
+        router = QueryRouter()
+        result = router.route("stats and tier")
+        assert len(result) == len(set(result))
+
+    def test_multi_source_always_sorted(self) -> None:
+        """Multi-source result should always be sorted."""
+        router = QueryRouter()
+        # These keywords trigger different order without sorting
+        result = router.route("smogon tier and pokeapi stats")
+        assert result == sorted(result)
+
+    def test_return_type_always_list(self) -> None:
+        """Return value should always be a list."""
+        router = QueryRouter()
+        result = router.route("stats")
+        assert isinstance(result, list)
+        result = router.route("")
+        assert isinstance(result, list)
+
+    def test_return_elements_always_source_type(self) -> None:
+        """All elements in return list should be valid Source strings."""
+        router = QueryRouter()
+        valid_sources = {"bulbapedia", "pokeapi", "smogon"}
+        for query in ["stats", "tier", "lore", "no match", ""]:
+            result = router.route(query)
+            for source in result:
+                assert source in valid_sources
+
+
+@pytest.mark.unit
+class TestQueryRouterWholeWordBoundaries:
+    def test_revival_does_not_match_iv(self) -> None:
+        """'revival' contains 'iv' but should not trigger smogon."""
+        router = QueryRouter()
+        result = router.route("Does revival herb restore a fainted Pokemon?")
+        assert "smogon" not in result
+        # Should route to pokeapi (item, faint keywords)
+        assert "pokeapi" in result
+
+    def test_level_does_not_match_ev(self) -> None:
+        """'level' contains 'ev' but should not trigger smogon."""
+        router = QueryRouter()
+        result = router.route("At what level does Magikarp evolve?")
+        assert "smogon" not in result
+        # Should route to pokeapi (level, evolve keywords)
+        assert "pokeapi" in result
+
+    def test_standing_iv_uppercase_matches(self) -> None:
+        """Standalone uppercase 'IV' should match smogon."""
+        router = QueryRouter()
+        result = router.route("What IV does Pikachu need?")
+        assert "smogon" in result
+
+    def test_standing_ev_uppercase_matches(self) -> None:
+        """Standalone uppercase 'EV' should match smogon."""
+        router = QueryRouter()
+        result = router.route("Best EV spread?")
+        assert "smogon" in result
+
+    def test_iv_surrounded_by_punctuation_matches(self) -> None:
+        """'IV' surrounded by punctuation should match."""
+        router = QueryRouter()
+        result = router.route("Perfect IV's for competitive play")
+        assert "smogon" in result
+
+    def test_ev_at_word_boundary_with_numbers(self) -> None:
+        """'EV' followed by numbers should still match (word boundary)."""
+        router = QueryRouter()
+        result = router.route("252 EV in Special Attack")
+        assert "smogon" in result
+
+
+@pytest.mark.unit
+class TestQueryRouterIdempotency:
+    def test_same_query_twice_returns_equal_results(self) -> None:
+        """Calling route() twice with same query should return equal lists."""
+        router = QueryRouter()
+        result1 = router.route("What are Charizard's stats?")
+        result2 = router.route("What are Charizard's stats?")
+        assert result1 == result2
+
+    def test_multiple_instances_give_same_routing(self) -> None:
+        """Two separate QueryRouter instances should give same results."""
+        router1 = QueryRouter()
+        router2 = QueryRouter()
+        query = "competitive stats and tier"
+        result1 = router1.route(query)
+        result2 = router2.route(query)
+        assert result1 == result2
+
+    def test_same_query_across_100_calls(self) -> None:
+        """Routing should be consistent across many calls."""
+        router = QueryRouter()
+        results = [router.route("stats and lore") for _ in range(100)]
+        # All results should be identical
+        assert all(r == results[0] for r in results)
+
+    def test_different_sources_consistent(self) -> None:
+        """Each source keyword should consistently route to same source."""
+        router = QueryRouter()
+        for _ in range(10):
+            assert router.route("stats") == ["pokeapi"]
+            assert router.route("tier") == ["smogon"]
+            assert router.route("lore") == ["bulbapedia"]

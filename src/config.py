@@ -28,6 +28,99 @@ def _parse_bool(value: str | None, env_var_name: str, default: bool) -> bool:
     )
 
 
+def _parse_float_in_range(
+    value: str | None,
+    env_var_name: str,
+    default: float,
+    min_val: float,
+    max_val: float,
+) -> float:
+    """Parse a float from environment variable within a specified range.
+
+    Args:
+        value: The string value to parse (or None to return default).
+        env_var_name: The environment variable name (for error messages).
+        default: Default value if value is None.
+        min_val: Minimum allowed value (inclusive).
+        max_val: Maximum allowed value (inclusive).
+
+    Returns:
+        Parsed float value within [min_val, max_val].
+
+    Raises:
+        ValueError: If value cannot be parsed as float or is outside the range.
+    """
+    if value is None:
+        return default
+    try:
+        parsed = float(value)
+    except ValueError:
+        raise ValueError(f"{env_var_name} must be a valid float, got: {value!r}") from None
+    if not min_val <= parsed <= max_val:
+        raise ValueError(f"{env_var_name} must be between {min_val} and {max_val}, got: {parsed}")
+    return parsed
+
+
+def _parse_float_in_range_optional(
+    value: str | None,
+    env_var_name: str,
+    min_val: float,
+    max_val: float,
+) -> float | None:
+    """Parse an optional float from environment variable within a specified range.
+
+    Args:
+        value: The string value to parse (or None to return None).
+        env_var_name: The environment variable name (for error messages).
+        min_val: Minimum allowed value (inclusive).
+        max_val: Maximum allowed value (inclusive).
+
+    Returns:
+        Parsed float value within [min_val, max_val], or None if value is None.
+
+    Raises:
+        ValueError: If value cannot be parsed as float or is outside the range.
+    """
+    if value is None:
+        return None
+    try:
+        parsed = float(value)
+    except ValueError:
+        raise ValueError(f"{env_var_name} must be a valid float, got: {value!r}") from None
+    if not min_val <= parsed <= max_val:
+        raise ValueError(f"{env_var_name} must be between {min_val} and {max_val}, got: {parsed}")
+    return parsed
+
+
+def _parse_int_positive(
+    value: str | None,
+    env_var_name: str,
+    default: int,
+) -> int:
+    """Parse a positive integer from environment variable.
+
+    Args:
+        value: The string value to parse (or None to return default).
+        env_var_name: The environment variable name (for error messages).
+        default: Default value if value is None.
+
+    Returns:
+        Parsed positive integer (> 0).
+
+    Raises:
+        ValueError: If value cannot be parsed as int or is not positive.
+    """
+    if value is None:
+        return default
+    try:
+        parsed = int(value)
+    except ValueError:
+        raise ValueError(f"{env_var_name} must be a valid int, got: {value!r}") from None
+    if parsed <= 0:
+        raise ValueError(f"{env_var_name} must be a positive integer, got: {parsed}")
+    return parsed
+
+
 def _detect_device() -> str:
     import torch
 
@@ -63,87 +156,60 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> Settings:
-        try:
-            temperature = float(os.getenv("TEMPERATURE", "0.7"))
-        except ValueError:
-            raise ValueError(
-                f"TEMPERATURE must be a valid float, got: {os.getenv('TEMPERATURE')!r}"
-            ) from None
-        if not 0.0 <= temperature <= 2.0:
-            raise ValueError(f"TEMPERATURE must be between 0.0 and 2.0, got: {temperature}")
+        temperature = _parse_float_in_range(
+            os.getenv("TEMPERATURE"),
+            "TEMPERATURE",
+            0.7,
+            0.0,
+            2.0,
+        )
 
-        try:
-            max_new_tokens = int(os.getenv("MAX_NEW_TOKENS", "512"))
-        except ValueError:
-            raise ValueError(
-                f"MAX_NEW_TOKENS must be a valid int, got: {os.getenv('MAX_NEW_TOKENS')!r}"
-            ) from None
-        if max_new_tokens <= 0:
-            raise ValueError(f"MAX_NEW_TOKENS must be a positive integer, got: {max_new_tokens}")
+        max_new_tokens = _parse_int_positive(
+            os.getenv("MAX_NEW_TOKENS"),
+            "MAX_NEW_TOKENS",
+            512,
+        )
 
-        try:
-            top_p = float(os.getenv("TOP_P", "0.9"))
-        except ValueError:
-            raise ValueError(f"TOP_P must be a valid float, got: {os.getenv('TOP_P')!r}") from None
-        if not 0.0 <= top_p <= 1.0:
-            raise ValueError(f"TOP_P must be between 0.0 and 1.0, got: {top_p}")
+        top_p = _parse_float_in_range(
+            os.getenv("TOP_P"),
+            "TOP_P",
+            0.9,
+            0.0,
+            1.0,
+        )
 
-        try:
-            tokenizer_max_length = int(os.getenv("TOKENIZER_MAX_LENGTH", "8192"))
-        except ValueError:
-            tmax_val = os.getenv("TOKENIZER_MAX_LENGTH")
-            msg = f"TOKENIZER_MAX_LENGTH must be a valid int, got: {tmax_val!r}"
-            raise ValueError(msg) from None
-        if tokenizer_max_length <= 0:
-            raise ValueError(
-                f"TOKENIZER_MAX_LENGTH must be a positive integer, got: {tokenizer_max_length}"
-            )
+        tokenizer_max_length = _parse_int_positive(
+            os.getenv("TOKENIZER_MAX_LENGTH"),
+            "TOKENIZER_MAX_LENGTH",
+            8192,
+        )
 
-        try:
-            hyde_max_tokens = int(os.getenv("HYDE_MAX_TOKENS", "150"))
-        except ValueError:
-            raise ValueError(
-                f"HYDE_MAX_TOKENS must be a valid int, got: {os.getenv('HYDE_MAX_TOKENS')!r}"
-            ) from None
-        if hyde_max_tokens <= 0:
-            raise ValueError(f"HYDE_MAX_TOKENS must be a positive integer, got: {hyde_max_tokens}")
+        hyde_max_tokens = _parse_int_positive(
+            os.getenv("HYDE_MAX_TOKENS"),
+            "HYDE_MAX_TOKENS",
+            150,
+        )
 
-        try:
-            hyde_num_drafts = int(os.getenv("HYDE_NUM_DRAFTS", "1"))
-        except ValueError:
-            raise ValueError(
-                f"HYDE_NUM_DRAFTS must be a valid int, got: {os.getenv('HYDE_NUM_DRAFTS')!r}"
-            ) from None
-        if hyde_num_drafts <= 0:
-            raise ValueError(f"HYDE_NUM_DRAFTS must be a positive integer, got: {hyde_num_drafts}")
+        hyde_num_drafts = _parse_int_positive(
+            os.getenv("HYDE_NUM_DRAFTS"),
+            "HYDE_NUM_DRAFTS",
+            1,
+        )
 
-        try:
-            query_timeout_seconds = float(os.getenv("QUERY_TIMEOUT_SECONDS", "120.0"))
-        except ValueError:
-            raw_timeout = os.getenv("QUERY_TIMEOUT_SECONDS")
-            raise ValueError(
-                f"QUERY_TIMEOUT_SECONDS must be a valid float, got: {raw_timeout!r}"
-            ) from None
-        if not 1.0 <= query_timeout_seconds <= 600.0:
-            raise ValueError(
-                f"QUERY_TIMEOUT_SECONDS must be between 1.0 and 600.0, got: {query_timeout_seconds}"
-            )
+        query_timeout_seconds = _parse_float_in_range(
+            os.getenv("QUERY_TIMEOUT_SECONDS"),
+            "QUERY_TIMEOUT_SECONDS",
+            120.0,
+            1.0,
+            600.0,
+        )
 
-        raw_threshold = os.getenv("HYDE_CONFIDENCE_THRESHOLD")
-        if raw_threshold is not None:
-            try:
-                threshold_value = float(raw_threshold)
-            except ValueError:
-                raise ValueError(
-                    f"HYDE_CONFIDENCE_THRESHOLD must be a valid float, got: {raw_threshold!r}"
-                ) from None
-            if not 0.0 <= threshold_value <= 1.0:
-                raise ValueError(
-                    f"HYDE_CONFIDENCE_THRESHOLD must be between 0.0 and 1.0, got: {threshold_value}"
-                )
-            hyde_confidence_threshold: float | None = threshold_value
-        else:
-            hyde_confidence_threshold = None
+        hyde_confidence_threshold = _parse_float_in_range_optional(
+            os.getenv("HYDE_CONFIDENCE_THRESHOLD"),
+            "HYDE_CONFIDENCE_THRESHOLD",
+            0.0,
+            1.0,
+        )
 
         log_level = os.getenv("LOG_LEVEL", "INFO").upper()
         valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}

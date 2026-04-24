@@ -9,6 +9,229 @@ import pytest
 
 
 @pytest.mark.unit
+class TestParseFloatInRange:
+    def test_returns_default_when_value_is_none(self) -> None:
+        from src.config import _parse_float_in_range
+
+        result = _parse_float_in_range(None, "TEST_VAR", 0.5, 0.0, 1.0)
+        assert result == 0.5
+
+    def test_parses_valid_float_string(self) -> None:
+        from src.config import _parse_float_in_range
+
+        result = _parse_float_in_range("0.75", "TEST_VAR", 0.5, 0.0, 1.0)
+        assert result == pytest.approx(0.75)
+
+    def test_raises_on_non_numeric_string(self) -> None:
+        from src.config import _parse_float_in_range
+
+        with pytest.raises(ValueError, match="TEST_VAR"):
+            _parse_float_in_range("abc", "TEST_VAR", 0.5, 0.0, 1.0)
+
+    def test_raises_when_below_min_val(self) -> None:
+        from src.config import _parse_float_in_range
+
+        with pytest.raises(ValueError, match="TEST_VAR.*between 0.0 and 1.0"):
+            _parse_float_in_range("-0.1", "TEST_VAR", 0.5, 0.0, 1.0)
+
+    def test_raises_when_above_max_val(self) -> None:
+        from src.config import _parse_float_in_range
+
+        with pytest.raises(ValueError, match="TEST_VAR.*between 0.0 and 1.0"):
+            _parse_float_in_range("1.1", "TEST_VAR", 0.5, 0.0, 1.0)
+
+    def test_accepts_value_at_min_boundary(self) -> None:
+        from src.config import _parse_float_in_range
+
+        result = _parse_float_in_range("0.0", "TEST_VAR", 0.5, 0.0, 1.0)
+        assert result == 0.0
+
+    def test_accepts_value_at_max_boundary(self) -> None:
+        from src.config import _parse_float_in_range
+
+        result = _parse_float_in_range("1.0", "TEST_VAR", 0.5, 0.0, 1.0)
+        assert result == 1.0
+
+    def test_error_message_includes_env_var_name(self) -> None:
+        from src.config import _parse_float_in_range
+
+        with pytest.raises(ValueError) as exc_info:
+            _parse_float_in_range("abc", "CUSTOM_TEMP", 0.5, 0.0, 1.0)
+        assert "CUSTOM_TEMP" in str(exc_info.value)
+
+    def test_error_message_includes_bad_value(self) -> None:
+        from src.config import _parse_float_in_range
+
+        with pytest.raises(ValueError) as exc_info:
+            _parse_float_in_range("not_float", "TEST_VAR", 0.5, 0.0, 1.0)
+        assert "not_float" in str(exc_info.value)
+
+    def test_handles_scientific_notation(self) -> None:
+        from src.config import _parse_float_in_range
+
+        result = _parse_float_in_range("1e-3", "TEST_VAR", 0.5, 0.0, 1.0)
+        assert result == pytest.approx(0.001)
+
+    def test_raises_on_empty_string(self) -> None:
+        from src.config import _parse_float_in_range
+
+        with pytest.raises(ValueError, match="TEST_VAR"):
+            _parse_float_in_range("", "TEST_VAR", 0.5, 0.0, 1.0)
+
+
+@pytest.mark.unit
+class TestParseFloatInRangeOptional:
+    def test_returns_none_when_value_is_none(self) -> None:
+        from src.config import _parse_float_in_range_optional
+
+        result = _parse_float_in_range_optional(None, "TEST_VAR", 0.0, 1.0)
+        assert result is None
+
+    def test_parses_valid_float_string(self) -> None:
+        from src.config import _parse_float_in_range_optional
+
+        result = _parse_float_in_range_optional("0.75", "TEST_VAR", 0.0, 1.0)
+        assert result == pytest.approx(0.75)
+
+    def test_raises_on_non_numeric_string(self) -> None:
+        from src.config import _parse_float_in_range_optional
+
+        with pytest.raises(ValueError, match="TEST_VAR"):
+            _parse_float_in_range_optional("abc", "TEST_VAR", 0.0, 1.0)
+
+    def test_raises_when_below_min_val(self) -> None:
+        from src.config import _parse_float_in_range_optional
+
+        with pytest.raises(ValueError, match="TEST_VAR.*between 0.0 and 1.0"):
+            _parse_float_in_range_optional("-0.1", "TEST_VAR", 0.0, 1.0)
+
+    def test_raises_when_above_max_val(self) -> None:
+        from src.config import _parse_float_in_range_optional
+
+        with pytest.raises(ValueError, match="TEST_VAR.*between 0.0 and 1.0"):
+            _parse_float_in_range_optional("1.1", "TEST_VAR", 0.0, 1.0)
+
+    def test_accepts_value_at_min_boundary(self) -> None:
+        from src.config import _parse_float_in_range_optional
+
+        result = _parse_float_in_range_optional("0.0", "TEST_VAR", 0.0, 1.0)
+        assert result == 0.0
+
+    def test_accepts_value_at_max_boundary(self) -> None:
+        from src.config import _parse_float_in_range_optional
+
+        result = _parse_float_in_range_optional("1.0", "TEST_VAR", 0.0, 1.0)
+        assert result == 1.0
+
+
+@pytest.mark.unit
+class TestParseIntPositive:
+    def test_returns_default_when_value_is_none(self) -> None:
+        from src.config import _parse_int_positive
+
+        result = _parse_int_positive(None, "TEST_VAR", 100)
+        assert result == 100
+
+    def test_parses_valid_int_string(self) -> None:
+        from src.config import _parse_int_positive
+
+        result = _parse_int_positive("42", "TEST_VAR", 100)
+        assert result == 42
+
+    def test_raises_on_float_string(self) -> None:
+        from src.config import _parse_int_positive
+
+        with pytest.raises(ValueError, match="TEST_VAR"):
+            _parse_int_positive("1.5", "TEST_VAR", 100)
+
+    def test_raises_on_non_numeric_string(self) -> None:
+        from src.config import _parse_int_positive
+
+        with pytest.raises(ValueError, match="TEST_VAR"):
+            _parse_int_positive("abc", "TEST_VAR", 100)
+
+    def test_raises_on_zero(self) -> None:
+        from src.config import _parse_int_positive
+
+        with pytest.raises(ValueError, match="TEST_VAR.*positive"):
+            _parse_int_positive("0", "TEST_VAR", 100)
+
+    def test_raises_on_negative(self) -> None:
+        from src.config import _parse_int_positive
+
+        with pytest.raises(ValueError, match="TEST_VAR.*positive"):
+            _parse_int_positive("-1", "TEST_VAR", 100)
+
+    def test_accepts_minimum_positive_value(self) -> None:
+        from src.config import _parse_int_positive
+
+        result = _parse_int_positive("1", "TEST_VAR", 100)
+        assert result == 1
+
+    def test_error_message_includes_env_var_name(self) -> None:
+        from src.config import _parse_int_positive
+
+        with pytest.raises(ValueError) as exc_info:
+            _parse_int_positive("abc", "CUSTOM_INT", 100)
+        assert "CUSTOM_INT" in str(exc_info.value)
+
+    def test_error_message_on_invalid_int(self) -> None:
+        from src.config import _parse_int_positive
+
+        with pytest.raises(ValueError) as exc_info:
+            _parse_int_positive("not_int", "TEST_VAR", 100)
+        assert "not_int" in str(exc_info.value)
+
+
+@pytest.mark.unit
+class TestParseBool:
+    def test_returns_default_when_value_is_none(self) -> None:
+        from src.config import _parse_bool
+
+        assert _parse_bool(None, "TEST_VAR", True) is True
+        assert _parse_bool(None, "TEST_VAR", False) is False
+
+    def test_parses_true_variants(self) -> None:
+        from src.config import _parse_bool
+
+        assert _parse_bool("true", "TEST_VAR", False) is True
+        assert _parse_bool("True", "TEST_VAR", False) is True
+        assert _parse_bool("TRUE", "TEST_VAR", False) is True
+        assert _parse_bool("1", "TEST_VAR", False) is True
+        assert _parse_bool("yes", "TEST_VAR", False) is True
+        assert _parse_bool("YES", "TEST_VAR", False) is True
+
+    def test_parses_false_variants(self) -> None:
+        from src.config import _parse_bool
+
+        assert _parse_bool("false", "TEST_VAR", True) is False
+        assert _parse_bool("False", "TEST_VAR", True) is False
+        assert _parse_bool("FALSE", "TEST_VAR", True) is False
+        assert _parse_bool("0", "TEST_VAR", True) is False
+        assert _parse_bool("no", "TEST_VAR", True) is False
+        assert _parse_bool("NO", "TEST_VAR", True) is False
+
+    def test_raises_on_invalid_value(self) -> None:
+        from src.config import _parse_bool
+
+        with pytest.raises(ValueError, match="TEST_VAR"):
+            _parse_bool("maybe", "TEST_VAR", True)
+
+    def test_error_message_includes_env_var_name(self) -> None:
+        from src.config import _parse_bool
+
+        with pytest.raises(ValueError) as exc_info:
+            _parse_bool("invalid", "CUSTOM_BOOL", True)
+        assert "CUSTOM_BOOL" in str(exc_info.value)
+
+    def test_strips_whitespace(self) -> None:
+        from src.config import _parse_bool
+
+        assert _parse_bool("  true  ", "TEST_VAR", False) is True
+        assert _parse_bool("  false  ", "TEST_VAR", True) is False
+
+
+@pytest.mark.unit
 class TestDetectDevice:
     def test_returns_cuda_when_available(self) -> None:
         from src.config import _detect_device
