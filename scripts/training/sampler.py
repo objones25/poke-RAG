@@ -56,6 +56,8 @@ class ChunkSampler:
         if not available:
             return None
         total_w = sum(available.values())
+        if total_w == 0:
+            return None
         sources = list(available.keys())
         probs = [available[s] / total_w for s in sources]
         source = self._rng.choices(sources, weights=probs, k=1)[0]

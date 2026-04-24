@@ -308,8 +308,10 @@ class TestGenerator:
         result = gen.generate("Question?", chunks)
         assert list(result.sources_used) == sorted(result.sources_used)
 
-    def test_inferencer_failure_propagates(self) -> None:
+    def test_inferencer_failure_wrapped_in_generation_error(self) -> None:
+        from src.generation.exceptions import GenerationError
+
         gen, _, _, mock_inf = self._make_generator()
         mock_inf.infer.side_effect = RuntimeError("GPU OOM")
-        with pytest.raises(RuntimeError, match="GPU OOM"):
+        with pytest.raises(GenerationError, match="Inference failed"):
             gen.generate("Question?", (_chunk(),))

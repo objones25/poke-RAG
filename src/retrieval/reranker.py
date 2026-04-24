@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import replace
 from typing import Any
 
@@ -46,7 +47,9 @@ class BGEReranker:
         _LOG.debug("Reranking %d candidates, top_k=%d", len(documents), top_k)
         pairs = [[query, doc.text] for doc in documents]
         raw_scores = self._model.compute_score(pairs, max_length=_RERANKER_MAX_LENGTH)
-        scores: list[float] = [float(s) for s in raw_scores]
+        scores: list[float] = [float(s) if math.isfinite(float(s)) else 0.0 for s in raw_scores]
+        if any(not math.isfinite(float(s)) for s in raw_scores):
+            _LOG.warning("Reranker returned non-finite score(s); replaced with 0.0")
 
         ranked = sorted(
             (replace(doc, score=score) for doc, score in zip(documents, scores, strict=True)),

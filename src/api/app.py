@@ -20,6 +20,8 @@ from starlette.types import ASGIApp
 from src.api.dependencies import build_pipeline, get_pipeline
 from src.api.models import QueryRequest, QueryResponse
 from src.api.query_parser import parse_query
+from src.config import Settings, _parse_bool
+from src.generation.exceptions import GenerationError
 from src.pipeline.rag_pipeline import RAGPipeline
 from src.types import RetrievalError
 from src.utils.logging import setup_logging
@@ -30,7 +32,6 @@ _LOG = logging.getLogger(__name__)
 
 _MAX_TRACKED_IPS = 10_000
 _MAX_BODY_BYTES = 64 * 1024  # 64 KB — far above any valid query payload
-_DEFAULT_QUERY_TIMEOUT = 120.0  # seconds; override with QUERY_TIMEOUT_SECONDS
 
 
 def _get_client_ip(request: Request, trusted_proxy_count: int) -> str:
@@ -84,12 +85,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             self.trusted_proxy_count = parsed
         self.request_times: OrderedDict[str, list[float]] = OrderedDict()
         self._lock = asyncio.Lock()
-        self.enabled = os.getenv("RATE_LIMIT_ENABLED", "true").lower() != "false"
+        self.enabled = _parse_bool(os.getenv("RATE_LIMIT_ENABLED"), "RATE_LIMIT_ENABLED", True)
 
     async def dispatch(
         self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
-        if not self.enabled or request.url.path != "/query":
+        if not self.enabled or request.url.path == "/health":
             return await call_next(request)
 
         client_ip = _get_client_ip(request, self.trusted_proxy_count)
@@ -127,7 +128,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Content-Security-Policy"] = "default-src 'none'"
-        if os.getenv("HTTPS_ENABLED", "false").lower() == "true":
+        if _parse_bool(os.getenv("HTTPS_ENABLED"), "HTTPS_ENABLED", False):
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         return response
 
@@ -159,9 +160,11 @@ class BodySizeLimitMiddleware(BaseHTTPMiddleware):
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     setup_logging()
     try:
+        settings = Settings.from_env()
         pipeline, loader, client = build_pipeline()
         app.state.pipeline = pipeline
         app.state.qdrant_client = client
+        app.state.settings = settings
     except Exception as exc:
         _LOG.error("Failed to initialize RAG pipeline: %s", exc)
         raise RuntimeError("Failed to initialize pipeline. Check server logs for details.") from exc
@@ -207,6 +210,12 @@ async def retrieval_error_handler(request: Request, exc: RetrievalError) -> JSON
     return JSONResponse(status_code=503, content={"detail": "Retrieval service unavailable"})
 
 
+@app.exception_handler(GenerationError)
+async def generation_error_handler(request: Request, exc: GenerationError) -> JSONResponse:
+    _LOG.error("Generation error: %s", exc, exc_info=True)
+    return JSONResponse(status_code=503, content={"detail": "Generation service unavailable"})
+
+
 @app.exception_handler(ValueError)
 async def value_error_handler(request: Request, exc: ValueError) -> JSONResponse:
     _LOG.warning("Validation error: %s", exc)
@@ -235,7 +244,8 @@ async def stats(request: Request) -> dict[str, bool]:
     stats_api_key = os.getenv("STATS_API_KEY")
     if stats_api_key:
         auth = request.headers.get("Authorization", "")
-        if not auth.startswith("Bearer ") or not hmac.compare_digest(auth[7:], stats_api_key):
+        expected = f"Bearer {stats_api_key}"
+        if not hmac.compare_digest(auth.encode(), expected.encode()):
             raise HTTPException(status_code=401, detail="Unauthorized")
     client: QdrantClient | None = getattr(request.app.state, "qdrant_client", None)
     if client is None:
@@ -247,15 +257,16 @@ async def stats(request: Request) -> dict[str, bool]:
 @app.post("/query", response_model=QueryResponse)
 async def query(
     body: QueryRequest,
+    request: Request,
     pipeline: RAGPipeline = Depends(get_pipeline),  # noqa: B008
 ) -> QueryResponse:
     parsed = parse_query(body.query)
-    timeout = float(os.getenv("QUERY_TIMEOUT_SECONDS", str(_DEFAULT_QUERY_TIMEOUT)))
+    settings: Settings = request.app.state.settings
     result = await asyncio.wait_for(
         asyncio.to_thread(
             pipeline.query, parsed, sources=body.sources, entity_name=body.entity_name
         ),
-        timeout=timeout,
+        timeout=settings.query_timeout_seconds,
     )
     return QueryResponse(
         answer=result.answer,

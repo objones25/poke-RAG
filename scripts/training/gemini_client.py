@@ -7,6 +7,7 @@ import re
 import time
 
 from google import genai
+from google.genai.types import GenerateContentConfig, HttpOptions
 from pydantic import ValidationError
 
 from scripts.training.schemas import GeminiQAPair
@@ -92,10 +93,11 @@ class GeminiClient:
             source_hint=_SOURCE_HINTS.get(source, ""),
             chunk=chunk[:2000],
         )
-        config = {
-            "response_mime_type": "application/json",
-            "response_json_schema": GeminiQAPair.model_json_schema(),
-        }
+        config = GenerateContentConfig(
+            response_mime_type="application/json",
+            response_json_schema=GeminiQAPair.model_json_schema(),
+            http_options=HttpOptions(timeout=60),
+        )
         response = None
         for attempt in range(max_retries):
             try:

@@ -3,6 +3,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
+from google.genai.types import GenerateContentConfig, HttpOptions
 
 from scripts.training.gemini_client import GeminiClient
 
@@ -136,3 +137,54 @@ class TestGeminiClientGenerateQAPair:
             result = client.generate_qa_pair("Some chunk", "pokeapi", max_retries=3)
             assert result is not None
             assert call_count[0] == 2  # Failed once, succeeded on retry
+
+    def test_config_is_proper_type(self) -> None:
+        """GREEN: Config passed to generate_content is GenerateContentConfig, not dict."""
+        client = GeminiClient(api_key="fake-key")
+        response_text = (
+            '{"question": "What is Pikachu?", "answer": "' + _QUALITY_ANSWER + '"}'
+        )
+
+        with patch.object(client._client.models, "generate_content") as mock_gen:
+            mock_response = MagicMock()
+            mock_response.text = response_text
+            mock_gen.return_value = mock_response
+
+            client.generate_qa_pair("Pikachu chunk", "pokeapi")
+
+            # Verify generate_content was called
+            assert mock_gen.called
+            # Get the call arguments and verify config is the correct type
+            call_args = mock_gen.call_args
+            assert call_args is not None
+            config = call_args.kwargs.get("config")
+            assert config is not None
+            assert isinstance(config, GenerateContentConfig)
+
+    def test_config_has_timeout(self) -> None:
+        """RED: Config passed to generate_content should have httpOptions with timeout set."""
+        client = GeminiClient(api_key="fake-key")
+        response_text = (
+            '{"question": "What is Pikachu?", "answer": "' + _QUALITY_ANSWER + '"}'
+        )
+
+        with patch.object(client._client.models, "generate_content") as mock_gen:
+            mock_response = MagicMock()
+            mock_response.text = response_text
+            mock_gen.return_value = mock_response
+
+            client.generate_qa_pair("Pikachu chunk", "pokeapi")
+
+            # Verify generate_content was called
+            assert mock_gen.called
+            # Get the call arguments and verify config has timeout
+            call_args = mock_gen.call_args
+            assert call_args is not None
+            config = call_args.kwargs.get("config")
+            assert config is not None
+            assert isinstance(config, GenerateContentConfig)
+            # Verify httpOptions has a timeout
+            assert config.http_options is not None
+            assert isinstance(config.http_options, HttpOptions)
+            assert config.http_options.timeout is not None
+            assert config.http_options.timeout > 0

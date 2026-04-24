@@ -182,6 +182,20 @@ class TestRetrieverRetrieve:
         with pytest.raises(RetrievalError):
             retriever.retrieve("query")
 
+    def test_wraps_vector_index_error_in_retrieval_error(self) -> None:
+        """When vector_store raises VectorIndexError, catch and wrap as RetrievalError."""
+        from src.types import VectorIndexError
+
+        vector_store = MagicMock()
+        vector_store.search.side_effect = VectorIndexError("Qdrant connection failed")
+        retriever = Retriever(
+            embedder=_make_embedder(),
+            vector_store=vector_store,
+            reranker=_make_reranker(),
+        )
+        with pytest.raises(RetrievalError, match="Vector search failed"):
+            retriever.retrieve("query")
+
     def test_raises_retrieval_error_when_no_chunks_found(self) -> None:
         retriever = Retriever(
             embedder=_make_embedder(),

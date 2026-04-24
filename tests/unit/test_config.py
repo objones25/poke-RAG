@@ -545,3 +545,107 @@ class TestConfigParameterBounds:
         monkeypatch.setenv("TOKENIZER_MAX_LENGTH", "-1")
         with pytest.raises(ValueError, match="TOKENIZER_MAX_LENGTH"):
             Settings.from_env()
+
+    def test_query_timeout_seconds_defaults_to_120(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.delenv("QUERY_TIMEOUT_SECONDS", raising=False)
+        settings = Settings.from_env()
+        assert settings.query_timeout_seconds == 120.0
+
+    def test_query_timeout_seconds_reads_custom_value(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("QUERY_TIMEOUT_SECONDS", "30")
+        settings = Settings.from_env()
+        assert settings.query_timeout_seconds == 30.0
+
+    def test_query_timeout_seconds_invalid_float_raises_valueerror(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("QUERY_TIMEOUT_SECONDS", "abc")
+        with pytest.raises(ValueError, match="QUERY_TIMEOUT_SECONDS"):
+            Settings.from_env()
+
+    def test_query_timeout_seconds_below_minimum_raises_valueerror(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("QUERY_TIMEOUT_SECONDS", "0")
+        with pytest.raises(ValueError, match="QUERY_TIMEOUT_SECONDS"):
+            Settings.from_env()
+
+    def test_query_timeout_seconds_above_maximum_raises_valueerror(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("QUERY_TIMEOUT_SECONDS", "9999")
+        with pytest.raises(ValueError, match="QUERY_TIMEOUT_SECONDS"):
+            Settings.from_env()
+
+    def test_query_timeout_seconds_valid_at_minimum_boundary(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("QUERY_TIMEOUT_SECONDS", "1.0")
+        settings = Settings.from_env()
+        assert settings.query_timeout_seconds == 1.0
+
+    def test_query_timeout_seconds_valid_at_maximum_boundary(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("QUERY_TIMEOUT_SECONDS", "600.0")
+        settings = Settings.from_env()
+        assert settings.query_timeout_seconds == 600.0
+
+    def test_do_sample_true_accepts_explicit_true(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("DO_SAMPLE", "true")
+        settings = Settings.from_env()
+        assert settings.do_sample is True
+
+    def test_do_sample_true_accepts_1(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("DO_SAMPLE", "1")
+        settings = Settings.from_env()
+        assert settings.do_sample is True
+
+    def test_do_sample_true_accepts_yes(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("DO_SAMPLE", "yes")
+        settings = Settings.from_env()
+        assert settings.do_sample is True
+
+    def test_do_sample_false_accepts_0(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("DO_SAMPLE", "0")
+        settings = Settings.from_env()
+        assert settings.do_sample is False
+
+    def test_do_sample_false_accepts_no(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("DO_SAMPLE", "no")
+        settings = Settings.from_env()
+        assert settings.do_sample is False
+
+    def test_do_sample_invalid_value_raises_valueerror(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("DO_SAMPLE", "maybe")
+        with pytest.raises(ValueError, match="DO_SAMPLE"):
+            Settings.from_env()

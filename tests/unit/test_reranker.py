@@ -133,6 +133,35 @@ class TestBGERerankerRerank:
         assert results[0].chunk_index == 3
         assert results[0].original_doc_id == "smogon_42"
 
+    def test_replaces_nan_scores_with_zero(self) -> None:
+        """NaN scores from model should be replaced with 0.0."""
+        reranker = BGEReranker(_make_mock_reranker([float("nan"), 0.9]))
+        docs = [make_chunk(text="bad", chunk_index=0), make_chunk(text="good", chunk_index=1)]
+        results = reranker.rerank("query", docs, top_k=2)
+        assert len(results) == 2
+        # The NaN should have been replaced with 0.0, so the 0.9 score should be top
+        assert results[0].score == pytest.approx(0.9)
+        assert results[1].score == pytest.approx(0.0)
+
+    def test_replaces_inf_scores_with_zero(self) -> None:
+        """Inf scores from model should be replaced with 0.0."""
+        reranker = BGEReranker(_make_mock_reranker([float("inf"), 0.5]))
+        docs = [make_chunk(text="bad", chunk_index=0), make_chunk(text="ok", chunk_index=1)]
+        results = reranker.rerank("query", docs, top_k=2)
+        assert len(results) == 2
+        # The inf should have been replaced with 0.0, so the 0.5 score should be top
+        assert results[0].score == pytest.approx(0.5)
+        assert results[1].score == pytest.approx(0.0)
+
+    def test_replaces_negative_inf_scores_with_zero(self) -> None:
+        """Negative inf scores should also be replaced with 0.0."""
+        reranker = BGEReranker(_make_mock_reranker([float("-inf"), 0.7]))
+        docs = [make_chunk(text="bad", chunk_index=0), make_chunk(text="good", chunk_index=1)]
+        results = reranker.rerank("query", docs, top_k=2)
+        assert len(results) == 2
+        assert results[0].score == pytest.approx(0.7)
+        assert results[1].score == pytest.approx(0.0)
+
 
 @pytest.mark.unit
 class TestBGERerankerFromPretrained:

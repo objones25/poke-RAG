@@ -203,6 +203,16 @@ class TestUpsert:
         with pytest.raises(ValueError, match="length mismatch"):
             store.upsert("pokeapi", chunks, embeddings)
 
+    def test_wraps_qdrant_exception_in_vector_index_error(self) -> None:
+        """When client.upsert raises, it should be wrapped as VectorIndexError."""
+        client = _make_client()
+        client.upsert.side_effect = Exception("connection refused")
+        store = QdrantVectorStore(client)
+        chunks = [_make_chunk()]
+        embeddings = _make_embeddings(n=1)
+        with pytest.raises(VectorIndexError):
+            store.upsert("pokeapi", chunks, embeddings)
+
 
 @pytest.mark.unit
 class TestSearch:
@@ -391,6 +401,14 @@ class TestSearch:
         store = QdrantVectorStore(client)
         with pytest.raises(VectorIndexError):
             store.search("pokeapi", [0.1] * 1024, {}, top_k=1)
+
+    def test_wraps_qdrant_exception_in_search(self) -> None:
+        """When client.query_points raises, it should be wrapped as VectorIndexError."""
+        client = _make_client()
+        client.query_points.side_effect = OSError("connection reset")
+        store = QdrantVectorStore(client)
+        with pytest.raises(VectorIndexError):
+            store.search("pokeapi", [0.1] * 1024, {1: 0.5}, top_k=5)
 
 
 @pytest.mark.unit

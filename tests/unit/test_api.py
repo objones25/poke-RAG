@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.api.app import app
+from src.generation.exceptions import GenerationError
 from src.pipeline.types import PipelineResult
 from src.types import RetrievalError
 
@@ -43,12 +44,23 @@ def client(mock_pipeline):
 @pytest.mark.unit
 class TestStatsEndpoint:
     def test_stats_returns_200(self, client) -> None:
-        response = client.get("/stats")
+        import os
+        stats_key = os.getenv("STATS_API_KEY")
+        if stats_key:
+            response = client.get("/stats", headers={"Authorization": f"Bearer {stats_key}"})
+        else:
+            response = client.get("/stats")
         assert response.status_code == 200
 
     def test_stats_returns_dict_with_collections(self, client) -> None:
-        response = client.get("/stats").json()
-        assert isinstance(response, dict)
+        import os
+        stats_key = os.getenv("STATS_API_KEY")
+        if stats_key:
+            response = client.get("/stats", headers={"Authorization": f"Bearer {stats_key}"})
+        else:
+            response = client.get("/stats")
+        result = response.json()
+        assert isinstance(result, dict)
 
 
 @pytest.mark.unit
@@ -87,6 +99,16 @@ class TestQueryEndpoint:
         mock_pipeline.query.side_effect = RetrievalError("index unavailable")
         response = client.post("/query", json={"query": "What type is Pikachu?"})
         assert response.json()["detail"] == "Retrieval service unavailable"
+
+    def test_generation_error_returns_503(self, client, mock_pipeline) -> None:
+        mock_pipeline.query.side_effect = GenerationError("inference failed")
+        response = client.post("/query", json={"query": "What type is Pikachu?"})
+        assert response.status_code == 503
+
+    def test_generation_error_detail_in_response(self, client, mock_pipeline) -> None:
+        mock_pipeline.query.side_effect = GenerationError("inference failed")
+        response = client.post("/query", json={"query": "What type is Pikachu?"})
+        assert response.json()["detail"] == "Generation service unavailable"
 
     def test_empty_query_returns_422(self, client) -> None:
         response = client.post("/query", json={"query": ""})
@@ -232,6 +254,109 @@ class TestRateLimitMiddleware:
             for _ in range(5):
                 response = c.post("/query")
                 assert response.status_code == 200
+
+    def test_rate_limit_disabled_with_false(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from fastapi import FastAPI
+
+        from src.api.app import RateLimitMiddleware
+
+        monkeypatch.setenv("RATE_LIMIT_ENABLED", "false")
+        test_app = FastAPI()
+        test_app.add_middleware(RateLimitMiddleware, requests_per_minute=1)
+
+        @test_app.post("/query")
+        async def _query() -> dict[str, bool]:
+            return {"ok": True}
+
+        with TestClient(test_app) as c:
+            c.post("/query")
+            c.post("/query")
+            response = c.post("/query")
+            assert response.status_code == 200  # No rate limit enforced
+
+    def test_rate_limit_disabled_with_0(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from fastapi import FastAPI
+
+        from src.api.app import RateLimitMiddleware
+
+        monkeypatch.setenv("RATE_LIMIT_ENABLED", "0")
+        test_app = FastAPI()
+        test_app.add_middleware(RateLimitMiddleware, requests_per_minute=1)
+
+        @test_app.post("/query")
+        async def _query() -> dict[str, bool]:
+            return {"ok": True}
+
+        with TestClient(test_app) as c:
+            c.post("/query")
+            response = c.post("/query")
+            assert response.status_code == 200  # No rate limit enforced
+
+    def test_rate_limit_disabled_with_no(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from fastapi import FastAPI
+
+        from src.api.app import RateLimitMiddleware
+
+        monkeypatch.setenv("RATE_LIMIT_ENABLED", "no")
+        test_app = FastAPI()
+        test_app.add_middleware(RateLimitMiddleware, requests_per_minute=1)
+
+        @test_app.post("/query")
+        async def _query() -> dict[str, bool]:
+            return {"ok": True}
+
+        with TestClient(test_app) as c:
+            c.post("/query")
+            response = c.post("/query")
+            assert response.status_code == 200  # No rate limit enforced
+
+    def test_rate_limit_enabled_with_1(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from fastapi import FastAPI
+
+        from src.api.app import RateLimitMiddleware
+
+        monkeypatch.setenv("RATE_LIMIT_ENABLED", "1")
+        test_app = FastAPI()
+        test_app.add_middleware(RateLimitMiddleware, requests_per_minute=1)
+
+        @test_app.post("/query")
+        async def _query() -> dict[str, bool]:
+            return {"ok": True}
+
+        with TestClient(test_app) as c:
+            c.post("/query")
+            response = c.post("/query")
+            assert response.status_code == 429  # Rate limit enforced
+
+    def test_rate_limit_enabled_with_yes(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from fastapi import FastAPI
+
+        from src.api.app import RateLimitMiddleware
+
+        monkeypatch.setenv("RATE_LIMIT_ENABLED", "yes")
+        test_app = FastAPI()
+        test_app.add_middleware(RateLimitMiddleware, requests_per_minute=1)
+
+        @test_app.post("/query")
+        async def _query() -> dict[str, bool]:
+            return {"ok": True}
+
+        with TestClient(test_app) as c:
+            c.post("/query")
+            response = c.post("/query")
+            assert response.status_code == 429  # Rate limit enforced
+
+    def test_rate_limit_invalid_value_raises_valueerror(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from fastapi import FastAPI
+
+        from src.api.app import RateLimitMiddleware
+
+        monkeypatch.setenv("RATE_LIMIT_ENABLED", "maybe")
+        test_app = FastAPI()
+        with pytest.raises(ValueError, match="RATE_LIMIT_ENABLED"):
+            RateLimitMiddleware(app=test_app)
 
 
 @pytest.mark.unit
@@ -388,3 +513,78 @@ class TestStatsApiKeyTiming:
             response = client.get("/stats", headers={"Authorization": "Bearer wrong-key"})
             assert response.status_code == 401
             mock_compare.assert_called_once()
+
+    def test_stats_always_calls_compare_digest(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Verify that compare_digest is called even for malformed auth headers (constant-time)."""
+        from unittest.mock import patch
+
+        monkeypatch.setenv("STATS_API_KEY", "my-secret-key")
+
+        with patch("src.api.app.hmac.compare_digest") as mock_compare:
+            mock_compare.return_value = False
+            # Send malformed header (no "Bearer " prefix)
+            response = client.get("/stats", headers={"Authorization": "notabearer"})
+            assert response.status_code == 401
+            # compare_digest MUST be called even for malformed headers to prevent timing attacks
+            mock_compare.assert_called_once()
+
+    def test_stats_rejects_malformed_auth_header(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Malformed auth header (not starting with 'Bearer ') should return 401."""
+        monkeypatch.setenv("STATS_API_KEY", "my-secret-key")
+        response = client.get("/stats", headers={"Authorization": "notabearer"})
+        assert response.status_code == 401
+
+    def test_stats_accepts_correct_api_key(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Stats with correct API key in Bearer token should return 200."""
+        monkeypatch.setenv("STATS_API_KEY", "my-secret-key")
+        response = client.get("/stats", headers={"Authorization": "Bearer my-secret-key"})
+        assert response.status_code == 200
+
+    def test_stats_rejects_wrong_api_key(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Stats with wrong API key should return 401."""
+        monkeypatch.setenv("STATS_API_KEY", "my-secret-key")
+        response = client.get("/stats", headers={"Authorization": "Bearer wrong-key"})
+        assert response.status_code == 401
+
+    def test_stats_public_when_no_api_key_set(self, client: TestClient) -> None:
+        """Stats should be public (200) when STATS_API_KEY is not set."""
+        # Ensure STATS_API_KEY is not set
+        import os
+
+        if "STATS_API_KEY" in os.environ:
+            del os.environ["STATS_API_KEY"]
+        response = client.get("/stats")
+        assert response.status_code == 200
+
+
+@pytest.mark.unit
+class TestStatsEndpointRateLimit:
+    """Test that /stats endpoint is rate-limited."""
+
+    def test_stats_rate_limit_returns_429(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Stats endpoint should be rate-limited like /query."""
+        from fastapi import FastAPI
+
+        from src.api.app import RateLimitMiddleware
+
+        monkeypatch.setenv("RATE_LIMIT_ENABLED", "true")
+        test_app = FastAPI()
+        test_app.add_middleware(RateLimitMiddleware, requests_per_minute=2)
+
+        @test_app.get("/stats")
+        async def _stats() -> dict[str, bool]:
+            return {"pokeapi": True}
+
+        with TestClient(test_app) as c:
+            c.get("/stats")
+            c.get("/stats")
+            response = c.get("/stats")
+            assert response.status_code == 429

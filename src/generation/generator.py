@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import logging
 
+from src.generation.exceptions import GenerationError
 from src.generation.inference import Inferencer
 from src.generation.loader import ModelLoader
 from src.generation.models import GenerationConfig
 from src.generation.protocols import GeneratorProtocol, PromptBuilderProtocol
 from src.types import GenerationResult, RetrievedChunk
 
-__all__ = ["Generator", "GeneratorProtocol"]
+__all__ = ["Generator", "GeneratorProtocol", "GenerationError"]
 
 _LOG = logging.getLogger(__name__)
 
@@ -37,7 +38,10 @@ class Generator:
         )
 
         prompt = self._prompt_builder(query, chunks)
-        answer = self._inferencer.infer(prompt)
+        try:
+            answer = self._inferencer.infer(prompt)
+        except Exception as exc:
+            raise GenerationError(f"Inference failed: {exc}") from exc
         unique_sources = tuple(sorted({c.source for c in chunks}))
 
         _LOG.info(

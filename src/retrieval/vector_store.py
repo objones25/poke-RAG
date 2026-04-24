@@ -98,9 +98,12 @@ class QdrantVectorStore:
             for i, doc in enumerate(documents)
         ]
         for i in range(0, len(points), _UPSERT_BATCH_SIZE):
-            self._client.upsert(
-                collection_name=collection, points=points[i : i + _UPSERT_BATCH_SIZE]
-            )
+            try:
+                self._client.upsert(
+                    collection_name=collection, points=points[i : i + _UPSERT_BATCH_SIZE]
+                )
+            except Exception as exc:
+                raise VectorIndexError(f"Upsert to '{collection}' failed: {exc}") from exc
             _LOG.debug(
                 "Upserted points %d–%d into '%s'",
                 i,
@@ -122,16 +125,19 @@ class QdrantVectorStore:
             values=list(query_sparse.values()),
         )
 
-        response = self._client.query_points(
-            collection_name=collection,
-            prefetch=[
-                Prefetch(query=query_dense, using=_DENSE_VECTOR_NAME, limit=top_k * 2),
-                Prefetch(query=sparse_query, using=_SPARSE_VECTOR_NAME, limit=top_k * 2),
-            ],
-            query=FusionQuery(fusion=Fusion.RRF),
-            limit=top_k,
-            query_filter=query_filter,
-        )
+        try:
+            response = self._client.query_points(
+                collection_name=collection,
+                prefetch=[
+                    Prefetch(query=query_dense, using=_DENSE_VECTOR_NAME, limit=top_k * 2),
+                    Prefetch(query=sparse_query, using=_SPARSE_VECTOR_NAME, limit=top_k * 2),
+                ],
+                query=FusionQuery(fusion=Fusion.RRF),
+                limit=top_k,
+                query_filter=query_filter,
+            )
+        except Exception as exc:
+            raise VectorIndexError(f"Query to collection '{collection}' failed: {exc}") from exc
 
         chunks: list[RetrievedChunk] = []
         skipped_count = 0

@@ -75,3 +75,42 @@ class TestChunkSampler:
         sampler = ChunkSampler(tmp_path, {"pokeapi": 1.0}, seed=0)
         assert sampler.sample() is not None
         assert sampler.sample() is None
+
+    def test_zero_weight_all_sources_returns_none(self, tmp_path: Path) -> None:
+        """RED: All-zero weights should return None, not raise ZeroDivisionError."""
+        for source in ("bulbapedia", "pokeapi", "smogon"):
+            d = tmp_path / source
+            d.mkdir()
+            (d / "pokemon.txt").write_text("SomeEntity is a test.\n")
+        sampler = ChunkSampler(
+            tmp_path, {"bulbapedia": 0.0, "pokeapi": 0.0, "smogon": 0.0}, seed=42
+        )
+        assert sampler.sample() is None
+
+    def test_single_source_valid_weight(self, tmp_path: Path) -> None:
+        """GREEN: Single source with valid weight samples correctly."""
+        d = tmp_path / "pokeapi"
+        d.mkdir()
+        (d / "data.txt").write_text("Pikachu is a species.\nCharizard is a species.\n")
+        sampler = ChunkSampler(tmp_path, {"pokeapi": 1.0}, seed=42)
+        result = sampler.sample()
+        assert result is not None
+        line, source = result
+        assert source == "pokeapi"
+        assert "is a species" in line
+
+    def test_normal_weights_distribution(self, tmp_path: Path) -> None:
+        """GREEN: Normal positive weights distribute samples correctly."""
+        for source in ("bulbapedia", "pokeapi", "smogon"):
+            d = tmp_path / source
+            d.mkdir()
+            (d / "data.txt").write_text("\n".join(f"{source}_{i}" for i in range(100)))
+        sampler = ChunkSampler(
+            tmp_path, {"bulbapedia": 1.0, "pokeapi": 1.0, "smogon": 0.5}, seed=0
+        )
+        samples = [sampler.sample() for _ in range(50)]
+        assert all(s is not None for s in samples)
+        sources_seen = [s for _, s in samples]
+        assert "bulbapedia" in sources_seen
+        assert "pokeapi" in sources_seen
+        assert "smogon" in sources_seen

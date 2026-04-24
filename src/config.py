@@ -9,6 +9,25 @@ from pydantic import SecretStr
 _LOG = logging.getLogger(__name__)
 
 
+def _parse_bool(value: str | None, env_var_name: str, default: bool) -> bool:
+    """Parse a boolean environment variable.
+
+    Accepts: "true", "1", "yes" (case-insensitive) as True.
+    Accepts: "false", "0", "no" (case-insensitive) as False.
+    Raises ValueError for any other value.
+    """
+    if value is None:
+        return default
+    lower_val = value.lower().strip()
+    if lower_val in ("true", "1", "yes"):
+        return True
+    if lower_val in ("false", "0", "no"):
+        return False
+    raise ValueError(
+        f"{env_var_name} must be one of ['true', '1', 'yes', 'false', '0', 'no'], got: {value!r}"
+    )
+
+
 def _detect_device() -> str:
     import torch
 
@@ -34,6 +53,7 @@ class Settings:
     return_tensors: str
     truncation: bool
     device: str
+    query_timeout_seconds: float = 120.0
     lora_adapter_path: str | None = None
     hyde_enabled: bool = False
     hyde_max_tokens: int = 150
@@ -97,6 +117,18 @@ class Settings:
         if hyde_num_drafts <= 0:
             raise ValueError(f"HYDE_NUM_DRAFTS must be a positive integer, got: {hyde_num_drafts}")
 
+        try:
+            query_timeout_seconds = float(os.getenv("QUERY_TIMEOUT_SECONDS", "120.0"))
+        except ValueError:
+            raw_timeout = os.getenv("QUERY_TIMEOUT_SECONDS")
+            raise ValueError(
+                f"QUERY_TIMEOUT_SECONDS must be a valid float, got: {raw_timeout!r}"
+            ) from None
+        if not 1.0 <= query_timeout_seconds <= 600.0:
+            raise ValueError(
+                f"QUERY_TIMEOUT_SECONDS must be between 1.0 and 600.0, got: {query_timeout_seconds}"
+            )
+
         raw_threshold = os.getenv("HYDE_CONFIDENCE_THRESHOLD")
         if raw_threshold is not None:
             try:
@@ -136,15 +168,16 @@ class Settings:
             temperature=temperature,
             max_new_tokens=max_new_tokens,
             top_p=top_p,
-            do_sample=os.getenv("DO_SAMPLE", "true").lower() == "true",
+            do_sample=_parse_bool(os.getenv("DO_SAMPLE"), "DO_SAMPLE", True),
             tokenizer_max_length=tokenizer_max_length,
             return_tensors=os.getenv("RETURN_TENSORS", "pt"),
-            truncation=os.getenv("TRUNCATION", "true").lower() == "true",
+            truncation=_parse_bool(os.getenv("TRUNCATION"), "TRUNCATION", True),
             device=device,
+            query_timeout_seconds=query_timeout_seconds,
             lora_adapter_path=os.getenv("LORA_ADAPTER_PATH"),
-            hyde_enabled=os.getenv("HYDE_ENABLED", "false").lower() == "true",
+            hyde_enabled=_parse_bool(os.getenv("HYDE_ENABLED"), "HYDE_ENABLED", False),
             hyde_max_tokens=hyde_max_tokens,
             hyde_num_drafts=hyde_num_drafts,
             hyde_confidence_threshold=hyde_confidence_threshold,
-            routing_enabled=os.getenv("ROUTING_ENABLED", "false").lower() == "true",
+            routing_enabled=_parse_bool(os.getenv("ROUTING_ENABLED"), "ROUTING_ENABLED", False),
         )
