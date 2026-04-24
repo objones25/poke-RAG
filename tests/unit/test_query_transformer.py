@@ -221,9 +221,7 @@ class TestMultiDraftHyDETransformer:
 
     def test_zero_drafts_falls_back_to_raw_query(self) -> None:
         embedder = self._make_embedder()
-        transformer = MultiDraftHyDETransformer(
-            self._make_inferencer(), embedder, num_drafts=0
-        )
+        transformer = MultiDraftHyDETransformer(self._make_inferencer(), embedder, num_drafts=0)
         result = transformer.transform_to_embedding("how does Intimidate work?")
         assert embedder.encode.called
         assert len(result.dense) == 1
@@ -232,7 +230,5 @@ class TestMultiDraftHyDETransformer:
     def test_satisfies_protocol(self) -> None:
         from src.retrieval.protocols import QueryTransformerProtocol
 
-        t = MultiDraftHyDETransformer(
-            self._make_inferencer(), self._make_embedder(), num_drafts=2
-        )
+        t = MultiDraftHyDETransformer(self._make_inferencer(), self._make_embedder(), num_drafts=2)
         assert isinstance(t, QueryTransformerProtocol)

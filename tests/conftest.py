@@ -73,3 +73,4 @@ def _disable_rate_limiting(monkeypatch: pytest.MonkeyPatch) -> None:
     """Disable rate limiting by default for all tests. Tests that need rate limiting
     should use monkeypatch.setenv('RATE_LIMIT_ENABLED', 'true') to re-enable it."""
     monkeypatch.setenv("RATE_LIMIT_ENABLED", "false")
+    monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")

@@ -139,8 +139,7 @@ class Settings:
                 ) from None
             if not 0.0 <= threshold_value <= 1.0:
                 raise ValueError(
-                    f"HYDE_CONFIDENCE_THRESHOLD must be between 0.0 and 1.0, "
-                    f"got: {threshold_value}"
+                    f"HYDE_CONFIDENCE_THRESHOLD must be between 0.0 and 1.0, got: {threshold_value}"
                 )
             hyde_confidence_threshold: float | None = threshold_value
         else:

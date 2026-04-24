@@ -69,6 +69,7 @@ class TestRunGeneration:
                 raise ValueError("Some transient API issue")
             # Success on 3rd try
             from scripts.training.schemas import GeminiQAPair
+
             return GeminiQAPair(
                 question="What is this?",
                 answer="This is a detailed answer with enough content to pass quality gates here.",

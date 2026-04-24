@@ -200,9 +200,7 @@ class Retriever:
         else:
             embedding = self._embed_for_search(query, use_transformer=use_transformer)
 
-        candidates = self._run_search(
-            embedding, active_sources, candidates_per_source, entity_name
-        )
+        candidates = self._run_search(embedding, active_sources, candidates_per_source, entity_name)
         _LOG.info("Total candidates: %d across %d source(s)", len(candidates), len(active_sources))
 
         if not candidates:

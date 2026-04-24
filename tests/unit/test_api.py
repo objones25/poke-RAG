@@ -45,6 +45,7 @@ def client(mock_pipeline):
 class TestStatsEndpoint:
     def test_stats_returns_200(self, client) -> None:
         import os
+
         stats_key = os.getenv("STATS_API_KEY")
         if stats_key:
             response = client.get("/stats", headers={"Authorization": f"Bearer {stats_key}"})
@@ -54,6 +55,7 @@ class TestStatsEndpoint:
 
     def test_stats_returns_dict_with_collections(self, client) -> None:
         import os
+
         stats_key = os.getenv("STATS_API_KEY")
         if stats_key:
             response = client.get("/stats", headers={"Authorization": f"Bearer {stats_key}"})

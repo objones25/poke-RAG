@@ -99,9 +99,7 @@ class MultiDraftHyDETransformer:
         prompt = _HYDE_PROMPT_TEMPLATE.format(query=query)
         for i in range(self._num_drafts):
             try:
-                result: str = self._inferencer.infer(
-                    prompt, max_new_tokens=self._max_new_tokens
-                )
+                result: str = self._inferencer.infer(prompt, max_new_tokens=self._max_new_tokens)
                 if result and result.strip():
                     drafts.append(result)
             except Exception as exc:

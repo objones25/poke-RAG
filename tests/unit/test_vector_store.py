@@ -44,7 +44,10 @@ class TestEnsureCollections:
 
         client = _make_client()
         client.create_collection.side_effect = UnexpectedResponse(
-            status_code=409, reason_phrase="already exists", content=b"", headers={}  # type: ignore[arg-type]
+            status_code=409,
+            reason_phrase="already exists",
+            content=b"",
+            headers={},  # type: ignore[arg-type]
         )
         store = QdrantVectorStore(client)
         store.ensure_collections()  # must not raise
@@ -55,7 +58,10 @@ class TestEnsureCollections:
 
         client = _make_client()
         client.create_collection.side_effect = UnexpectedResponse(
-            status_code=409, reason_phrase="conflict", content=b"", headers={}  # type: ignore[arg-type]
+            status_code=409,
+            reason_phrase="conflict",
+            content=b"",
+            headers={},  # type: ignore[arg-type]
         )
         store = QdrantVectorStore(client)
         store.ensure_collections()  # must not raise
@@ -66,7 +72,10 @@ class TestEnsureCollections:
 
         client = _make_client()
         client.create_collection.side_effect = UnexpectedResponse(
-            status_code=500, reason_phrase="server error", content=b"", headers={}  # type: ignore[arg-type]
+            status_code=500,
+            reason_phrase="server error",
+            content=b"",
+            headers={},  # type: ignore[arg-type]
         )
         store = QdrantVectorStore(client)
         with pytest.raises(UnexpectedResponse):
@@ -78,7 +87,10 @@ class TestEnsureCollections:
 
         client = _make_client()
         client.create_collection.side_effect = UnexpectedResponse(
-            status_code=401, reason_phrase="unauthorized", content=b"", headers={}  # type: ignore[arg-type]
+            status_code=401,
+            reason_phrase="unauthorized",
+            content=b"",
+            headers={},  # type: ignore[arg-type]
         )
         store = QdrantVectorStore(client)
         with pytest.raises(UnexpectedResponse):
@@ -90,7 +102,10 @@ class TestEnsureCollections:
 
         client = _make_client()
         client.create_collection.side_effect = UnexpectedResponse(
-            status_code=403, reason_phrase="forbidden", content=b"", headers={}  # type: ignore[arg-type]
+            status_code=403,
+            reason_phrase="forbidden",
+            content=b"",
+            headers={},  # type: ignore[arg-type]
         )
         store = QdrantVectorStore(client)
         with pytest.raises(UnexpectedResponse):
@@ -102,7 +117,10 @@ class TestEnsureCollections:
 
         client = _make_client()
         client.create_collection.side_effect = UnexpectedResponse(
-            status_code=400, reason_phrase="bad request", content=b"", headers={}  # type: ignore[arg-type]
+            status_code=400,
+            reason_phrase="bad request",
+            content=b"",
+            headers={},  # type: ignore[arg-type]
         )
         store = QdrantVectorStore(client)
         with pytest.raises(UnexpectedResponse):
@@ -300,9 +318,7 @@ class TestSearch:
 
     def test_search_with_empty_string_entity_name_creates_filter(self) -> None:
         client = _make_client()
-        client.query_points.return_value.points = [
-            self._make_scored_point("Some text", 0.9, "")
-        ]
+        client.query_points.return_value.points = [self._make_scored_point("Some text", 0.9, "")]
         store = QdrantVectorStore(client)
         store.search("pokeapi", [0.1] * 1024, {1: 0.5}, top_k=5, entity_name="")
         first_call_kwargs = client.query_points.call_args_list[0][1]

@@ -7,9 +7,7 @@ from google.genai.types import GenerateContentConfig, HttpOptions
 
 from scripts.training.gemini_client import GeminiClient
 
-_QUALITY_ANSWER = (
-    "Pikachu is an Electric-type Pokémon with high speed and moderate attack."
-)
+_QUALITY_ANSWER = "Pikachu is an Electric-type Pokémon with high speed and moderate attack."
 
 
 @pytest.mark.unit
@@ -19,9 +17,7 @@ class TestGeminiClientGenerateQAPair:
     def test_successful_generation(self) -> None:
         """GREEN: Successful generation returns a valid pair."""
         client = GeminiClient(api_key="fake-key")
-        response_text = (
-            '{"question": "What is Pikachu?", "answer": "' + _QUALITY_ANSWER + '"}'
-        )
+        response_text = '{"question": "What is Pikachu?", "answer": "' + _QUALITY_ANSWER + '"}'
 
         with patch.object(client._client.models, "generate_content") as mock_gen:
             mock_response = MagicMock()
@@ -114,9 +110,7 @@ class TestGeminiClientGenerateQAPair:
     def test_rate_limit_retry_logic(self) -> None:
         """GREEN: 429 rate limit triggers retry logic."""
         client = GeminiClient(api_key="fake-key")
-        response_text = (
-            '{"question": "What is Pikachu?", "answer": "' + _QUALITY_ANSWER + '"}'
-        )
+        response_text = '{"question": "What is Pikachu?", "answer": "' + _QUALITY_ANSWER + '"}'
 
         with (
             patch.object(client._client.models, "generate_content") as mock_gen,
@@ -141,9 +135,7 @@ class TestGeminiClientGenerateQAPair:
     def test_config_is_proper_type(self) -> None:
         """GREEN: Config passed to generate_content is GenerateContentConfig, not dict."""
         client = GeminiClient(api_key="fake-key")
-        response_text = (
-            '{"question": "What is Pikachu?", "answer": "' + _QUALITY_ANSWER + '"}'
-        )
+        response_text = '{"question": "What is Pikachu?", "answer": "' + _QUALITY_ANSWER + '"}'
 
         with patch.object(client._client.models, "generate_content") as mock_gen:
             mock_response = MagicMock()
@@ -164,9 +156,7 @@ class TestGeminiClientGenerateQAPair:
     def test_config_has_timeout(self) -> None:
         """RED: Config passed to generate_content should have httpOptions with timeout set."""
         client = GeminiClient(api_key="fake-key")
-        response_text = (
-            '{"question": "What is Pikachu?", "answer": "' + _QUALITY_ANSWER + '"}'
-        )
+        response_text = '{"question": "What is Pikachu?", "answer": "' + _QUALITY_ANSWER + '"}'
 
         with patch.object(client._client.models, "generate_content") as mock_gen:
             mock_response = MagicMock()

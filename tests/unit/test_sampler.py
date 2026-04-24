@@ -105,9 +105,7 @@ class TestChunkSampler:
             d = tmp_path / source
             d.mkdir()
             (d / "data.txt").write_text("\n".join(f"{source}_{i}" for i in range(100)))
-        sampler = ChunkSampler(
-            tmp_path, {"bulbapedia": 1.0, "pokeapi": 1.0, "smogon": 0.5}, seed=0
-        )
+        sampler = ChunkSampler(tmp_path, {"bulbapedia": 1.0, "pokeapi": 1.0, "smogon": 0.5}, seed=0)
         samples = [sampler.sample() for _ in range(50)]
         assert all(s is not None for s in samples)
         sources_seen = [s for _, s in samples]
