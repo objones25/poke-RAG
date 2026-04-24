@@ -38,6 +38,7 @@ def mock_pipeline(mocker):
 def client(mock_pipeline, monkeypatch):
     # Disable rate limiting for integration tests to avoid flaky test behavior
     monkeypatch.setenv("RATE_LIMIT_ENABLED", "false")
+    monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
     with TestClient(app) as c:
         yield c
 
