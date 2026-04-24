@@ -59,7 +59,8 @@ class RAGPipeline:
 
         gen_result = self._generator.generate(query, chunks)
 
-        confidence_score: float = _sigmoid(chunks[0].score)
+        raw_score = chunks[0].score
+        confidence_score: float | None = _sigmoid(raw_score) if math.isfinite(raw_score) else None
 
         return PipelineResult(
             answer=gen_result.answer,

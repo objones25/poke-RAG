@@ -10,7 +10,7 @@ from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from qdrant_client import QdrantClient
@@ -174,7 +174,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
             get_reusable_executor().shutdown(wait=True)
         except Exception as exc:
-            _LOG.warning("Loky executor shutdown error: %s", exc)
+            _LOG.warning("Loky executor shutdown error: %s", exc, exc_info=True)
 
 
 app = FastAPI(title="poke-RAG", lifespan=lifespan)
@@ -236,7 +236,7 @@ async def stats(request: Request) -> dict[str, bool]:
     if stats_api_key:
         auth = request.headers.get("Authorization", "")
         if not auth.startswith("Bearer ") or not hmac.compare_digest(auth[7:], stats_api_key):
-            return JSONResponse(status_code=401, content={"detail": "Unauthorized"})  # type: ignore[return-value]
+            raise HTTPException(status_code=401, detail="Unauthorized")
     client: QdrantClient | None = getattr(request.app.state, "qdrant_client", None)
     if client is None:
         raise RuntimeError("Qdrant client not initialized")

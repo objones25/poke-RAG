@@ -51,7 +51,7 @@ class QueryResponse(BaseModel):
     )
     model_name: str = Field(..., description="Name of the generation model used")
     query: str = Field(..., description="The parsed query that was processed")
-    confidence_score: float = Field(
-        ...,
-        description="Sigmoid of the top-ranked chunk's reranker score",
+    confidence_score: float | None = Field(
+        default=None,
+        description="Sigmoid of the top-ranked chunk's reranker score; None if score is non-finite",
     )
