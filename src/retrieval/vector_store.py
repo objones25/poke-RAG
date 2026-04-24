@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 import uuid
 from typing import Any
 
@@ -38,6 +40,15 @@ _SPARSE_VECTOR_NAME = "sparse"
 _COLBERT_VECTOR_NAME = "colbert"
 _UPSERT_BATCH_SIZE = 100
 _COLBERT_UPSERT_BATCH_SIZE = 2  # ColBERT token matrices are large; keep HTTP payloads under 32 MB
+_TRANSIENT_STATUS_CODES = {429, 500, 502, 503, 504}
+_MAX_RETRIES = 4
+_RETRY_BASE_DELAY = 2.0
+
+
+def _is_transient(exc: Exception) -> bool:
+    if isinstance(exc, UnexpectedResponse):
+        return exc.status_code in _TRANSIENT_STATUS_CODES
+    return True  # timeouts, connection resets, etc.
 
 
 class QdrantVectorStore:
@@ -136,12 +147,27 @@ class QdrantVectorStore:
             )
         batch_size = _COLBERT_UPSERT_BATCH_SIZE if self._colbert_enabled else _UPSERT_BATCH_SIZE
         for i in range(0, len(points), batch_size):
-            try:
-                self._client.upsert(
-                    collection_name=collection, points=points[i : i + batch_size]
-                )
-            except Exception as exc:
-                raise VectorIndexError(f"Upsert to '{collection}' failed: {exc}") from exc
+            batch = points[i : i + batch_size]
+            for attempt in range(_MAX_RETRIES):
+                try:
+                    self._client.upsert(collection_name=collection, points=batch)
+                    break
+                except Exception as exc:
+                    if attempt < _MAX_RETRIES - 1 and _is_transient(exc):
+                        delay = _RETRY_BASE_DELAY * (2**attempt)
+                        _LOG.warning(
+                            "Upsert to '%s' failed (attempt %d/%d): %s — retrying in %.0fs",
+                            collection,
+                            attempt + 1,
+                            _MAX_RETRIES,
+                            exc,
+                            delay,
+                        )
+                        time.sleep(delay)
+                    else:
+                        raise VectorIndexError(
+                            f"Upsert to '{collection}' failed: {exc}"
+                        ) from exc
             _LOG.debug(
                 "Upserted points %d–%d into '%s'",
                 i,
@@ -351,12 +377,27 @@ class AsyncQdrantVectorStore:
             )
         batch_size = _COLBERT_UPSERT_BATCH_SIZE if self._colbert_enabled else _UPSERT_BATCH_SIZE
         for i in range(0, len(points), batch_size):
-            try:
-                await self._client.upsert(
-                    collection_name=collection, points=points[i : i + batch_size]
-                )
-            except Exception as exc:
-                raise VectorIndexError(f"Upsert to '{collection}' failed: {exc}") from exc
+            batch = points[i : i + batch_size]
+            for attempt in range(_MAX_RETRIES):
+                try:
+                    await self._client.upsert(collection_name=collection, points=batch)
+                    break
+                except Exception as exc:
+                    if attempt < _MAX_RETRIES - 1 and _is_transient(exc):
+                        delay = _RETRY_BASE_DELAY * (2**attempt)
+                        _LOG.warning(
+                            "Upsert to '%s' failed (attempt %d/%d): %s — retrying in %.0fs",
+                            collection,
+                            attempt + 1,
+                            _MAX_RETRIES,
+                            exc,
+                            delay,
+                        )
+                        await asyncio.sleep(delay)
+                    else:
+                        raise VectorIndexError(
+                            f"Upsert to '{collection}' failed: {exc}"
+                        ) from exc
             _LOG.debug(
                 "Upserted points %d–%d into '%s'",
                 i,
