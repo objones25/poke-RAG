@@ -630,7 +630,7 @@ class TestRetrieverConfidenceThreshold:
 
     def test_low_confidence_triggers_transformer(self) -> None:
         transformer = _make_transformer("hyde output")
-        reranker = _make_reranker([make_chunk(score=0.2)])
+        reranker = _make_reranker([make_chunk(score=-0.5)])
         retriever = Retriever(
             embedder=_make_embedder(),
             vector_store=_make_vector_store(),
@@ -655,7 +655,7 @@ class TestRetrieverConfidenceThreshold:
 
     def test_raw_pass_encodes_original_query(self) -> None:
         embedder = _make_embedder()
-        reranker = _make_reranker([make_chunk(score=0.2)])
+        reranker = _make_reranker([make_chunk(score=-0.5)])
         retriever = Retriever(
             embedder=embedder,
             vector_store=_make_vector_store(),

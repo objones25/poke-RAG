@@ -12,6 +12,7 @@ def anyio_backend() -> str:
     """Use asyncio as the anyio backend for all async tests."""
     return "asyncio"
 
+
 # Apply FlagEmbedding 1.3.5 + transformers 5.x compatibility shims before any
 # FlagEmbedding import.  The shims are canonical in src/retrieval/_compat.py;
 # importing that module here keeps both paths (test runner + production server)
@@ -86,3 +87,4 @@ def _disable_rate_limiting(monkeypatch: pytest.MonkeyPatch) -> None:
     should use monkeypatch.setenv('RATE_LIMIT_ENABLED', 'true') to re-enable it."""
     monkeypatch.setenv("RATE_LIMIT_ENABLED", "false")
     monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+    monkeypatch.setenv("ASYNC_PIPELINE_ENABLED", "false")

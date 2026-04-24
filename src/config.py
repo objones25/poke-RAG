@@ -256,9 +256,7 @@ class Settings:
             cache_ttl_seconds=_parse_int_positive(
                 os.getenv("CACHE_TTL_SECONDS"), "CACHE_TTL_SECONDS", 3600
             ),
-            cache_max_size=_parse_int_positive(
-                os.getenv("CACHE_MAX_SIZE"), "CACHE_MAX_SIZE", 1000
-            ),
+            cache_max_size=_parse_int_positive(os.getenv("CACHE_MAX_SIZE"), "CACHE_MAX_SIZE", 1000),
             redis_url=os.getenv("REDIS_URL"),
             redis_username=os.getenv("REDIS_USERNAME", "default"),
             redis_password=SecretStr(pw) if (pw := os.getenv("REDIS_PASSWORD")) else None,

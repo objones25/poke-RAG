@@ -104,9 +104,7 @@ class TestAsyncUpsert:
         chunks = [_make_chunk(original_doc_id=f"doc_{i}") for i in range(5)]
         await store.upsert("pokeapi", chunks, _make_embeddings(n=5))
         # Upsert may be called multiple times for batching
-        total_points = sum(
-            len(call[1]["points"]) for call in client.upsert.call_args_list
-        )
+        total_points = sum(len(call[1]["points"]) for call in client.upsert.call_args_list)
         assert total_points == 5
 
     @pytest.mark.anyio

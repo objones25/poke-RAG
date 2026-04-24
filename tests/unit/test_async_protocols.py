@@ -71,12 +71,14 @@ class _MissingSearchVectorStore:
     async def upsert(
         self, collection: Source, documents: list[RetrievedChunk], embeddings: EmbeddingOutput
     ) -> None: ...
+
     # search intentionally omitted
 
 
 class _MissingDeleteCache:
     async def get(self, key: str) -> Any | None: ...
     async def set(self, key: str, value: Any, ttl_seconds: int | None = None) -> None: ...
+
     # delete intentionally omitted
 
 

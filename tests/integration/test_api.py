@@ -126,10 +126,11 @@ def mock_async_pipeline_dep(mocker):
 
 
 @pytest.fixture()
-def async_client(mock_async_pipeline_dep, monkeypatch):
+def async_client(mock_async_pipeline_dep, monkeypatch, mocker):
     monkeypatch.setenv("RATE_LIMIT_ENABLED", "false")
     monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
     monkeypatch.setenv("ASYNC_PIPELINE_ENABLED", "true")
+    mocker.patch("src.api.app.QdrantClient")
     with TestClient(app) as c:
         yield c
 

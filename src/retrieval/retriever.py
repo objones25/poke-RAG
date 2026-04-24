@@ -286,14 +286,10 @@ class AsyncRetriever:
             if hasattr(self._query_transformer, "transform_to_embedding"):
                 embedding = cast(
                     EmbeddingOutput,
-                    await asyncio.to_thread(
-                        self._query_transformer.transform_to_embedding, query
-                    ),
+                    await asyncio.to_thread(self._query_transformer.transform_to_embedding, query),
                 )
             else:
-                embed_text: str = await asyncio.to_thread(
-                    self._query_transformer.transform, query
-                )
+                embed_text: str = await asyncio.to_thread(self._query_transformer.transform, query)
                 _LOG.debug(
                     "Query transformer applied: %d-char input → %d-char embed_text",
                     len(query),
