@@ -1,0 +1,255 @@
+# Retrieval evaluation questions
+# Format:
+#   query: the natural-language question
+#   expected_keywords: strings that must appear in at least one top-k chunk (case-insensitive)
+#   source_hint: expected primary source (pokeapi / smogon / bulbapedia)
+#
+# 20 pokeapi (stats, types, evolutions)
+# 20 smogon  (competitive, tiers, movesets)
+# 20 bulbapedia (lore, game mechanics, move descriptions)
+
+# --- pokeapi (20) ---
+
+- query: "What is Pikachu's base speed stat?"
+  expected_keywords: ["90", "speed", "Speed"]
+  source_hint: pokeapi
+
+- query: "What type is Bulbasaur?"
+  expected_keywords: ["Grass", "Poison"]
+  source_hint: pokeapi
+
+- query: "What is Charizard's base special attack?"
+  expected_keywords: ["109", "special", "Charizard"]
+  source_hint: pokeapi
+
+- query: "What are Gengar's base stats?"
+  expected_keywords: ["Gengar", "speed", "special"]
+  source_hint: pokeapi
+
+- query: "What level does Charmander evolve into Charmeleon?"
+  expected_keywords: ["16", "Charmeleon", "evolve"]
+  source_hint: pokeapi
+
+- query: "What is Snorlax's base HP?"
+  expected_keywords: ["160", "HP", "Snorlax"]
+  source_hint: pokeapi
+
+- query: "What ability does Garchomp have?"
+  expected_keywords: ["Sand Veil", "Rough Skin", "Garchomp"]
+  source_hint: pokeapi
+
+- query: "What is Eevee's base experience?"
+  expected_keywords: ["Eevee"]
+  source_hint: pokeapi
+
+- query: "What type is Scizor?"
+  expected_keywords: ["Bug", "Steel", "Scizor"]
+  source_hint: pokeapi
+
+- query: "What is Blastoise's base defense?"
+  expected_keywords: ["100", "defense", "Blastoise"]
+  source_hint: pokeapi
+
+- query: "What level does Magikarp evolve into Gyarados?"
+  expected_keywords: ["20", "Gyarados", "evolve"]
+  source_hint: pokeapi
+
+- query: "How much does Mewtwo weigh?"
+  expected_keywords: ["Mewtwo", "122", "kg"]
+  source_hint: pokeapi
+
+- query: "What is Alakazam's base special attack?"
+  expected_keywords: ["135", "special", "Alakazam"]
+  source_hint: pokeapi
+
+- query: "What is Jolteon's typing?"
+  expected_keywords: ["Electric", "Jolteon"]
+  source_hint: pokeapi
+
+- query: "What is Dragonite's base attack stat?"
+  expected_keywords: ["134", "attack", "Dragonite"]
+  source_hint: pokeapi
+
+- query: "What is Tyranitar's base special defense?"
+  expected_keywords: ["100", "special", "Tyranitar"]
+  source_hint: pokeapi
+
+- query: "What types is Lucario?"
+  expected_keywords: ["Fighting", "Steel", "Lucario"]
+  source_hint: pokeapi
+
+- query: "What is Togekiss's base special attack?"
+  expected_keywords: ["120", "special", "Togekiss"]
+  source_hint: pokeapi
+
+- query: "What is Rotom-Wash's typing?"
+  expected_keywords: ["Electric", "Water", "Rotom"]
+  source_hint: pokeapi
+
+- query: "What is Ferrothorn's base defense?"
+  expected_keywords: ["131", "defense", "Ferrothorn"]
+  source_hint: pokeapi
+
+# --- smogon (20) ---
+
+- query: "What tier is Garchomp in?"
+  expected_keywords: ["OU", "Garchomp"]
+  source_hint: smogon
+
+- query: "What moves does Garchomp use competitively?"
+  expected_keywords: ["Earthquake", "Garchomp"]
+  source_hint: smogon
+
+- query: "What makes Corviknight a good defensive Pokemon in OU?"
+  expected_keywords: ["Corviknight", "Defog", "Steel"]
+  source_hint: smogon
+
+- query: "What is Weavile's role in competitive play?"
+  expected_keywords: ["Weavile", "Ice", "speed"]
+  source_hint: smogon
+
+- query: "How do you use Toxapex in competitive battles?"
+  expected_keywords: ["Toxapex", "Scald", "Regenerator"]
+  source_hint: smogon
+
+- query: "What tier is Breloom in?"
+  expected_keywords: ["Breloom", "UU", "OU", "tier"]
+  source_hint: smogon
+
+- query: "What are common sets for Choice Scarf Landorus-Therian?"
+  expected_keywords: ["Landorus", "Scarf", "Earthquake"]
+  source_hint: smogon
+
+- query: "Why is Ferrothorn used on rain teams?"
+  expected_keywords: ["Ferrothorn", "rain", "Leech Seed"]
+  source_hint: smogon
+
+- query: "What checks Heatran in OU?"
+  expected_keywords: ["Heatran", "Ground", "check"]
+  source_hint: smogon
+
+- query: "What is the recommended EV spread for Clefable?"
+  expected_keywords: ["Clefable", "HP", "Defense"]
+  source_hint: smogon
+
+- query: "How does Volcarona work in OU?"
+  expected_keywords: ["Volcarona", "Quiver Dance", "Bug"]
+  source_hint: smogon
+
+- query: "What makes Dragapult a top threat in OU?"
+  expected_keywords: ["Dragapult", "Dragon", "speed"]
+  source_hint: smogon
+
+- query: "What is Urshifu-Single's common moveset?"
+  expected_keywords: ["Urshifu", "Wicked Blow", "Close Combat"]
+  source_hint: smogon
+
+- query: "What tier is Blissey in and what does it do?"
+  expected_keywords: ["Blissey", "OU", "special", "wall"]
+  source_hint: smogon
+
+- query: "How is Cloyster used offensively?"
+  expected_keywords: ["Cloyster", "Shell Smash", "Icicle Spear"]
+  source_hint: smogon
+
+- query: "What is Kyurem-Black's role in competitive play?"
+  expected_keywords: ["Kyurem", "Dragon", "Fusion Bolt"]
+  source_hint: smogon
+
+- query: "What hazard setters are good in OU?"
+  expected_keywords: ["Stealth Rock", "Spikes", "entry hazard"]
+  source_hint: smogon
+
+- query: "What is a good Scizor set in OU?"
+  expected_keywords: ["Scizor", "Bullet Punch", "Technician"]
+  source_hint: smogon
+
+- query: "What tier is Excadrill in?"
+  expected_keywords: ["Excadrill", "OU", "UU", "tier"]
+  source_hint: smogon
+
+- query: "What makes Tapu Lele dangerous in OU?"
+  expected_keywords: ["Tapu Lele", "Psychic", "Surge"]
+  source_hint: smogon
+
+# --- bulbapedia (20) ---
+
+- query: "What is the lore behind Gengar?"
+  expected_keywords: ["Gengar", "shadow", "ghost"]
+  source_hint: bulbapedia
+
+- query: "How does the move Earthquake work?"
+  expected_keywords: ["Earthquake", "Ground", "damage"]
+  source_hint: bulbapedia
+
+- query: "What is the story behind Mewtwo's creation?"
+  expected_keywords: ["Mewtwo", "Mew", "created", "genetic"]
+  source_hint: bulbapedia
+
+- query: "What are the effects of the move Recover?"
+  expected_keywords: ["Recover", "HP", "restore"]
+  source_hint: bulbapedia
+
+- query: "What is the Sinnoh region?"
+  expected_keywords: ["Sinnoh", "region", "Diamond", "Pearl"]
+  source_hint: bulbapedia
+
+- query: "What is the competitive history of Stealth Rock?"
+  expected_keywords: ["Stealth Rock", "entry hazard", "Rock"]
+  source_hint: bulbapedia
+
+- query: "What is the description of the ability Levitate?"
+  expected_keywords: ["Levitate", "Ground", "immune"]
+  source_hint: bulbapedia
+
+- query: "What is the lore of Eevee?"
+  expected_keywords: ["Eevee", "evolution", "unstable"]
+  source_hint: bulbapedia
+
+- query: "How does the move Will-O-Wisp work?"
+  expected_keywords: ["Will-O-Wisp", "burn", "Fire"]
+  source_hint: bulbapedia
+
+- query: "What game did Togekiss first appear in?"
+  expected_keywords: ["Togekiss", "Generation", "Platinum", "HeartGold"]
+  source_hint: bulbapedia
+
+- query: "What is the description of the move Thunderbolt?"
+  expected_keywords: ["Thunderbolt", "Electric", "paralysis"]
+  source_hint: bulbapedia
+
+- query: "What is the lore behind Ditto?"
+  expected_keywords: ["Ditto", "transform", "DNA"]
+  source_hint: bulbapedia
+
+- query: "What is the effect of the ability Intimidate?"
+  expected_keywords: ["Intimidate", "Attack", "lower"]
+  source_hint: bulbapedia
+
+- query: "What is the Trick Room mechanic?"
+  expected_keywords: ["Trick Room", "speed", "slower"]
+  source_hint: bulbapedia
+
+- query: "What is the Johto region?"
+  expected_keywords: ["Johto", "Gold", "Silver", "region"]
+  source_hint: bulbapedia
+
+- query: "What does the move Substitute do?"
+  expected_keywords: ["Substitute", "HP", "decoy", "barrier"]
+  source_hint: bulbapedia
+
+- query: "What is the lore behind Lucario?"
+  expected_keywords: ["Lucario", "aura", "Fighting", "Steel"]
+  source_hint: bulbapedia
+
+- query: "What is the mechanic for Mega Evolution?"
+  expected_keywords: ["Mega Evolution", "Mega Stone", "Key Stone"]
+  source_hint: bulbapedia
+
+- query: "What game introduced the Physical/Special split?"
+  expected_keywords: ["Diamond", "Pearl", "Physical", "Special", "split"]
+  source_hint: bulbapedia
+
+- query: "What does the Leftovers item do?"
+  expected_keywords: ["Leftovers", "HP", "restore", "held item"]
+  source_hint: bulbapedia

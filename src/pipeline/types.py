@@ -14,4 +14,4 @@ class PipelineResult:
     num_chunks_used: int
     model_name: str
     query: str
-    confidence_score: float | None = None
+    confidence_score: float

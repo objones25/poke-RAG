@@ -83,6 +83,14 @@ class TestBGERerankerRerank:
         assert ["my query", "doc text a"] in pairs
         assert ["my query", "doc text b"] in pairs
 
+    def test_passes_max_length_512_to_compute_score(self) -> None:
+        mock_model = _make_mock_reranker([0.5])
+        reranker = BGEReranker(mock_model)
+        docs = [make_chunk(text="doc text", chunk_index=0)]
+        reranker.rerank("my query", docs, top_k=1)
+        call_kwargs = mock_model.compute_score.call_args[1]
+        assert call_kwargs.get("max_length") == 512
+
     def test_empty_documents_returns_empty(self) -> None:
         mock_model = MagicMock()
         mock_model.compute_score.return_value = []

@@ -14,7 +14,7 @@ from src.generation.prompt_builder import build_prompt
 from src.pipeline.rag_pipeline import RAGPipeline
 from src.retrieval.embedder import BGEEmbedder
 from src.retrieval.query_router import QueryRouter
-from src.retrieval.query_transformer import HyDETransformer
+from src.retrieval.query_transformer import HyDETransformer, MultiDraftHyDETransformer
 from src.retrieval.reranker import BGEReranker
 from src.retrieval.retriever import Retriever
 from src.retrieval.vector_store import QdrantVectorStore
@@ -61,11 +61,30 @@ def build_pipeline() -> tuple[RAGPipeline, ModelLoader, QdrantClient]:
         config=gen_config,
     )
 
+    query_transformer: MultiDraftHyDETransformer | HyDETransformer | None
     if settings.hyde_enabled:
-        query_transformer = HyDETransformer(inferencer, max_new_tokens=settings.hyde_max_tokens)
-        _LOG.info(
-            "HyDE enabled: query transformer active (max_new_tokens=%d)", settings.hyde_max_tokens
-        )
+        if settings.hyde_num_drafts > 1:
+            query_transformer = MultiDraftHyDETransformer(
+                inferencer,
+                embedder,
+                num_drafts=settings.hyde_num_drafts,
+                max_new_tokens=settings.hyde_max_tokens,
+            )
+            _LOG.info(
+                "Multi-draft HyDE enabled: %d drafts, max_new_tokens=%d",
+                settings.hyde_num_drafts,
+                settings.hyde_max_tokens,
+            )
+        else:
+            query_transformer = HyDETransformer(inferencer, max_new_tokens=settings.hyde_max_tokens)
+            _LOG.info(
+                "HyDE enabled: query transformer active (max_new_tokens=%d)",
+                settings.hyde_max_tokens,
+            )
+        if settings.hyde_confidence_threshold is not None:
+            _LOG.info(
+                "HyDE confidence gating enabled: threshold=%.3f", settings.hyde_confidence_threshold
+            )
     else:
         query_transformer = None
         _LOG.info("HyDE disabled: queries embedded directly without transformation")
@@ -74,6 +93,7 @@ def build_pipeline() -> tuple[RAGPipeline, ModelLoader, QdrantClient]:
         vector_store=vector_store,
         reranker=reranker,
         query_transformer=query_transformer,
+        hyde_confidence_threshold=settings.hyde_confidence_threshold,
     )
 
     generator = Generator(

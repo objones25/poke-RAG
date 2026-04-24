@@ -19,6 +19,7 @@ def _make_result(**overrides: object) -> PipelineResult:
         "num_chunks_used": 3,
         "model_name": "google/gemma-4-E4B-it",
         "query": "What type is Pikachu?",
+        "confidence_score": 0.85,
     }
     defaults.update(overrides)
     return PipelineResult(**defaults)  # type: ignore[arg-type]
@@ -127,10 +128,10 @@ class TestQueryEndpoint:
         response = client.post("/query", json={"query": "What type is Pikachu?"}).json()
         assert response["confidence_score"] == 0.92
 
-    def test_confidence_score_none_by_default(self, client, mock_pipeline) -> None:
-        mock_pipeline.query.return_value = _make_result(confidence_score=None)
+    def test_confidence_score_in_response_default(self, client, mock_pipeline) -> None:
+        mock_pipeline.query.return_value = _make_result(confidence_score=0.75)
         response = client.post("/query", json={"query": "What type is Pikachu?"}).json()
-        assert response["confidence_score"] is None
+        assert response["confidence_score"] == 0.75
 
     def test_entity_name_forwarded_to_pipeline(self, client, mock_pipeline) -> None:
         mock_pipeline.query.return_value = _make_result()

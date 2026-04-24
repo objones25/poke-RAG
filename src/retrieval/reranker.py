@@ -43,7 +43,7 @@ class BGEReranker:
 
         _LOG.debug("Reranking %d candidates, top_k=%d", len(documents), top_k)
         pairs = [[query, doc.text] for doc in documents]
-        scores: list[float] = [float(s) for s in self._model.compute_score(pairs)]
+        scores: list[float] = [float(s) for s in self._model.compute_score(pairs, max_length=512)]
 
         ranked = sorted(
             (replace(doc, score=score) for doc, score in zip(documents, scores, strict=True)),

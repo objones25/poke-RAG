@@ -92,9 +92,7 @@ def build_prompt(query: str, chunks: tuple[RetrievedChunk, ...]) -> str:
     if not chunks:
         raise ValueError("chunks must not be empty")
 
-    sanitized_query = "".join(
-        " " if unicodedata.category(ch)[0] == "C" else ch for ch in query
-    ).strip()
+    sanitized_query = _sanitize_for_prompt(query)
 
     sorted_chunks = sorted(chunks, key=lambda c: c.score, reverse=True)
 

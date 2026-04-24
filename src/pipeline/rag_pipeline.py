@@ -56,7 +56,7 @@ class RAGPipeline:
 
         gen_result = self._generator.generate(query, chunks)
 
-        confidence_score: float | None = _sigmoid(chunks[0].score) if chunks else None
+        confidence_score: float = _sigmoid(chunks[0].score)
 
         return PipelineResult(
             answer=gen_result.answer,

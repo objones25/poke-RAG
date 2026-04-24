@@ -37,6 +37,8 @@ class Settings:
     lora_adapter_path: str | None = None
     hyde_enabled: bool = False
     hyde_max_tokens: int = 150
+    hyde_num_drafts: int = 1
+    hyde_confidence_threshold: float | None = None
     routing_enabled: bool = False
 
     @classmethod
@@ -103,5 +105,9 @@ class Settings:
             lora_adapter_path=os.getenv("LORA_ADAPTER_PATH"),
             hyde_enabled=os.getenv("HYDE_ENABLED", "false").lower() == "true",
             hyde_max_tokens=int(os.getenv("HYDE_MAX_TOKENS", "150")),
+            hyde_num_drafts=int(os.getenv("HYDE_NUM_DRAFTS", "1")),
+            hyde_confidence_threshold=(
+                float(v) if (v := os.getenv("HYDE_CONFIDENCE_THRESHOLD")) else None
+            ),
             routing_enabled=os.getenv("ROUTING_ENABLED", "false").lower() == "true",
         )

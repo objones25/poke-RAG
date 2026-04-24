@@ -118,6 +118,59 @@ class TestChunkSmogonLine:
         # Should not crash; entity_name may be None
         assert chunks[0].entity_name is None
 
+    def test_single_chunk_text_starts_with_entity_header(self) -> None:
+        line = "Pikachu (OU): Pikachu is a fast attacker with high speed."
+        chunks = chunk_smogon_line(line, doc_id="smogon_0")
+        assert chunks[0].text.startswith("Pikachu: ")
+
+    def test_multi_chunk_all_contain_entity_header(self) -> None:
+        sentences = [f"Sentence {i} with extra content for padding." for i in range(60)]
+        line = "Gyarados (OU): " + " ".join(sentences)
+        chunks = chunk_smogon_line(line, doc_id="smogon_0")
+        assert len(chunks) > 1
+        for c in chunks:
+            assert c.text.startswith("Gyarados: "), f"chunk missing header: {c.text[:40]!r}"
+
+    def test_no_header_when_entity_name_none(self) -> None:
+        line = "just some text without a name pattern"
+        chunks = chunk_smogon_line(line, doc_id="smogon_0")
+        assert not chunks[0].text.startswith(": ")
+
+
+@pytest.mark.unit
+class TestChunkSmogonLineTokenizeFn:
+    def test_chunk_file_smogon_accepts_tokenize_fn(self, tmp_path) -> None:
+        from src.retrieval.chunker import chunk_file
+
+        p = tmp_path / "pokemon.txt"
+        sentences = [f"Sentence number {i} with plenty of content here." for i in range(30)]
+        line = "Garbodor (NU): " + " ".join(sentences)
+        p.write_text(line + "\n", encoding="utf-8")
+
+        # Aggressive tokenizer: 2× word count → forces splits on shorter text
+        def aggressive_fn(text: str) -> int:
+            return len(text.split()) * 2
+
+        default_chunks = chunk_file(p, source="smogon")
+        aggressive_chunks = chunk_file(p, source="smogon", tokenize_fn=aggressive_fn)
+
+        assert len(aggressive_chunks) >= len(default_chunks), (
+            "aggressive tokenizer should produce at least as many chunks"
+        )
+
+    def test_chunk_smogon_line_tokenize_fn_threads_through(self) -> None:
+        from src.retrieval.chunker import chunk_smogon_line
+
+        sentences = [f"Sentence {i} with enough words for the test." for i in range(30)]
+        line = "Gyarados (OU): " + " ".join(sentences)
+
+        # tokenize_fn that inflates counts 10×: should produce many more chunks
+        def inflating_fn(text: str) -> int:
+            return len(text.split()) * 10
+
+        chunks = chunk_smogon_line(line, doc_id="s0", tokenize_fn=inflating_fn)
+        assert len(chunks) > 3
+
 
 @pytest.mark.unit
 class TestChunkBulbapediaDoc:
@@ -240,3 +293,11 @@ class TestChunkFile:
         for source in ("pokeapi", "smogon", "bulbapedia"):
             chunks = chunk_file(p, source=source)  # type: ignore[arg-type]
             assert chunks == [], f"expected [] for source={source}"
+
+
+@pytest.mark.unit
+class TestChunkerConstants:
+    def test_bulbapedia_target_tokens_is_400(self) -> None:
+        from src.retrieval.chunker import _BULBA_TARGET_TOKENS
+
+        assert _BULBA_TARGET_TOKENS == 400

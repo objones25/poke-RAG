@@ -163,3 +163,30 @@ class TestInferencerInfer:
 
         with pytest.raises(TypeError, match="str"):
             inferencer.infer("prompt")
+
+    def test_max_new_tokens_override_passed_to_generate(self) -> None:
+        inferencer, fake_model, _, _ = _make_inferencer()
+        inferencer.infer("prompt", max_new_tokens=50)
+
+        _, kwargs = fake_model.generate.call_args
+        assert kwargs["max_new_tokens"] == 50
+
+    def test_max_new_tokens_none_uses_config_default(self) -> None:
+        from src.generation.inference import Inferencer
+        from src.generation.models import GenerationConfig
+
+        fake_model = MagicMock()
+        fake_model.device = "cpu"
+        fake_processor = MagicMock()
+        fake_inputs = _make_fake_inputs(3)
+        fake_processor.apply_chat_template.return_value = "text"
+        fake_processor.return_value = fake_inputs
+        fake_model.generate.return_value = torch.arange(5).unsqueeze(0)
+        fake_processor.decode.return_value = "answer"
+
+        config = GenerationConfig(model_id="test/model", max_new_tokens=256)
+        inferencer = Inferencer(fake_model, fake_processor, config)
+        inferencer.infer("prompt")
+
+        _, kwargs = fake_model.generate.call_args
+        assert kwargs["max_new_tokens"] == 256

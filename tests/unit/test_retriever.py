@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from src.retrieval.query_transformer import HyDETransformer
 from src.retrieval.retriever import Retriever
 from src.retrieval.types import EmbeddingOutput
 from src.types import RetrievalError, RetrievalResult, RetrievedChunk, Source
@@ -307,12 +308,10 @@ class TestRetrieverExceptionHandling:
             vector_store=_make_vector_store(),
             reranker=_make_reranker(),
         )
-        try:
+        with pytest.raises(RetrievalError) as exc_info:
             retriever.retrieve("query")
-            raise AssertionError("Should have raised RetrievalError")
-        except RetrievalError as e:
-            assert e.__cause__ is not None
-            assert isinstance(e.__cause__, EmbeddingError)
+        assert exc_info.value.__cause__ is not None
+        assert isinstance(exc_info.value.__cause__, EmbeddingError)
 
     def test_retrieve_wraps_runtime_error_from_embedder_with_cause(self) -> None:
         """Embedder raising RuntimeError → RetrievalError with __cause__ set."""
@@ -323,12 +322,10 @@ class TestRetrieverExceptionHandling:
             vector_store=_make_vector_store(),
             reranker=_make_reranker(),
         )
-        try:
+        with pytest.raises(RetrievalError) as exc_info:
             retriever.retrieve("query")
-            raise AssertionError("Should have raised RetrievalError")
-        except RetrievalError as e:
-            assert e.__cause__ is not None
-            assert isinstance(e.__cause__, RuntimeError)
+        assert exc_info.value.__cause__ is not None
+        assert isinstance(exc_info.value.__cause__, RuntimeError)
 
     def test_retrieve_wraps_vector_store_error_with_cause(self) -> None:
         """Vector store raising Exception → RetrievalError with __cause__ set."""
@@ -339,12 +336,10 @@ class TestRetrieverExceptionHandling:
             vector_store=vector_store,
             reranker=_make_reranker(),
         )
-        try:
+        with pytest.raises(RetrievalError) as exc_info:
             retriever.retrieve("query")
-            raise AssertionError("Should have raised RetrievalError")
-        except RetrievalError as e:
-            assert e.__cause__ is not None
-            assert isinstance(e.__cause__, RuntimeError)
+        assert exc_info.value.__cause__ is not None
+        assert isinstance(exc_info.value.__cause__, RuntimeError)
 
     def test_retrieve_wraps_reranker_error_with_cause(self) -> None:
         """Reranker raising Exception → RetrievalError with __cause__ set."""
@@ -355,16 +350,14 @@ class TestRetrieverExceptionHandling:
             vector_store=_make_vector_store(),
             reranker=reranker,
         )
-        try:
+        with pytest.raises(RetrievalError) as exc_info:
             retriever.retrieve("query")
-            raise AssertionError("Should have raised RetrievalError")
-        except RetrievalError as e:
-            assert e.__cause__ is not None
-            assert isinstance(e.__cause__, ValueError)
+        assert exc_info.value.__cause__ is not None
+        assert isinstance(exc_info.value.__cause__, ValueError)
 
 
 def _make_transformer(return_value: str = "transformed query") -> MagicMock:
-    mock = MagicMock()
+    mock = MagicMock(spec=HyDETransformer)
     mock.transform.return_value = return_value
     return mock
 
@@ -508,3 +501,177 @@ class TestRetrieverParallelSearch:
         )
         with pytest.raises(RetrievalError, match=r"bulbapedia|pokeapi|smogon"):
             retriever.retrieve("query")
+
+    def test_single_source_scales_candidates_up(self) -> None:
+        vector_store = _make_vector_store()
+        retriever = Retriever(
+            embedder=_make_embedder(),
+            vector_store=vector_store,
+            reranker=_make_reranker(),
+        )
+        retriever.retrieve("query", sources=["pokeapi"])
+        call_kwargs = vector_store.search.call_args_list[0][1]
+        assert call_kwargs["top_k"] >= 75
+
+    def test_two_sources_scales_candidates_appropriately(self) -> None:
+        vector_store = _make_vector_store()
+        retriever = Retriever(
+            embedder=_make_embedder(),
+            vector_store=vector_store,
+            reranker=_make_reranker(),
+        )
+        retriever.retrieve("query", sources=["pokeapi", "smogon"])
+        for call in vector_store.search.call_args_list:
+            assert call[1]["top_k"] >= 37
+
+
+@pytest.mark.unit
+class TestRetrieverConfidenceThreshold:
+    def test_threshold_none_by_default(self) -> None:
+        retriever = Retriever(
+            embedder=_make_embedder(),
+            vector_store=_make_vector_store(),
+            reranker=_make_reranker(),
+        )
+        assert retriever._hyde_confidence_threshold is None
+
+    def test_threshold_stored_when_set(self) -> None:
+        retriever = Retriever(
+            embedder=_make_embedder(),
+            vector_store=_make_vector_store(),
+            reranker=_make_reranker(),
+            hyde_confidence_threshold=0.7,
+        )
+        assert retriever._hyde_confidence_threshold == 0.7
+
+    def test_high_confidence_skips_transformer(self) -> None:
+        transformer = _make_transformer("hyde output")
+        reranker = _make_reranker([make_chunk(score=0.9)])
+        retriever = Retriever(
+            embedder=_make_embedder(),
+            vector_store=_make_vector_store(),
+            reranker=reranker,
+            query_transformer=transformer,
+            hyde_confidence_threshold=0.5,
+        )
+        retriever.retrieve("query")
+        transformer.transform.assert_not_called()
+
+    def test_low_confidence_triggers_transformer(self) -> None:
+        transformer = _make_transformer("hyde output")
+        reranker = _make_reranker([make_chunk(score=0.2)])
+        retriever = Retriever(
+            embedder=_make_embedder(),
+            vector_store=_make_vector_store(),
+            reranker=reranker,
+            query_transformer=transformer,
+            hyde_confidence_threshold=0.5,
+        )
+        retriever.retrieve("query")
+        transformer.transform.assert_called_once_with("query")
+
+    def test_no_threshold_uses_transformer_always(self) -> None:
+        transformer = _make_transformer("hyde output")
+        reranker = _make_reranker([make_chunk(score=0.99)])
+        retriever = Retriever(
+            embedder=_make_embedder(),
+            vector_store=_make_vector_store(),
+            reranker=reranker,
+            query_transformer=transformer,
+        )
+        retriever.retrieve("query")
+        transformer.transform.assert_called_once_with("query")
+
+    def test_raw_pass_encodes_original_query(self) -> None:
+        embedder = _make_embedder()
+        reranker = _make_reranker([make_chunk(score=0.2)])
+        retriever = Retriever(
+            embedder=embedder,
+            vector_store=_make_vector_store(),
+            reranker=reranker,
+            query_transformer=_make_transformer("transformed"),
+            hyde_confidence_threshold=0.5,
+        )
+        retriever.retrieve("original query")
+        first_call = embedder.encode.call_args_list[0]
+        assert first_call[0][0] == ["original query"]
+
+    def test_high_confidence_returns_raw_pass_result(self) -> None:
+        raw_chunk = make_chunk(text="raw result", score=0.9)
+        reranker = _make_reranker([raw_chunk])
+        retriever = Retriever(
+            embedder=_make_embedder(),
+            vector_store=_make_vector_store(),
+            reranker=reranker,
+            query_transformer=_make_transformer("hyde output"),
+            hyde_confidence_threshold=0.5,
+        )
+        result = retriever.retrieve("query")
+        assert result.documents[0].text == "raw result"
+
+    def test_score_equal_to_threshold_skips_transformer(self) -> None:
+        transformer = _make_transformer("hyde output")
+        reranker = _make_reranker([make_chunk(score=0.5)])
+        retriever = Retriever(
+            embedder=_make_embedder(),
+            vector_store=_make_vector_store(),
+            reranker=reranker,
+            query_transformer=transformer,
+            hyde_confidence_threshold=0.5,
+        )
+        retriever.retrieve("query")
+        transformer.transform.assert_not_called()
+
+    def test_two_pass_empty_raw_reranked_falls_through_to_hyde(self) -> None:
+        """If raw reranker returns [], confidence=0.0 and HyDE pass is triggered."""
+        embedder = _make_embedder()
+        transformer = _make_transformer("hyde transformed")
+        reranker = MagicMock()
+        hyde_chunk = make_chunk(text="hyde result", score=0.7)
+        reranker.rerank.side_effect = [[], [hyde_chunk]]
+        retriever = Retriever(
+            embedder=embedder,
+            vector_store=_make_vector_store(),
+            reranker=reranker,
+            query_transformer=transformer,
+            hyde_confidence_threshold=0.5,
+        )
+        result = retriever.retrieve("some query")
+        assert embedder.encode.call_count == 2
+        assert reranker.rerank.call_count == 2
+        assert result.documents[0].text == "hyde result"
+
+
+@pytest.mark.unit
+class TestRetrieverMultiDraftHyDE:
+    def test_uses_transform_to_embedding_if_available(self) -> None:
+        from src.retrieval.query_transformer import MultiDraftHyDETransformer
+
+        transformer = MagicMock(spec=MultiDraftHyDETransformer)
+        transformer.transform_to_embedding.return_value = EmbeddingOutput(
+            dense=[[0.1] * 1024], sparse=[{1: 0.5}]
+        )
+        embedder = _make_embedder()
+        retriever = Retriever(
+            embedder=embedder,
+            vector_store=_make_vector_store(),
+            reranker=_make_reranker(),
+            query_transformer=transformer,
+        )
+        retriever.retrieve("my query")
+        transformer.transform_to_embedding.assert_called_once_with("my query")
+        embedder.encode.assert_not_called()
+
+    def test_falls_back_to_transform_when_no_transform_to_embedding(self) -> None:
+        transformer = MagicMock(spec=HyDETransformer)
+        transformer.transform.return_value = "transformed query"
+        embedder = _make_embedder()
+        retriever = Retriever(
+            embedder=embedder,
+            vector_store=_make_vector_store(),
+            reranker=_make_reranker(),
+            query_transformer=transformer,
+        )
+        retriever.retrieve("my query")
+        transformer.transform.assert_called_once_with("my query")
+        embedder.encode.assert_called_once_with(["transformed query"])

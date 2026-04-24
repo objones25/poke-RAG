@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Callable
 from pathlib import Path
 
 from src.retrieval.constants import WORDS_PER_TOKEN as _WORDS_PER_TOKEN
@@ -17,7 +18,7 @@ _RE_POKEAPI_NAME = re.compile(r"^(.*?)\s+is\s+(?:a|an|the)\s+")
 _RE_BULBA_DOC_SPLIT = re.compile(r"\n(?=Title:)")
 
 _SMOGON_TARGET_TOKENS = 400
-_BULBA_TARGET_TOKENS = 512
+_BULBA_TARGET_TOKENS = 400
 _OVERLAP_RATIO = 0.1
 
 
@@ -36,7 +37,9 @@ def _entity_type_from_stem(stem: str) -> EntityType | None:
     return _STEM_TO_ENTITY_TYPE.get(stem)
 
 
-def _approx_tokens(text: str) -> int:
+def _approx_tokens(text: str, *, tokenize_fn: Callable[[str], int] | None = None) -> int:
+    if tokenize_fn is not None:
+        return tokenize_fn(text)
     return max(1, int(len(text.split()) / _WORDS_PER_TOKEN))
 
 
@@ -45,7 +48,12 @@ def _split_sentences(text: str) -> list[str]:
     return [p for p in parts if p.strip()]
 
 
-def _merge_into_chunks(segments: list[str], target_tokens: int) -> list[str]:
+def _merge_into_chunks(
+    segments: list[str],
+    target_tokens: int,
+    *,
+    tokenize_fn: Callable[[str], int] | None = None,
+) -> list[str]:
     """Merge segments into token-bounded chunks with token-based overlap."""
     if not segments:
         return []
@@ -56,13 +64,13 @@ def _merge_into_chunks(segments: list[str], target_tokens: int) -> list[str]:
     current_tokens = 0
 
     for seg in segments:
-        seg_tokens = _approx_tokens(seg)
+        seg_tokens = _approx_tokens(seg, tokenize_fn=tokenize_fn)
         if current_tokens + seg_tokens > target_tokens and current:
             chunks.append(" ".join(current))
             overlap: list[str] = []
             overlap_tokens = 0
             for s in reversed(current):
-                s_tok = _approx_tokens(s)
+                s_tok = _approx_tokens(s, tokenize_fn=tokenize_fn)
                 if overlap_tokens + s_tok > overlap_budget:
                     break
                 overlap.insert(0, s)
@@ -78,23 +86,28 @@ def _merge_into_chunks(segments: list[str], target_tokens: int) -> list[str]:
     return chunks
 
 
-def _recursive_split(text: str, target_tokens: int) -> list[str]:
+def _recursive_split(
+    text: str,
+    target_tokens: int,
+    *,
+    tokenize_fn: Callable[[str], int] | None = None,
+) -> list[str]:
     """Split text into ≤target_token chunks, trying paragraphs then sentences."""
     stripped = text.strip()
     if not stripped:
         return []
-    if _approx_tokens(stripped) <= target_tokens:
+    if _approx_tokens(stripped, tokenize_fn=tokenize_fn) <= target_tokens:
         return [stripped]
 
     paragraphs = [p.strip() for p in stripped.split("\n\n") if p.strip()]
     if len(paragraphs) > 1:
-        merged = _merge_into_chunks(paragraphs, target_tokens)
+        merged = _merge_into_chunks(paragraphs, target_tokens, tokenize_fn=tokenize_fn)
         if len(merged) > 1:
             return merged
 
     sentences = _split_sentences(stripped)
     if len(sentences) > 1:
-        return _merge_into_chunks(sentences, target_tokens)
+        return _merge_into_chunks(sentences, target_tokens, tokenize_fn=tokenize_fn)
 
     return [stripped]
 
@@ -147,6 +160,7 @@ def chunk_smogon_line(
     *,
     doc_id: str,
     entity_type: EntityType | None = None,
+    tokenize_fn: Callable[[str], int] | None = None,
 ) -> list[RetrievedChunk]:
     """Split one smogon entry (possibly long) into token-bounded chunks."""
     stripped = line.strip()
@@ -158,13 +172,14 @@ def chunk_smogon_line(
     colon_idx = stripped.find(":")
     body = stripped[colon_idx + 1 :].strip() if colon_idx != -1 else stripped
 
-    raw_chunks = _recursive_split(body, _SMOGON_TARGET_TOKENS)
+    raw_chunks = _recursive_split(body, _SMOGON_TARGET_TOKENS, tokenize_fn=tokenize_fn)
     if not raw_chunks:
         return []
 
+    prefix = f"{entity_name}: " if entity_name else ""
     return [
         RetrievedChunk(
-            text=chunk_text,
+            text=f"{prefix}{chunk_text}",
             score=0.0,
             source="smogon",
             entity_name=entity_name,
@@ -181,6 +196,7 @@ def chunk_bulbapedia_doc(
     *,
     doc_id: str,
     entity_type: EntityType | None = None,
+    tokenize_fn: Callable[[str], int] | None = None,
 ) -> list[RetrievedChunk]:
     """Split one bulbapedia document (Title: header + body) into chunks."""
     stripped = doc.strip()
@@ -210,7 +226,7 @@ def chunk_bulbapedia_doc(
             )
         ]
 
-    raw_chunks = _recursive_split(body, _BULBA_TARGET_TOKENS)
+    raw_chunks = _recursive_split(body, _BULBA_TARGET_TOKENS, tokenize_fn=tokenize_fn)
     if not raw_chunks:
         return []
 
@@ -228,7 +244,12 @@ def chunk_bulbapedia_doc(
     ]
 
 
-def chunk_file(path: Path, *, source: Source) -> list[RetrievedChunk]:
+def chunk_file(
+    path: Path,
+    *,
+    source: Source,
+    tokenize_fn: Callable[[str], int] | None = None,
+) -> list[RetrievedChunk]:
     """Chunk an entire file according to its source format."""
     text = path.read_text(encoding="utf-8")
     entity_type = _entity_type_from_stem(path.stem)
@@ -243,7 +264,12 @@ def chunk_file(path: Path, *, source: Source) -> list[RetrievedChunk]:
     elif source == "smogon":
         for i, line in enumerate(text.splitlines()):
             chunks.extend(
-                chunk_smogon_line(line, doc_id=f"{path.stem}_{i}", entity_type=entity_type)
+                chunk_smogon_line(
+                    line,
+                    doc_id=f"{path.stem}_{i}",
+                    entity_type=entity_type,
+                    tokenize_fn=tokenize_fn,
+                )
             )
 
     elif source == "bulbapedia":
@@ -252,7 +278,12 @@ def chunk_file(path: Path, *, source: Source) -> list[RetrievedChunk]:
             doc = doc.strip()
             if doc:
                 chunks.extend(
-                    chunk_bulbapedia_doc(doc, doc_id=f"{path.stem}_{i}", entity_type=entity_type)
+                    chunk_bulbapedia_doc(
+                        doc,
+                        doc_id=f"{path.stem}_{i}",
+                        entity_type=entity_type,
+                        tokenize_fn=tokenize_fn,
+                    )
                 )
 
     _LOG.debug("Chunked '%s' (source=%s) → %d chunk(s)", path.name, source, len(chunks))

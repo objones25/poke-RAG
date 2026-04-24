@@ -92,7 +92,7 @@ class TestUpsert:
         store.upsert("pokeapi", [chunk], _make_embeddings(n=1))
         payload = client.upsert.call_args[1]["points"][0].payload
         assert payload["source"] == "pokeapi"
-        assert payload["entity_name"] == "Ivysaur"
+        assert payload["entity_name"] == "ivysaur"
         assert payload["chunk_index"] == 2
         assert payload["original_doc_id"] == "d_1"
 
@@ -111,6 +111,22 @@ class TestUpsert:
         point = client.upsert.call_args[1]["points"][0]
         vector = point.vector
         assert "sparse" in vector
+
+    def test_upsert_normalizes_entity_name_to_lowercase(self) -> None:
+        client = _make_client()
+        store = QdrantVectorStore(client)
+        chunk = _make_chunk(entity_name="Pikachu")
+        store.upsert("pokeapi", [chunk], _make_embeddings(n=1))
+        payload = client.upsert.call_args[1]["points"][0].payload
+        assert payload["entity_name"] == "pikachu"
+
+    def test_upsert_preserves_none_entity_name(self) -> None:
+        client = _make_client()
+        store = QdrantVectorStore(client)
+        chunk = _make_chunk(entity_name=None)
+        store.upsert("pokeapi", [chunk], _make_embeddings(n=1))
+        payload = client.upsert.call_args[1]["points"][0].payload
+        assert payload["entity_name"] is None
 
 
 @pytest.mark.unit
@@ -176,6 +192,18 @@ class TestSearch:
         second_call_kwargs = client.query_points.call_args_list[1][1]
         assert second_call_kwargs.get("query_filter") is None
         assert len(results) == 1
+
+    def test_search_normalizes_entity_name_to_lowercase_in_filter(self) -> None:
+        client = _make_client()
+        client.query_points.return_value.points = [
+            self._make_scored_point("Pikachu text", 0.9, "pikachu")
+        ]
+        store = QdrantVectorStore(client)
+        store.search("pokeapi", [0.1] * 1024, {1: 0.5}, top_k=5, entity_name="Pikachu")
+        first_call_kwargs = client.query_points.call_args_list[0][1]
+        query_filter = first_call_kwargs.get("query_filter")
+        assert query_filter is not None
+        assert query_filter.must[0].match.value == "pikachu"
 
     def test_no_filter_when_entity_name_is_none(self) -> None:
         client = _make_client()

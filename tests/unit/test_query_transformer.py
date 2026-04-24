@@ -6,7 +6,12 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.retrieval.query_transformer import HyDETransformer, PassthroughTransformer
+from src.retrieval.query_transformer import (
+    HyDETransformer,
+    MultiDraftHyDETransformer,
+    PassthroughTransformer,
+)
+from src.retrieval.types import EmbeddingOutput
 
 
 @pytest.mark.unit
@@ -85,8 +90,134 @@ class TestHyDETransformer:
         assert isinstance(HyDETransformer(self._make_inferencer()), QueryTransformerProtocol)
 
     def test_max_tokens_passed_to_infer_prompt_config(self) -> None:
-        """HyDETransformer respects max_new_tokens from its config."""
+        """HyDETransformer forwards its max_new_tokens to infer()."""
         mock_inf = self._make_inferencer()
         t = HyDETransformer(mock_inf, max_new_tokens=50)
         t.transform("query")
         mock_inf.infer.assert_called_once()
+        _, kwargs = mock_inf.infer.call_args
+        assert kwargs.get("max_new_tokens") == 50
+
+
+@pytest.mark.unit
+class TestMultiDraftHyDETransformer:
+    def _make_inferencer(self, return_value: str = "A hypothetical doc") -> MagicMock:
+        mock = MagicMock()
+        mock.infer.return_value = return_value
+        return mock
+
+    def _make_embedder(self, dense_dim: int = 4) -> MagicMock:
+        mock = MagicMock()
+        mock.encode.return_value = EmbeddingOutput(
+            dense=[[0.1] * dense_dim],
+            sparse=[{1: 0.5}],
+        )
+        return mock
+
+    def test_transform_returns_string(self) -> None:
+        t = MultiDraftHyDETransformer(self._make_inferencer(), self._make_embedder(), num_drafts=2)
+        result = t.transform("what type is Bulbasaur?")
+        assert isinstance(result, str)
+
+    def test_transform_to_embedding_calls_inferencer_num_drafts_times(self) -> None:
+        mock_inf = self._make_inferencer("draft text")
+        embedder = MagicMock()
+        embedder.encode.return_value = EmbeddingOutput(
+            dense=[[0.1] * 4, [0.1] * 4, [0.1] * 4], sparse=[{}, {}, {}]
+        )
+        t = MultiDraftHyDETransformer(mock_inf, embedder, num_drafts=3)
+        t.transform_to_embedding("query")
+        assert mock_inf.infer.call_count == 3
+
+    def test_transform_to_embedding_returns_embedding_output(self) -> None:
+        t = MultiDraftHyDETransformer(self._make_inferencer(), self._make_embedder(), num_drafts=1)
+        result = t.transform_to_embedding("query")
+        assert isinstance(result, EmbeddingOutput)
+
+    def test_transform_to_embedding_returns_single_dense_vector(self) -> None:
+        embedder = MagicMock()
+        embedder.encode.return_value = EmbeddingOutput(
+            dense=[[0.1] * 4, [0.2] * 4, [0.3] * 4], sparse=[{}, {}, {}]
+        )
+        t = MultiDraftHyDETransformer(self._make_inferencer(), embedder, num_drafts=3)
+        result = t.transform_to_embedding("query")
+        assert len(result.dense) == 1
+
+    def test_transform_to_embedding_returns_single_sparse_dict(self) -> None:
+        embedder = MagicMock()
+        embedder.encode.return_value = EmbeddingOutput(
+            dense=[[0.1] * 4, [0.2] * 4], sparse=[{1: 0.3}, {2: 0.4}]
+        )
+        t = MultiDraftHyDETransformer(self._make_inferencer(), embedder, num_drafts=2)
+        result = t.transform_to_embedding("query")
+        assert len(result.sparse) == 1
+
+    def test_dense_vector_is_element_wise_mean(self) -> None:
+        embedder = MagicMock()
+        embedder.encode.return_value = EmbeddingOutput(
+            dense=[[0.2, 0.4], [0.6, 0.8]], sparse=[{}, {}]
+        )
+        t = MultiDraftHyDETransformer(self._make_inferencer("d"), embedder, num_drafts=2)
+        result = t.transform_to_embedding("query")
+        assert abs(result.dense[0][0] - 0.4) < 1e-6
+        assert abs(result.dense[0][1] - 0.6) < 1e-6
+
+    def test_sparse_uses_max_weight_per_token(self) -> None:
+        embedder = MagicMock()
+        embedder.encode.return_value = EmbeddingOutput(
+            dense=[[0.1], [0.1]],
+            sparse=[{1: 0.3, 2: 0.8}, {1: 0.9, 3: 0.5}],
+        )
+        t = MultiDraftHyDETransformer(self._make_inferencer("d"), embedder, num_drafts=2)
+        result = t.transform_to_embedding("query")
+        assert result.sparse[0] == {1: 0.9, 2: 0.8, 3: 0.5}
+
+    def test_all_drafts_fail_falls_back_to_raw_embedding(self) -> None:
+        mock_inf = MagicMock()
+        mock_inf.infer.side_effect = RuntimeError("model failed")
+        embedder = self._make_embedder()
+        t = MultiDraftHyDETransformer(mock_inf, embedder, num_drafts=3)
+        result = t.transform_to_embedding("my query")
+        embedder.encode.assert_called_once_with(["my query"])
+        assert isinstance(result, EmbeddingOutput)
+
+    def test_partial_failure_averages_successful_drafts_only(self) -> None:
+        call_count = 0
+
+        def infer(prompt: str, **kwargs: object) -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 2:
+                raise RuntimeError("draft 2 failed")
+            return "draft text"
+
+        mock_inf = MagicMock()
+        mock_inf.infer.side_effect = infer
+
+        embedder = MagicMock()
+        embedder.encode.return_value = EmbeddingOutput(
+            dense=[[0.5, 0.5], [0.5, 0.5]], sparse=[{1: 0.4}, {1: 0.4}]
+        )
+        t = MultiDraftHyDETransformer(mock_inf, embedder, num_drafts=3)
+        result = t.transform_to_embedding("query")
+        encode_arg = embedder.encode.call_args[0][0]
+        assert len(encode_arg) == 2
+        assert len(result.dense) == 1
+
+    def test_zero_drafts_falls_back_to_raw_query(self) -> None:
+        embedder = self._make_embedder()
+        transformer = MultiDraftHyDETransformer(
+            self._make_inferencer(), embedder, num_drafts=0
+        )
+        result = transformer.transform_to_embedding("how does Intimidate work?")
+        assert embedder.encode.called
+        assert len(result.dense) == 1
+        assert len(result.sparse) == 1
+
+    def test_satisfies_protocol(self) -> None:
+        from src.retrieval.protocols import QueryTransformerProtocol
+
+        t = MultiDraftHyDETransformer(
+            self._make_inferencer(), self._make_embedder(), num_drafts=2
+        )
+        assert isinstance(t, QueryTransformerProtocol)

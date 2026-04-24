@@ -99,12 +99,13 @@ class TestQueryResponseValidation:
         assert resp.query == "What type is Pikachu?"
         assert resp.confidence_score == 0.95
 
-    def test_query_response_confidence_score_none(self) -> None:
+    def test_query_response_confidence_score_value(self) -> None:
         resp = QueryResponse(
             answer="Pikachu is Electric-type.",
             sources_used=["pokeapi"],
             num_chunks_used=3,
             model_name="google/gemma-4-E4B-it",
             query="What type is Pikachu?",
+            confidence_score=0.88,
         )
-        assert resp.confidence_score is None
+        assert resp.confidence_score == 0.88

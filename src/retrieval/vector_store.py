@@ -79,7 +79,9 @@ class QdrantVectorStore:
                 payload={
                     "text": doc.text,
                     "source": doc.source,
-                    "entity_name": doc.entity_name,
+                    "entity_name": (
+                        doc.entity_name.lower().strip() if doc.entity_name is not None else None
+                    ),
                     "entity_type": doc.entity_type,
                     "chunk_index": doc.chunk_index,
                     "original_doc_id": doc.original_doc_id,
@@ -164,9 +166,12 @@ class QdrantVectorStore:
     ) -> list[RetrievedChunk]:
         _LOG.debug("Searching '%s': top_k=%d, entity_name=%s", collection, top_k, entity_name)
 
+        normalized_name = entity_name.lower().strip() if entity_name is not None else None
         query_filter = (
-            Filter(must=[FieldCondition(key="entity_name", match=MatchValue(value=entity_name))])
-            if entity_name is not None
+            Filter(
+                must=[FieldCondition(key="entity_name", match=MatchValue(value=normalized_name))]
+            )
+            if normalized_name is not None
             else None
         )
 

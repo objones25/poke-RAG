@@ -16,9 +16,13 @@ class Inferencer:
         self._processor = processor
         self._config = config
 
-    def infer(self, prompt: str) -> str:
+    def infer(self, prompt: str, *, max_new_tokens: int | None = None) -> str:
         if not prompt.strip():
             raise ValueError("prompt must not be empty")
+
+        resolved_max_new_tokens = (
+            max_new_tokens if max_new_tokens is not None else self._config.max_new_tokens
+        )
 
         messages = [{"role": "user", "content": prompt}]
         text: str = self._processor.apply_chat_template(
@@ -32,12 +36,12 @@ class Inferencer:
         _LOG.debug(
             "Inferring: prompt_len=%d tokens, max_new=%d",
             input_len,
-            self._config.max_new_tokens,
+            resolved_max_new_tokens,
         )
 
         output_ids = self._model.generate(  # type: ignore[operator]
             **inputs,
-            max_new_tokens=self._config.max_new_tokens,
+            max_new_tokens=resolved_max_new_tokens,
             temperature=self._config.temperature,
             top_p=self._config.top_p,
             do_sample=self._config.do_sample,
