@@ -35,6 +35,36 @@ def _make_reranker(chunks: list[RetrievedChunk] | None = None) -> MagicMock:
 
 
 @pytest.mark.unit
+class TestRetrieverInit:
+    def test_raises_on_non_positive_candidates_per_source(self) -> None:
+        with pytest.raises(ValueError, match="candidates_per_source must be positive"):
+            Retriever(
+                embedder=_make_embedder(),
+                vector_store=_make_vector_store(),
+                reranker=_make_reranker(),
+                candidates_per_source=0,
+            )
+
+    def test_raises_on_negative_candidates_per_source(self) -> None:
+        with pytest.raises(ValueError, match="candidates_per_source must be positive"):
+            Retriever(
+                embedder=_make_embedder(),
+                vector_store=_make_vector_store(),
+                reranker=_make_reranker(),
+                candidates_per_source=-5,
+            )
+
+    def test_accepts_positive_candidates_per_source(self) -> None:
+        retriever = Retriever(
+            embedder=_make_embedder(),
+            vector_store=_make_vector_store(),
+            reranker=_make_reranker(),
+            candidates_per_source=10,
+        )
+        assert retriever._candidates_per_source == 10
+
+
+@pytest.mark.unit
 class TestRetrieverRetrieve:
     def test_returns_retrieval_result(self) -> None:
         retriever = Retriever(
@@ -219,6 +249,33 @@ class TestRetrieverRetrieve:
         )
         result = retriever.retrieve("query")
         assert isinstance(result.documents, tuple)
+
+    def test_raises_on_non_positive_top_k(self) -> None:
+        retriever = Retriever(
+            embedder=_make_embedder(),
+            vector_store=_make_vector_store(),
+            reranker=_make_reranker(),
+        )
+        with pytest.raises(ValueError, match="top_k must be a positive integer"):
+            retriever.retrieve("query", top_k=0)
+
+    def test_raises_on_negative_top_k(self) -> None:
+        retriever = Retriever(
+            embedder=_make_embedder(),
+            vector_store=_make_vector_store(),
+            reranker=_make_reranker(),
+        )
+        with pytest.raises(ValueError, match="top_k must be a positive integer"):
+            retriever.retrieve("query", top_k=-5)
+
+    def test_accepts_positive_top_k(self) -> None:
+        retriever = Retriever(
+            embedder=_make_embedder(),
+            vector_store=_make_vector_store(),
+            reranker=_make_reranker([make_chunk()]),
+        )
+        result = retriever.retrieve("query", top_k=10)
+        assert isinstance(result, RetrievalResult)
 
     def test_raises_embedding_error_when_embedder_returns_empty_dense(self) -> None:
         embedder = MagicMock()

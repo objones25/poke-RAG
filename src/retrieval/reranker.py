@@ -11,6 +11,8 @@ from src.types import RetrievedChunk
 
 _LOG = logging.getLogger(__name__)
 
+_RERANKER_MAX_LENGTH = 512
+
 
 class BGEReranker:
     """Reranker backed by BAAI/bge-reranker-v2-m3.
@@ -43,7 +45,8 @@ class BGEReranker:
 
         _LOG.debug("Reranking %d candidates, top_k=%d", len(documents), top_k)
         pairs = [[query, doc.text] for doc in documents]
-        scores: list[float] = [float(s) for s in self._model.compute_score(pairs, max_length=512)]
+        raw_scores = self._model.compute_score(pairs, max_length=_RERANKER_MAX_LENGTH)
+        scores: list[float] = [float(s) for s in raw_scores]
 
         ranked = sorted(
             (replace(doc, score=score) for doc, score in zip(documents, scores, strict=True)),

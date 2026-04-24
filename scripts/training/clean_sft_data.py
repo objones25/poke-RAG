@@ -59,7 +59,7 @@ def _is_bad_answer(answer: str) -> bool:
     return any(pat.search(answer) for pat in _BAD_ANSWER_PATTERNS)
 
 
-def _normalize_messages(messages: list[dict]) -> list[dict] | None:
+def _normalize_messages(messages: list[dict[str, str]]) -> list[dict[str, str]] | None:
     roles = [m.get("role") for m in messages]
     if roles == ["system", "user", "assistant"]:
         return [messages[1], messages[2]]

@@ -369,3 +369,22 @@ class TestHealthEndpointMetadata:
         response = client.get("/health")
         assert response.status_code == 200
         assert response.json() == {"status": "ok"}
+
+
+@pytest.mark.unit
+class TestStatsApiKeyTiming:
+    """Test that stats endpoint uses constant-time comparison for API key."""
+
+    def test_stats_uses_hmac_compare_digest(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Verify that hmac.compare_digest is used (not plain ==) for timing-safe comparison."""
+        from unittest.mock import patch
+
+        monkeypatch.setenv("STATS_API_KEY", "my-secret-key")
+
+        with patch("src.api.app.hmac.compare_digest") as mock_compare:
+            mock_compare.return_value = False
+            response = client.get("/stats", headers={"Authorization": "Bearer wrong-key"})
+            assert response.status_code == 401
+            mock_compare.assert_called_once()

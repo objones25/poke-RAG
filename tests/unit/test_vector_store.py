@@ -44,10 +44,69 @@ class TestEnsureCollections:
 
         client = _make_client()
         client.create_collection.side_effect = UnexpectedResponse(
-            status_code=400, reason_phrase="already exists", content=b"", headers={}  # type: ignore[arg-type]
+            status_code=409, reason_phrase="already exists", content=b"", headers={}  # type: ignore[arg-type]
         )
         store = QdrantVectorStore(client)
         store.ensure_collections()  # must not raise
+
+    def test_skips_409_conflict_errors_only(self) -> None:
+        """Only 409 Conflict should be suppressed; other HTTP errors should propagate."""
+        from qdrant_client.http.exceptions import UnexpectedResponse
+
+        client = _make_client()
+        client.create_collection.side_effect = UnexpectedResponse(
+            status_code=409, reason_phrase="conflict", content=b"", headers={}  # type: ignore[arg-type]
+        )
+        store = QdrantVectorStore(client)
+        store.ensure_collections()  # must not raise
+
+    def test_raises_on_other_http_errors(self) -> None:
+        """HTTP errors other than 409 should propagate."""
+        from qdrant_client.http.exceptions import UnexpectedResponse
+
+        client = _make_client()
+        client.create_collection.side_effect = UnexpectedResponse(
+            status_code=500, reason_phrase="server error", content=b"", headers={}  # type: ignore[arg-type]
+        )
+        store = QdrantVectorStore(client)
+        with pytest.raises(UnexpectedResponse):
+            store.ensure_collections()
+
+    def test_raises_on_401_unauthorized(self) -> None:
+        """401 Unauthorized should propagate."""
+        from qdrant_client.http.exceptions import UnexpectedResponse
+
+        client = _make_client()
+        client.create_collection.side_effect = UnexpectedResponse(
+            status_code=401, reason_phrase="unauthorized", content=b"", headers={}  # type: ignore[arg-type]
+        )
+        store = QdrantVectorStore(client)
+        with pytest.raises(UnexpectedResponse):
+            store.ensure_collections()
+
+    def test_raises_on_403_forbidden(self) -> None:
+        """403 Forbidden should propagate."""
+        from qdrant_client.http.exceptions import UnexpectedResponse
+
+        client = _make_client()
+        client.create_collection.side_effect = UnexpectedResponse(
+            status_code=403, reason_phrase="forbidden", content=b"", headers={}  # type: ignore[arg-type]
+        )
+        store = QdrantVectorStore(client)
+        with pytest.raises(UnexpectedResponse):
+            store.ensure_collections()
+
+    def test_raises_on_400_bad_request(self) -> None:
+        """400 Bad Request should propagate."""
+        from qdrant_client.http.exceptions import UnexpectedResponse
+
+        client = _make_client()
+        client.create_collection.side_effect = UnexpectedResponse(
+            status_code=400, reason_phrase="bad request", content=b"", headers={}  # type: ignore[arg-type]
+        )
+        store = QdrantVectorStore(client)
+        with pytest.raises(UnexpectedResponse):
+            store.ensure_collections()
 
 
 @pytest.mark.unit

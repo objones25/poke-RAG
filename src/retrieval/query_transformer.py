@@ -41,7 +41,11 @@ class HyDETransformer:
         try:
             hypothesis: str = self._inferencer.infer(prompt, max_new_tokens=self._max_new_tokens)
         except Exception as exc:
-            _LOG.warning("HyDE inference failed, falling back to original query: %s", exc)
+            _LOG.warning(
+                "HyDE inference failed, falling back to original query: %s",
+                exc,
+                exc_info=True,
+            )
             return query
 
         if not hypothesis or not hypothesis.strip():

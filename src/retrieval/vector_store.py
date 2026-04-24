@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
 import logging
 import uuid
 from typing import Any
@@ -44,8 +43,8 @@ class QdrantVectorStore:
     def ensure_collections(self) -> None:
         _LOG.info("Ensuring %d Qdrant collections: %s", len(_SOURCES), _SOURCES)
         for source in _SOURCES:
-            # suppress AlreadyExists: Qdrant raises UnexpectedResponse(409) on duplicate create
-            with contextlib.suppress(UnexpectedResponse):
+            # Only suppress 409 Conflict (already exists); propagate all other HTTP errors
+            try:
                 self._client.create_collection(
                     collection_name=source,
                     vectors_config={
@@ -57,6 +56,9 @@ class QdrantVectorStore:
                         ),
                     },
                 )
+            except UnexpectedResponse as exc:
+                if exc.status_code != 409:
+                    raise
             _LOG.debug("Collection '%s' ready", source)
 
     def upsert(

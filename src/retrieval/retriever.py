@@ -33,6 +33,8 @@ class Retriever:
         query_transformer: QueryTransformerProtocol | None = None,
         hyde_confidence_threshold: float | None = None,
     ) -> None:
+        if candidates_per_source <= 0:
+            raise ValueError(f"candidates_per_source must be positive, got {candidates_per_source}")
         self._embedder = embedder
         self._vector_store = vector_store
         self._reranker = reranker
@@ -141,6 +143,8 @@ class Retriever:
         sources: list[Source] | None = None,
         entity_name: str | None = None,
     ) -> RetrievalResult:
+        if top_k <= 0:
+            raise ValueError(f"top_k must be a positive integer, got {top_k}")
         active_sources = sources if sources is not None else _ALL_SOURCES
         if not active_sources:
             raise RetrievalError("sources must not be empty")

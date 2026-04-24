@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import logging
 import os
 import time
@@ -234,7 +235,7 @@ async def stats(request: Request) -> dict[str, bool]:
     stats_api_key = os.getenv("STATS_API_KEY")
     if stats_api_key:
         auth = request.headers.get("Authorization", "")
-        if not auth.startswith("Bearer ") or auth[7:] != stats_api_key:
+        if not auth.startswith("Bearer ") or not hmac.compare_digest(auth[7:], stats_api_key):
             return JSONResponse(status_code=401, content={"detail": "Unauthorized"})  # type: ignore[return-value]
     client: QdrantClient | None = getattr(request.app.state, "qdrant_client", None)
     if client is None:

@@ -91,6 +91,13 @@ class TestBGERerankerRerank:
         call_kwargs = mock_model.compute_score.call_args[1]
         assert call_kwargs.get("max_length") == 512
 
+    def test_uses_reranker_max_length_constant(self) -> None:
+        """Verify that max_length is defined as a module constant, not hardcoded."""
+        from src.retrieval import reranker as reranker_module
+
+        assert hasattr(reranker_module, "_RERANKER_MAX_LENGTH")
+        assert reranker_module._RERANKER_MAX_LENGTH == 512
+
     def test_empty_documents_returns_empty(self) -> None:
         mock_model = MagicMock()
         mock_model.compute_score.return_value = []

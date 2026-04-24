@@ -99,6 +99,9 @@ def run(
             attempted += 1
             try:
                 pair = client.generate_qa_pair(chunk, source)
+            except RuntimeError:
+                # Exhausted retries is fatal, propagate it
+                raise
             except Exception as exc:
                 logger.warning("Skipping chunk due to error: %s", exc)
                 continue

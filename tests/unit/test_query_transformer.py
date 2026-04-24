@@ -98,6 +98,21 @@ class TestHyDETransformer:
         _, kwargs = mock_inf.infer.call_args
         assert kwargs.get("max_new_tokens") == 50
 
+    def test_exception_logs_traceback_on_inference_error(self, caplog) -> None:
+        """HyDE error logging should include traceback (exc_info=True)."""
+        import logging
+
+        caplog.set_level(logging.WARNING)
+        mock_inf = MagicMock()
+        mock_inf.infer.side_effect = RuntimeError("model crashed: cuda OOM")
+        t = HyDETransformer(mock_inf)
+        result = t.transform("query")
+        assert result == "query"
+        assert len(caplog.records) > 0
+        warning_record = caplog.records[0]
+        # exc_info=True means the record should have an exception attached
+        assert warning_record.exc_info is not None
+
 
 @pytest.mark.unit
 class TestMultiDraftHyDETransformer:

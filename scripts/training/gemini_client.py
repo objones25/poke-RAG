@@ -104,17 +104,22 @@ class GeminiClient:
                     contents=prompt,
                     config=config,
                 )
+                if response is None or not response.text:
+                    raise RuntimeError("Gemini API returned empty response")
                 pair = GeminiQAPair.model_validate_json(response.text)
                 return pair if _is_quality_pair(pair) else None
             except ValidationError as exc:
                 logger.warning("JSON validation failed (attempt %d): %s", attempt + 1, exc)
-                if response is not None:
+                if response is not None and response.text:
                     try:
                         data = json.loads(response.text)
                         pair = GeminiQAPair(**data)
                         return pair if _is_quality_pair(pair) else None
-                    except Exception:
-                        pass
+                    except (json.JSONDecodeError, KeyError, ValidationError) as e:
+                        logger.debug("Fallback JSON parsing failed: %s", e)
+            except RuntimeError:
+                # Empty response is fatal, re-raise immediately
+                raise
             except Exception as exc:
                 err_str = str(exc)
                 if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
