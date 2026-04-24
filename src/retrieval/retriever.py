@@ -62,6 +62,7 @@ class Retriever:
         query_sparse: dict[int, float],
         entity_name: str | None,
         top_k: int,
+        query_colbert: list[list[float]] | None = None,
     ) -> tuple[Source, list[RetrievedChunk]]:
         chunks = self._vector_store.search(
             collection=source,
@@ -69,6 +70,7 @@ class Retriever:
             query_sparse=query_sparse,
             top_k=top_k,
             entity_name=entity_name,
+            query_colbert=query_colbert,
         )
         _LOG.debug("Search '%s' → %d candidates", source, len(chunks))
         return source, chunks
@@ -122,6 +124,9 @@ class Retriever:
         candidates_per_source: int,
         entity_name: str | None,
     ) -> list[RetrievedChunk]:
+        query_colbert: list[list[float]] | None = (
+            embedding.colbert[0] if embedding.colbert else None
+        )
         candidates: list[RetrievedChunk] = []
         with ThreadPoolExecutor(max_workers=len(active_sources)) as executor:
             futures = {
@@ -132,6 +137,7 @@ class Retriever:
                     embedding.sparse[0],
                     entity_name,
                     candidates_per_source,
+                    query_colbert,
                 ): src
                 for src in active_sources
             }
@@ -313,6 +319,7 @@ class AsyncRetriever:
         query_sparse: dict[int, float],
         entity_name: str | None,
         top_k: int,
+        query_colbert: list[list[float]] | None = None,
     ) -> tuple[Source, list[RetrievedChunk]]:
         try:
             chunks = await asyncio.wait_for(
@@ -322,6 +329,7 @@ class AsyncRetriever:
                     query_sparse=query_sparse,
                     top_k=top_k,
                     entity_name=entity_name,
+                    query_colbert=query_colbert,
                 ),
                 timeout=_SEARCH_TIMEOUT_SECONDS,
             )
@@ -345,6 +353,9 @@ class AsyncRetriever:
         candidates_per_source: int,
         entity_name: str | None,
     ) -> list[RetrievedChunk]:
+        query_colbert: list[list[float]] | None = (
+            embedding.colbert[0] if embedding.colbert else None
+        )
         tasks: list[asyncio.Task[tuple[Source, list[RetrievedChunk]]]] = []
         try:
             async with asyncio.TaskGroup() as tg:
@@ -357,6 +368,7 @@ class AsyncRetriever:
                                 embedding.sparse[0],
                                 entity_name,
                                 candidates_per_source,
+                                query_colbert,
                             )
                         )
                     )

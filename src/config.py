@@ -160,6 +160,7 @@ class Settings:
     redis_username: str = "default"
     redis_password: SecretStr | None = None
     async_pipeline_enabled: bool = False
+    colbert_enabled: bool = False
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -262,5 +263,8 @@ class Settings:
             redis_password=SecretStr(pw) if (pw := os.getenv("REDIS_PASSWORD")) else None,
             async_pipeline_enabled=_parse_bool(
                 os.getenv("ASYNC_PIPELINE_ENABLED"), "ASYNC_PIPELINE_ENABLED", False
+            ),
+            colbert_enabled=_parse_bool(
+                os.getenv("COLBERT_ENABLED"), "COLBERT_ENABLED", False
             ),
         )

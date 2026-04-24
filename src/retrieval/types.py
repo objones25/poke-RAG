@@ -11,3 +11,4 @@ class EmbeddingOutput:
 
     dense: list[list[float]]  # shape (n, 1024) — primary semantic vectors
     sparse: list[dict[int, float]]  # token_id → weight per document
+    colbert: list[list[list[float]]] | None = None  # (n, seq_len, 1024) — token-level vectors

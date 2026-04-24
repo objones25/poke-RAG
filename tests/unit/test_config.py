@@ -928,6 +928,41 @@ class TestHydeConfidenceThresholdBoundary:
 
 
 @pytest.mark.unit
+class TestColbertEnabledSetting:
+    def test_colbert_enabled_default_false(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.delenv("COLBERT_ENABLED", raising=False)
+        settings = Settings.from_env()
+        assert settings.colbert_enabled is False
+
+    def test_colbert_enabled_true(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("COLBERT_ENABLED", "true")
+        settings = Settings.from_env()
+        assert settings.colbert_enabled is True
+
+    def test_colbert_enabled_false_explicit(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("COLBERT_ENABLED", "false")
+        settings = Settings.from_env()
+        assert settings.colbert_enabled is False
+
+    def test_colbert_enabled_invalid_raises_value_error(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("COLBERT_ENABLED", "maybe")
+        with pytest.raises(ValueError, match="COLBERT_ENABLED"):
+            Settings.from_env()
+
+
+@pytest.mark.unit
 class TestTrustedProxyCountAsFloat:
     def test_trusted_proxy_count_as_float_via_middleware(
         self, monkeypatch: pytest.MonkeyPatch

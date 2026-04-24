@@ -15,6 +15,8 @@ from qdrant_client.models import (
     Fusion,
     FusionQuery,
     MatchValue,
+    MultiVectorComparator,
+    MultiVectorConfig,
     PointStruct,
     Prefetch,
     QueryResponse,
@@ -33,25 +35,44 @@ _SOURCES: tuple[Source, ...] = ("bulbapedia", "pokeapi", "smogon")
 _DENSE_DIM = 1024
 _DENSE_VECTOR_NAME = "dense"
 _SPARSE_VECTOR_NAME = "sparse"
+_COLBERT_VECTOR_NAME = "colbert"
 _UPSERT_BATCH_SIZE = 100
+_COLBERT_UPSERT_BATCH_SIZE = 2  # ColBERT token matrices are large; keep HTTP payloads under 32 MB
 
 
 class QdrantVectorStore:
     """One Qdrant collection per source, hybrid dense+sparse vectors."""
 
-    def __init__(self, client: Any) -> None:
+    def __init__(self, client: Any, *, colbert_enabled: bool = False) -> None:
         self._client = client
+        self._colbert_enabled = colbert_enabled
+
+    def drop_collections(self) -> None:
+        """Delete all source collections. Required before schema change (e.g. enabling ColBERT)."""
+        for source in _SOURCES:
+            try:
+                self._client.delete_collection(collection_name=source)
+                _LOG.info("Dropped collection '%s'", source)
+            except Exception as exc:
+                _LOG.warning("Could not drop collection '%s': %s", source, exc)
 
     def ensure_collections(self) -> None:
         _LOG.info("Ensuring %d Qdrant collections: %s", len(_SOURCES), _SOURCES)
+        vectors_config: dict[str, VectorParams] = {
+            _DENSE_VECTOR_NAME: VectorParams(size=_DENSE_DIM, distance=Distance.COSINE),
+        }
+        if self._colbert_enabled:
+            vectors_config[_COLBERT_VECTOR_NAME] = VectorParams(
+                size=_DENSE_DIM,
+                distance=Distance.COSINE,
+                multivector_config=MultiVectorConfig(comparator=MultiVectorComparator.MAX_SIM),
+            )
         for source in _SOURCES:
             # Only suppress 409 Conflict (already exists); propagate all other HTTP errors
             try:
                 self._client.create_collection(
                     collection_name=source,
-                    vectors_config={
-                        _DENSE_VECTOR_NAME: VectorParams(size=_DENSE_DIM, distance=Distance.COSINE),
-                    },
+                    vectors_config=vectors_config,
                     sparse_vectors_config={
                         _SPARSE_VECTOR_NAME: SparseVectorParams(
                             index=SparseIndexParams(on_disk=False)
@@ -75,41 +96,56 @@ class QdrantVectorStore:
                 f"documents={len(documents)}, dense={len(embeddings.dense)}, "
                 f"sparse={len(embeddings.sparse)}"
             )
-        _LOG.info("Upserting %d point(s) into '%s'", len(documents), collection)
-        points = [
-            PointStruct(
-                id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"{doc.original_doc_id}:{doc.chunk_index}")),
-                vector={
-                    _DENSE_VECTOR_NAME: embeddings.dense[i],
-                    _SPARSE_VECTOR_NAME: SparseVector(
-                        indices=list(embeddings.sparse[i].keys()),
-                        values=list(embeddings.sparse[i].values()),
-                    ),
-                },
-                payload={
-                    "text": doc.text,
-                    "source": doc.source,
-                    "entity_name": (
-                        doc.entity_name.lower().strip() if doc.entity_name is not None else None
-                    ),
-                    "entity_type": doc.entity_type,
-                    "chunk_index": doc.chunk_index,
-                    "original_doc_id": doc.original_doc_id,
-                },
+        if self._colbert_enabled and (
+            embeddings.colbert is None or len(embeddings.colbert) != len(documents)
+        ):
+            colbert_len = len(embeddings.colbert) if embeddings.colbert else None
+            raise ValueError(
+                f"ColBERT enabled but colbert embeddings missing or length mismatch: "
+                f"documents={len(documents)}, colbert={colbert_len}"
             )
-            for i, doc in enumerate(documents)
-        ]
-        for i in range(0, len(points), _UPSERT_BATCH_SIZE):
+        _LOG.info("Upserting %d point(s) into '%s'", len(documents), collection)
+        points = []
+        for i, doc in enumerate(documents):
+            vec: dict[str, Any] = {
+                _DENSE_VECTOR_NAME: embeddings.dense[i],
+                _SPARSE_VECTOR_NAME: SparseVector(
+                    indices=list(embeddings.sparse[i].keys()),
+                    values=list(embeddings.sparse[i].values()),
+                ),
+            }
+            if self._colbert_enabled and embeddings.colbert is not None:
+                vec[_COLBERT_VECTOR_NAME] = embeddings.colbert[i]
+            points.append(
+                PointStruct(
+                    id=str(
+                        uuid.uuid5(uuid.NAMESPACE_URL, f"{doc.original_doc_id}:{doc.chunk_index}")
+                    ),
+                    vector=vec,
+                    payload={
+                        "text": doc.text,
+                        "source": doc.source,
+                        "entity_name": (
+                            doc.entity_name.lower().strip() if doc.entity_name is not None else None
+                        ),
+                        "entity_type": doc.entity_type,
+                        "chunk_index": doc.chunk_index,
+                        "original_doc_id": doc.original_doc_id,
+                    },
+                )
+            )
+        batch_size = _COLBERT_UPSERT_BATCH_SIZE if self._colbert_enabled else _UPSERT_BATCH_SIZE
+        for i in range(0, len(points), batch_size):
             try:
                 self._client.upsert(
-                    collection_name=collection, points=points[i : i + _UPSERT_BATCH_SIZE]
+                    collection_name=collection, points=points[i : i + batch_size]
                 )
             except Exception as exc:
                 raise VectorIndexError(f"Upsert to '{collection}' failed: {exc}") from exc
             _LOG.debug(
                 "Upserted points %d–%d into '%s'",
                 i,
-                min(i + _UPSERT_BATCH_SIZE, len(points)),
+                min(i + batch_size, len(points)),
                 collection,
             )
         _LOG.debug("Upsert to '%s' complete", collection)
@@ -121,19 +157,25 @@ class QdrantVectorStore:
         query_sparse: dict[int, float],
         top_k: int,
         query_filter: Filter | None,
+        query_colbert: list[list[float]] | None = None,
     ) -> list[RetrievedChunk]:
         sparse_query = SparseVector(
             indices=list(query_sparse.keys()),
             values=list(query_sparse.values()),
         )
+        prefetch = [
+            Prefetch(query=query_dense, using=_DENSE_VECTOR_NAME, limit=top_k * 2),
+            Prefetch(query=sparse_query, using=_SPARSE_VECTOR_NAME, limit=top_k * 2),
+        ]
+        if self._colbert_enabled and query_colbert is not None:
+            prefetch.append(
+                Prefetch(query=query_colbert, using=_COLBERT_VECTOR_NAME, limit=top_k * 2)
+            )
 
         try:
             response = self._client.query_points(
                 collection_name=collection,
-                prefetch=[
-                    Prefetch(query=query_dense, using=_DENSE_VECTOR_NAME, limit=top_k * 2),
-                    Prefetch(query=sparse_query, using=_SPARSE_VECTOR_NAME, limit=top_k * 2),
-                ],
+                prefetch=prefetch,
                 query=FusionQuery(fusion=Fusion.RRF),
                 limit=top_k,
                 query_filter=query_filter,
@@ -179,6 +221,7 @@ class QdrantVectorStore:
         query_sparse: dict[int, float],
         top_k: int,
         entity_name: str | None = None,
+        query_colbert: list[list[float]] | None = None,
     ) -> list[RetrievedChunk]:
         _LOG.debug("Searching '%s': top_k=%d, entity_name=%s", collection, top_k, entity_name)
 
@@ -191,7 +234,9 @@ class QdrantVectorStore:
             else None
         )
 
-        chunks = self._query(collection, query_dense, query_sparse, top_k, query_filter)
+        chunks = self._query(
+            collection, query_dense, query_sparse, top_k, query_filter, query_colbert
+        )
 
         if not chunks and entity_name is not None:
             _LOG.warning(
@@ -199,7 +244,7 @@ class QdrantVectorStore:
                 entity_name,
                 collection,
             )
-            chunks = self._query(collection, query_dense, query_sparse, top_k, None)
+            chunks = self._query(collection, query_dense, query_sparse, top_k, None, query_colbert)
 
         _LOG.debug("Search '%s' → %d result(s)", collection, len(chunks))
         return chunks
@@ -208,11 +253,30 @@ class QdrantVectorStore:
 class AsyncQdrantVectorStore:
     """Async Qdrant vector store with hybrid dense+sparse vectors."""
 
-    def __init__(self, client: AsyncQdrantClient | Any) -> None:
+    def __init__(self, client: AsyncQdrantClient | Any, *, colbert_enabled: bool = False) -> None:
         self._client = client
+        self._colbert_enabled = colbert_enabled
+
+    async def drop_collections(self) -> None:
+        """Delete all source collections. Required before schema change (e.g. enabling ColBERT)."""
+        for source in _SOURCES:
+            try:
+                await self._client.delete_collection(collection_name=source)
+                _LOG.info("Dropped collection '%s'", source)
+            except Exception as exc:
+                _LOG.warning("Could not drop collection '%s': %s", source, exc)
 
     async def ensure_collections(self) -> None:
         _LOG.info("Ensuring %d Qdrant collections: %s", len(_SOURCES), _SOURCES)
+        vectors_config: dict[str, VectorParams] = {
+            _DENSE_VECTOR_NAME: VectorParams(size=_DENSE_DIM, distance=Distance.COSINE),
+        }
+        if self._colbert_enabled:
+            vectors_config[_COLBERT_VECTOR_NAME] = VectorParams(
+                size=_DENSE_DIM,
+                distance=Distance.COSINE,
+                multivector_config=MultiVectorConfig(comparator=MultiVectorComparator.MAX_SIM),
+            )
         for source in _SOURCES:
             try:
                 exists = await self._client.collection_exists(collection_name=source)
@@ -224,9 +288,7 @@ class AsyncQdrantVectorStore:
             try:
                 await self._client.create_collection(
                     collection_name=source,
-                    vectors_config={
-                        _DENSE_VECTOR_NAME: VectorParams(size=_DENSE_DIM, distance=Distance.COSINE),
-                    },
+                    vectors_config=vectors_config,
                     sparse_vectors_config={
                         _SPARSE_VECTOR_NAME: SparseVectorParams(
                             index=SparseIndexParams(on_disk=False)
@@ -249,41 +311,56 @@ class AsyncQdrantVectorStore:
                 f"documents={len(documents)}, dense={len(embeddings.dense)}, "
                 f"sparse={len(embeddings.sparse)}"
             )
-        _LOG.info("Upserting %d point(s) into '%s'", len(documents), collection)
-        points = [
-            PointStruct(
-                id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"{doc.original_doc_id}:{doc.chunk_index}")),
-                vector={
-                    _DENSE_VECTOR_NAME: embeddings.dense[i],
-                    _SPARSE_VECTOR_NAME: SparseVector(
-                        indices=list(embeddings.sparse[i].keys()),
-                        values=list(embeddings.sparse[i].values()),
-                    ),
-                },
-                payload={
-                    "text": doc.text,
-                    "source": doc.source,
-                    "entity_name": (
-                        doc.entity_name.lower().strip() if doc.entity_name is not None else None
-                    ),
-                    "entity_type": doc.entity_type,
-                    "chunk_index": doc.chunk_index,
-                    "original_doc_id": doc.original_doc_id,
-                },
+        if self._colbert_enabled and (
+            embeddings.colbert is None or len(embeddings.colbert) != len(documents)
+        ):
+            colbert_len = len(embeddings.colbert) if embeddings.colbert else None
+            raise ValueError(
+                f"ColBERT enabled but colbert embeddings missing or length mismatch: "
+                f"documents={len(documents)}, colbert={colbert_len}"
             )
-            for i, doc in enumerate(documents)
-        ]
-        for i in range(0, len(points), _UPSERT_BATCH_SIZE):
+        _LOG.info("Upserting %d point(s) into '%s'", len(documents), collection)
+        points = []
+        for i, doc in enumerate(documents):
+            vec: dict[str, Any] = {
+                _DENSE_VECTOR_NAME: embeddings.dense[i],
+                _SPARSE_VECTOR_NAME: SparseVector(
+                    indices=list(embeddings.sparse[i].keys()),
+                    values=list(embeddings.sparse[i].values()),
+                ),
+            }
+            if self._colbert_enabled and embeddings.colbert is not None:
+                vec[_COLBERT_VECTOR_NAME] = embeddings.colbert[i]
+            points.append(
+                PointStruct(
+                    id=str(
+                        uuid.uuid5(uuid.NAMESPACE_URL, f"{doc.original_doc_id}:{doc.chunk_index}")
+                    ),
+                    vector=vec,
+                    payload={
+                        "text": doc.text,
+                        "source": doc.source,
+                        "entity_name": (
+                            doc.entity_name.lower().strip() if doc.entity_name is not None else None
+                        ),
+                        "entity_type": doc.entity_type,
+                        "chunk_index": doc.chunk_index,
+                        "original_doc_id": doc.original_doc_id,
+                    },
+                )
+            )
+        batch_size = _COLBERT_UPSERT_BATCH_SIZE if self._colbert_enabled else _UPSERT_BATCH_SIZE
+        for i in range(0, len(points), batch_size):
             try:
                 await self._client.upsert(
-                    collection_name=collection, points=points[i : i + _UPSERT_BATCH_SIZE]
+                    collection_name=collection, points=points[i : i + batch_size]
                 )
             except Exception as exc:
                 raise VectorIndexError(f"Upsert to '{collection}' failed: {exc}") from exc
             _LOG.debug(
                 "Upserted points %d–%d into '%s'",
                 i,
-                min(i + _UPSERT_BATCH_SIZE, len(points)),
+                min(i + batch_size, len(points)),
                 collection,
             )
         _LOG.debug("Upsert to '%s' complete", collection)
@@ -295,19 +372,25 @@ class AsyncQdrantVectorStore:
         query_sparse: dict[int, float],
         top_k: int,
         query_filter: Filter | None,
+        query_colbert: list[list[float]] | None = None,
     ) -> list[RetrievedChunk]:
         sparse_query = SparseVector(
             indices=list(query_sparse.keys()),
             values=list(query_sparse.values()),
         )
+        prefetch = [
+            Prefetch(query=query_dense, using=_DENSE_VECTOR_NAME, limit=top_k * 2),
+            Prefetch(query=sparse_query, using=_SPARSE_VECTOR_NAME, limit=top_k * 2),
+        ]
+        if self._colbert_enabled and query_colbert is not None:
+            prefetch.append(
+                Prefetch(query=query_colbert, using=_COLBERT_VECTOR_NAME, limit=top_k * 2)
+            )
 
         try:
             response: QueryResponse = await self._client.query_points(
                 collection_name=collection,
-                prefetch=[
-                    Prefetch(query=query_dense, using=_DENSE_VECTOR_NAME, limit=top_k * 2),
-                    Prefetch(query=sparse_query, using=_SPARSE_VECTOR_NAME, limit=top_k * 2),
-                ],
+                prefetch=prefetch,
                 query=FusionQuery(fusion=Fusion.RRF),
                 limit=top_k,
                 query_filter=query_filter,
@@ -355,6 +438,7 @@ class AsyncQdrantVectorStore:
         query_sparse: dict[int, float],
         top_k: int,
         entity_name: str | None = None,
+        query_colbert: list[list[float]] | None = None,
     ) -> list[RetrievedChunk]:
         _LOG.debug("Searching '%s': top_k=%d, entity_name=%s", collection, top_k, entity_name)
 
@@ -367,7 +451,9 @@ class AsyncQdrantVectorStore:
             else None
         )
 
-        chunks = await self._query(collection, query_dense, query_sparse, top_k, query_filter)
+        chunks = await self._query(
+            collection, query_dense, query_sparse, top_k, query_filter, query_colbert
+        )
 
         if not chunks and entity_name is not None:
             _LOG.warning(
@@ -375,7 +461,9 @@ class AsyncQdrantVectorStore:
                 entity_name,
                 collection,
             )
-            chunks = await self._query(collection, query_dense, query_sparse, top_k, None)
+            chunks = await self._query(
+                collection, query_dense, query_sparse, top_k, None, query_colbert
+            )
 
         _LOG.debug("Search '%s' → %d result(s)", collection, len(chunks))
         return chunks
