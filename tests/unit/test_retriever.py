@@ -40,15 +40,15 @@ class TestSigmoid:
         assert abs(_sigmoid(0.0) - 0.5) < 1e-6
 
     def test_sigmoid_positive_infinity_returns_one(self) -> None:
-        result = _sigmoid(float('inf'))
+        result = _sigmoid(float("inf"))
         assert result == 1.0
 
     def test_sigmoid_negative_infinity_returns_zero(self) -> None:
-        result = _sigmoid(float('-inf'))
+        result = _sigmoid(float("-inf"))
         assert result == 0.0
 
     def test_sigmoid_nan_does_not_crash(self) -> None:
-        result = _sigmoid(float('nan'))
+        result = _sigmoid(float("nan"))
         assert isinstance(result, float)
 
     def test_sigmoid_large_positive_value_near_one(self) -> None:

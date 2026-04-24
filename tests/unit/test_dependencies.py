@@ -76,13 +76,14 @@ class TestBuildPipelineRoutingEnabled:
         monkeypatch.setenv("HYDE_ENABLED", "false")
         monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
 
-        with patch("src.api.dependencies.BGEEmbedder") as mock_embedder_cls, \
-             patch("src.api.dependencies.BGEReranker") as mock_reranker_cls, \
-             patch("src.api.dependencies.QdrantClient") as mock_client_cls, \
-             patch("src.api.dependencies.ModelLoader") as mock_loader_cls, \
-             patch("src.api.dependencies.Inferencer") as mock_inferencer_cls, \
-             patch("src.api.dependencies.Generator") as mock_generator_cls:
-
+        with (
+            patch("src.api.dependencies.BGEEmbedder") as mock_embedder_cls,
+            patch("src.api.dependencies.BGEReranker") as mock_reranker_cls,
+            patch("src.api.dependencies.QdrantClient") as mock_client_cls,
+            patch("src.api.dependencies.ModelLoader") as mock_loader_cls,
+            patch("src.api.dependencies.Inferencer") as mock_inferencer_cls,
+            patch("src.api.dependencies.Generator") as mock_generator_cls,
+        ):
             mock_embedder_instance = MagicMock()
             mock_embedder_cls.from_pretrained.return_value = mock_embedder_instance
 
@@ -118,13 +119,14 @@ class TestBuildPipelineRoutingEnabled:
         monkeypatch.setenv("HYDE_ENABLED", "false")
         monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
 
-        with patch("src.api.dependencies.BGEEmbedder") as mock_embedder_cls, \
-             patch("src.api.dependencies.BGEReranker") as mock_reranker_cls, \
-             patch("src.api.dependencies.QdrantClient") as mock_client_cls, \
-             patch("src.api.dependencies.ModelLoader") as mock_loader_cls, \
-             patch("src.api.dependencies.Inferencer") as mock_inferencer_cls, \
-             patch("src.api.dependencies.Generator") as mock_generator_cls:
-
+        with (
+            patch("src.api.dependencies.BGEEmbedder") as mock_embedder_cls,
+            patch("src.api.dependencies.BGEReranker") as mock_reranker_cls,
+            patch("src.api.dependencies.QdrantClient") as mock_client_cls,
+            patch("src.api.dependencies.ModelLoader") as mock_loader_cls,
+            patch("src.api.dependencies.Inferencer") as mock_inferencer_cls,
+            patch("src.api.dependencies.Generator") as mock_generator_cls,
+        ):
             mock_embedder_instance = MagicMock()
             mock_embedder_cls.from_pretrained.return_value = mock_embedder_instance
 
@@ -163,14 +165,15 @@ class TestBuildPipelineHyDEEnabled:
         monkeypatch.setenv("ROUTING_ENABLED", "false")
         monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
 
-        with patch("src.api.dependencies.BGEEmbedder") as mock_embedder_cls, \
-             patch("src.api.dependencies.BGEReranker") as mock_reranker_cls, \
-             patch("src.api.dependencies.QdrantClient") as mock_client_cls, \
-             patch("src.api.dependencies.ModelLoader") as mock_loader_cls, \
-             patch("src.api.dependencies.Inferencer") as mock_inferencer_cls, \
-             patch("src.api.dependencies.Generator") as mock_generator_cls, \
-             patch("src.api.dependencies.HyDETransformer") as mock_hyde_cls:
-
+        with (
+            patch("src.api.dependencies.BGEEmbedder") as mock_embedder_cls,
+            patch("src.api.dependencies.BGEReranker") as mock_reranker_cls,
+            patch("src.api.dependencies.QdrantClient") as mock_client_cls,
+            patch("src.api.dependencies.ModelLoader") as mock_loader_cls,
+            patch("src.api.dependencies.Inferencer") as mock_inferencer_cls,
+            patch("src.api.dependencies.Generator") as mock_generator_cls,
+            patch("src.api.dependencies.HyDETransformer") as mock_hyde_cls,
+        ):
             mock_embedder_instance = MagicMock()
             mock_embedder_cls.from_pretrained.return_value = mock_embedder_instance
 
@@ -208,14 +211,15 @@ class TestBuildPipelineHyDEEnabled:
         monkeypatch.setenv("ROUTING_ENABLED", "false")
         monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
 
-        with patch("src.api.dependencies.BGEEmbedder") as mock_embedder_cls, \
-             patch("src.api.dependencies.BGEReranker") as mock_reranker_cls, \
-             patch("src.api.dependencies.QdrantClient") as mock_client_cls, \
-             patch("src.api.dependencies.ModelLoader") as mock_loader_cls, \
-             patch("src.api.dependencies.Inferencer") as mock_inferencer_cls, \
-             patch("src.api.dependencies.Generator") as mock_generator_cls, \
-             patch("src.api.dependencies.MultiDraftHyDETransformer") as mock_multi_hyde_cls:
-
+        with (
+            patch("src.api.dependencies.BGEEmbedder") as mock_embedder_cls,
+            patch("src.api.dependencies.BGEReranker") as mock_reranker_cls,
+            patch("src.api.dependencies.QdrantClient") as mock_client_cls,
+            patch("src.api.dependencies.ModelLoader") as mock_loader_cls,
+            patch("src.api.dependencies.Inferencer") as mock_inferencer_cls,
+            patch("src.api.dependencies.Generator") as mock_generator_cls,
+            patch("src.api.dependencies.MultiDraftHyDETransformer") as mock_multi_hyde_cls,
+        ):
             mock_embedder_instance = MagicMock()
             mock_embedder_cls.from_pretrained.return_value = mock_embedder_instance
 
@@ -252,13 +256,14 @@ class TestBuildPipelineHyDEEnabled:
         monkeypatch.setenv("ROUTING_ENABLED", "false")
         monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
 
-        with patch("src.api.dependencies.BGEEmbedder") as mock_embedder_cls, \
-             patch("src.api.dependencies.BGEReranker") as mock_reranker_cls, \
-             patch("src.api.dependencies.QdrantClient") as mock_client_cls, \
-             patch("src.api.dependencies.ModelLoader") as mock_loader_cls, \
-             patch("src.api.dependencies.Inferencer") as mock_inferencer_cls, \
-             patch("src.api.dependencies.Generator") as mock_generator_cls:
-
+        with (
+            patch("src.api.dependencies.BGEEmbedder") as mock_embedder_cls,
+            patch("src.api.dependencies.BGEReranker") as mock_reranker_cls,
+            patch("src.api.dependencies.QdrantClient") as mock_client_cls,
+            patch("src.api.dependencies.ModelLoader") as mock_loader_cls,
+            patch("src.api.dependencies.Inferencer") as mock_inferencer_cls,
+            patch("src.api.dependencies.Generator") as mock_generator_cls,
+        ):
             mock_embedder_instance = MagicMock()
             mock_embedder_cls.from_pretrained.return_value = mock_embedder_instance
 

@@ -910,9 +910,7 @@ class TestHydeConfidenceThresholdBoundary:
         settings = Settings.from_env()
         assert settings.hyde_confidence_threshold == 1.0
 
-    def test_hyde_confidence_threshold_below_zero_raises_value_error(
-        self, monkeypatch
-    ) -> None:
+    def test_hyde_confidence_threshold_below_zero_raises_value_error(self, monkeypatch) -> None:
         from src.config import Settings
 
         monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
@@ -920,9 +918,7 @@ class TestHydeConfidenceThresholdBoundary:
         with pytest.raises(ValueError, match="HYDE_CONFIDENCE_THRESHOLD"):
             Settings.from_env()
 
-    def test_hyde_confidence_threshold_above_one_raises_value_error(
-        self, monkeypatch
-    ) -> None:
+    def test_hyde_confidence_threshold_above_one_raises_value_error(self, monkeypatch) -> None:
         from src.config import Settings
 
         monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
