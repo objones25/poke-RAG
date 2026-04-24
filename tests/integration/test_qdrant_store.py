@@ -432,7 +432,7 @@ class TestSearchIntegration:
         assert isinstance(field_condition, FieldCondition)
         assert field_condition.key == "entity_name"
         assert isinstance(field_condition.match, MatchValue)
-        assert field_condition.match.value == entity_name
+        assert field_condition.match.value == entity_name.lower()
 
     def test_query_filter_none_when_entity_name_not_given(self) -> None:
         """When entity_name is None, query_filter is None."""
