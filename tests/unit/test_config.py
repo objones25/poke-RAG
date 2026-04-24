@@ -465,3 +465,83 @@ class TestConfigParameterBounds:
         monkeypatch.setenv("MAX_NEW_TOKENS", "1")
         settings = Settings.from_env()
         assert settings.max_new_tokens == 1
+
+    def test_hyde_max_tokens_zero_raises_valueerror(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("HYDE_MAX_TOKENS", "0")
+        with pytest.raises(ValueError, match="HYDE_MAX_TOKENS"):
+            Settings.from_env()
+
+    def test_hyde_max_tokens_negative_raises_valueerror(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("HYDE_MAX_TOKENS", "-1")
+        with pytest.raises(ValueError, match="HYDE_MAX_TOKENS"):
+            Settings.from_env()
+
+    def test_hyde_max_tokens_invalid_int_raises_valueerror(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("HYDE_MAX_TOKENS", "abc")
+        with pytest.raises(ValueError, match="HYDE_MAX_TOKENS"):
+            Settings.from_env()
+
+    def test_hyde_num_drafts_zero_raises_valueerror(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("HYDE_NUM_DRAFTS", "0")
+        with pytest.raises(ValueError, match="HYDE_NUM_DRAFTS"):
+            Settings.from_env()
+
+    def test_hyde_num_drafts_negative_raises_valueerror(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("HYDE_NUM_DRAFTS", "-5")
+        with pytest.raises(ValueError, match="HYDE_NUM_DRAFTS"):
+            Settings.from_env()
+
+    def test_hyde_confidence_threshold_above_1_raises_valueerror(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("HYDE_CONFIDENCE_THRESHOLD", "1.5")
+        with pytest.raises(ValueError, match="HYDE_CONFIDENCE_THRESHOLD"):
+            Settings.from_env()
+
+    def test_hyde_confidence_threshold_below_0_raises_valueerror(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("HYDE_CONFIDENCE_THRESHOLD", "-0.1")
+        with pytest.raises(ValueError, match="HYDE_CONFIDENCE_THRESHOLD"):
+            Settings.from_env()
+
+    def test_hyde_confidence_threshold_invalid_float_raises_valueerror(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("HYDE_CONFIDENCE_THRESHOLD", "not_a_float")
+        with pytest.raises(ValueError, match="HYDE_CONFIDENCE_THRESHOLD"):
+            Settings.from_env()
+
+    def test_tokenizer_max_length_zero_raises_valueerror(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("TOKENIZER_MAX_LENGTH", "0")
+        with pytest.raises(ValueError, match="TOKENIZER_MAX_LENGTH"):
+            Settings.from_env()
+
+    def test_tokenizer_max_length_negative_raises_valueerror(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("TOKENIZER_MAX_LENGTH", "-1")
+        with pytest.raises(ValueError, match="TOKENIZER_MAX_LENGTH"):
+            Settings.from_env()

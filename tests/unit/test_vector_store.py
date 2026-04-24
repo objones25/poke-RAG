@@ -128,6 +128,14 @@ class TestUpsert:
         payload = client.upsert.call_args[1]["points"][0].payload
         assert payload["entity_name"] is None
 
+    def test_upsert_preserves_empty_string_entity_name(self) -> None:
+        client = _make_client()
+        store = QdrantVectorStore(client)
+        chunk = _make_chunk(entity_name="")
+        store.upsert("pokeapi", [chunk], _make_embeddings(n=1))
+        payload = client.upsert.call_args[1]["points"][0].payload
+        assert payload["entity_name"] == ""
+
 
 @pytest.mark.unit
 class TestSearch:
@@ -212,6 +220,19 @@ class TestSearch:
         store.search("pokeapi", [0.1] * 1024, {1: 0.5}, top_k=5, entity_name=None)
         call_kwargs = client.query_points.call_args[1]
         assert call_kwargs.get("query_filter") is None
+
+    def test_search_with_empty_string_entity_name_creates_filter(self) -> None:
+        client = _make_client()
+        client.query_points.return_value.points = [
+            self._make_scored_point("Some text", 0.9, "")
+        ]
+        store = QdrantVectorStore(client)
+        store.search("pokeapi", [0.1] * 1024, {1: 0.5}, top_k=5, entity_name="")
+        first_call_kwargs = client.query_points.call_args_list[0][1]
+        query_filter = first_call_kwargs.get("query_filter")
+        # Empty string after strip is still empty, so filter is created with empty string value
+        assert query_filter is not None
+        assert query_filter.must[0].match.value == ""
 
     def test_top_k_forwarded(self) -> None:
         client = _make_client()

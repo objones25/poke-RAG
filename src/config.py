@@ -74,6 +74,45 @@ class Settings:
             tmax_val = os.getenv("TOKENIZER_MAX_LENGTH")
             msg = f"TOKENIZER_MAX_LENGTH must be a valid int, got: {tmax_val!r}"
             raise ValueError(msg) from None
+        if tokenizer_max_length <= 0:
+            raise ValueError(
+                f"TOKENIZER_MAX_LENGTH must be a positive integer, got: {tokenizer_max_length}"
+            )
+
+        try:
+            hyde_max_tokens = int(os.getenv("HYDE_MAX_TOKENS", "150"))
+        except ValueError:
+            raise ValueError(
+                f"HYDE_MAX_TOKENS must be a valid int, got: {os.getenv('HYDE_MAX_TOKENS')!r}"
+            ) from None
+        if hyde_max_tokens <= 0:
+            raise ValueError(f"HYDE_MAX_TOKENS must be a positive integer, got: {hyde_max_tokens}")
+
+        try:
+            hyde_num_drafts = int(os.getenv("HYDE_NUM_DRAFTS", "1"))
+        except ValueError:
+            raise ValueError(
+                f"HYDE_NUM_DRAFTS must be a valid int, got: {os.getenv('HYDE_NUM_DRAFTS')!r}"
+            ) from None
+        if hyde_num_drafts <= 0:
+            raise ValueError(f"HYDE_NUM_DRAFTS must be a positive integer, got: {hyde_num_drafts}")
+
+        raw_threshold = os.getenv("HYDE_CONFIDENCE_THRESHOLD")
+        if raw_threshold is not None:
+            try:
+                threshold_value = float(raw_threshold)
+            except ValueError:
+                raise ValueError(
+                    f"HYDE_CONFIDENCE_THRESHOLD must be a valid float, got: {raw_threshold!r}"
+                ) from None
+            if not 0.0 <= threshold_value <= 1.0:
+                raise ValueError(
+                    f"HYDE_CONFIDENCE_THRESHOLD must be between 0.0 and 1.0, "
+                    f"got: {threshold_value}"
+                )
+            hyde_confidence_threshold: float | None = threshold_value
+        else:
+            hyde_confidence_threshold = None
 
         log_level = os.getenv("LOG_LEVEL", "INFO").upper()
         valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
@@ -104,10 +143,8 @@ class Settings:
             device=device,
             lora_adapter_path=os.getenv("LORA_ADAPTER_PATH"),
             hyde_enabled=os.getenv("HYDE_ENABLED", "false").lower() == "true",
-            hyde_max_tokens=int(os.getenv("HYDE_MAX_TOKENS", "150")),
-            hyde_num_drafts=int(os.getenv("HYDE_NUM_DRAFTS", "1")),
-            hyde_confidence_threshold=(
-                float(v) if (v := os.getenv("HYDE_CONFIDENCE_THRESHOLD")) else None
-            ),
+            hyde_max_tokens=hyde_max_tokens,
+            hyde_num_drafts=hyde_num_drafts,
+            hyde_confidence_threshold=hyde_confidence_threshold,
             routing_enabled=os.getenv("ROUTING_ENABLED", "false").lower() == "true",
         )

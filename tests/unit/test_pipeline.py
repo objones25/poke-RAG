@@ -239,6 +239,25 @@ class TestRAGPipelineConfidenceScore:
         assert high is not None and low is not None
         assert high > low
 
+    def test_confidence_score_uses_first_chunk_score_not_second(self, mocker) -> None:
+        import math
+
+        from src.pipeline.rag_pipeline import RAGPipeline
+
+        chunks = (
+            _make_chunk(original_doc_id="doc_0", chunk_index=0, score=5.0),
+            _make_chunk(original_doc_id="doc_1", chunk_index=1, score=2.0),
+        )
+        retriever = mocker.MagicMock()
+        retriever.retrieve.return_value = _make_retrieval_result(chunks=chunks)
+        generator = mocker.MagicMock()
+        generator.generate.return_value = _make_generation_result(num_chunks_used=2)
+        pipeline = RAGPipeline(retriever=retriever, generator=generator)
+
+        result = pipeline.query("Any question.")
+        expected_confidence = 1.0 / (1.0 + math.exp(-5.0))
+        assert result.confidence_score == pytest.approx(expected_confidence)
+
     def test_confidence_score_none_when_no_chunks(self, mocker) -> None:
         from src.pipeline.rag_pipeline import RAGPipeline
 

@@ -37,6 +37,14 @@ class TestIsRelevant:
         _, is_relevant, _ = _import_metrics()
         assert is_relevant("Thunderbolt is a powerful move.", ["Thunder"])
 
+    def test_case_insensitive_uppercase_keyword(self) -> None:
+        _, is_relevant, _ = _import_metrics()
+        assert is_relevant("Thunderbolt is powerful", ["THUNDERBOLT"])
+
+    def test_case_insensitive_uppercase_text(self) -> None:
+        _, is_relevant, _ = _import_metrics()
+        assert is_relevant("CHARIZARD has high SpAtk", ["charizard"])
+
 
 @pytest.mark.unit
 class TestHitAtK:

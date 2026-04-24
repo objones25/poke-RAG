@@ -142,6 +142,8 @@ class Retriever:
         entity_name: str | None = None,
     ) -> RetrievalResult:
         active_sources = sources if sources is not None else _ALL_SOURCES
+        if not active_sources:
+            raise RetrievalError("sources must not be empty")
         candidates_per_source = max(
             self._candidates_per_source,
             _TARGET_TOTAL_CANDIDATES // len(active_sources),

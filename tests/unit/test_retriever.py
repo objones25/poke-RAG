@@ -643,6 +643,18 @@ class TestRetrieverConfidenceThreshold:
 
 
 @pytest.mark.unit
+class TestRetrieverEmptySources:
+    def test_raises_retrieval_error_when_sources_empty(self) -> None:
+        retriever = Retriever(
+            embedder=_make_embedder(),
+            vector_store=_make_vector_store(),
+            reranker=_make_reranker(),
+        )
+        with pytest.raises(RetrievalError, match="empty"):
+            retriever.retrieve("query", sources=[])
+
+
+@pytest.mark.unit
 class TestRetrieverMultiDraftHyDE:
     def test_uses_transform_to_embedding_if_available(self) -> None:
         from src.retrieval.query_transformer import MultiDraftHyDETransformer
