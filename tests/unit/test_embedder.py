@@ -190,3 +190,147 @@ class TestBGEEmbedderDuplicateSparseIds:
         }
         result = BGEEmbedder(mock).encode(["text"])
         assert result.sparse[0][42] == pytest.approx(0.5)
+
+
+@pytest.mark.unit
+class TestEmbeddingOutputValidation:
+    def test_embedding_output_dense_dimension_validation(self) -> None:
+        mock = MagicMock()
+        mock.encode.return_value = {
+            "dense_vecs": [[0.1] * 512],
+            "lexical_weights": [{}],
+        }
+        result = BGEEmbedder(mock).encode(["text"])
+        assert len(result.dense[0]) == 512
+
+    def test_embedding_output_dense_must_be_list_of_lists(self) -> None:
+        output = EmbeddingOutput(dense=[[0.1, 0.2]], sparse=[{}])
+        assert isinstance(output.dense, list)
+        assert isinstance(output.dense[0], list)
+
+    def test_embedding_output_sparse_must_be_list_of_dicts(self) -> None:
+        output = EmbeddingOutput(dense=[], sparse=[{1: 0.5}])
+        assert isinstance(output.sparse, list)
+        assert isinstance(output.sparse[0], dict)
+
+    def test_embedding_output_sparse_dict_keys_are_ints(self) -> None:
+        output = EmbeddingOutput(dense=[], sparse=[{42: 0.9}])
+        for k in output.sparse[0]:
+            assert isinstance(k, int)
+
+    def test_embedding_output_sparse_dict_values_are_floats(self) -> None:
+        output = EmbeddingOutput(dense=[], sparse=[{42: 0.9}])
+        for v in output.sparse[0].values():
+            assert isinstance(v, float)
+
+    def test_embedding_output_frozen_immutability(self) -> None:
+        output = EmbeddingOutput(dense=[[0.1]], sparse=[{}])
+        with pytest.raises(AttributeError):
+            output.dense = [[0.2]]
+
+    def test_embedding_output_multiple_sparse_dicts(self) -> None:
+        output = EmbeddingOutput(dense=[[0.1], [0.2]], sparse=[{1: 0.5}, {2: 0.3}])
+        assert len(output.sparse) == 2
+        assert 1 in output.sparse[0]
+        assert 2 in output.sparse[1]
+
+
+@pytest.mark.unit
+class TestBGEEmbedderErrorHandling:
+    def test_encode_raises_when_model_encode_raises(self) -> None:
+        mock = MagicMock()
+        mock.encode.side_effect = RuntimeError("Model inference failed")
+        embedder = BGEEmbedder(mock)
+        with pytest.raises(RuntimeError, match="Model inference failed"):
+            embedder.encode(["text"])
+
+    def test_encode_raises_on_value_error_from_model(self) -> None:
+        mock = MagicMock()
+        mock.encode.side_effect = ValueError("Invalid input shape")
+        embedder = BGEEmbedder(mock)
+        with pytest.raises(ValueError, match="Invalid input shape"):
+            embedder.encode(["text"])
+
+    def test_encode_raises_on_cuda_error_from_model(self) -> None:
+        mock = MagicMock()
+        mock.encode.side_effect = RuntimeError("CUDA out of memory")
+        embedder = BGEEmbedder(mock)
+        with pytest.raises(RuntimeError, match="CUDA out of memory"):
+            embedder.encode(["text"])
+
+    def test_encode_handles_missing_dense_vecs_key(self) -> None:
+        mock = MagicMock()
+        mock.encode.return_value = {
+            "lexical_weights": [{}],
+        }
+        embedder = BGEEmbedder(mock)
+        with pytest.raises(KeyError):
+            embedder.encode(["text"])
+
+    def test_encode_handles_missing_lexical_weights_key(self) -> None:
+        mock = MagicMock()
+        mock.encode.return_value = {
+            "dense_vecs": [[0.1] * 1024],
+        }
+        embedder = BGEEmbedder(mock)
+        with pytest.raises(KeyError):
+            embedder.encode(["text"])
+
+    def test_encode_with_fewer_sparse_than_dense_vecs(self) -> None:
+        mock = MagicMock()
+        mock.encode.return_value = {
+            "dense_vecs": [[0.1] * 1024, [0.2] * 1024],
+            "lexical_weights": [{}],
+        }
+        embedder = BGEEmbedder(mock)
+        result = embedder.encode(["text1", "text2"])
+        assert len(result.dense) == 2
+        assert len(result.sparse) == 1
+
+
+@pytest.mark.unit
+class TestBGEEmbedderEdgeCases:
+    def test_single_item_input(self) -> None:
+        mock = _make_mock_model(n=1)
+        result = BGEEmbedder(mock).encode(["single text"])
+        assert len(result.dense) == 1
+        assert len(result.sparse) == 1
+
+    def test_very_long_string_input(self) -> None:
+        mock = _make_mock_model(n=1)
+        long_text = "word " * 10000
+        result = BGEEmbedder(mock).encode([long_text])
+        assert len(result.dense) == 1
+        assert len(result.sparse) == 1
+
+    def test_many_items_input(self) -> None:
+        n = 100
+        mock = _make_mock_model(n=n)
+        texts = [f"text_{i}" for i in range(n)]
+        result = BGEEmbedder(mock).encode(texts)
+        assert len(result.dense) == n
+        assert len(result.sparse) == n
+
+    def test_special_characters_in_text(self) -> None:
+        mock = _make_mock_model(n=1)
+        special_text = "Pokémon: Bulbasaur's type is Grass/Poison! 🔥"
+        result = BGEEmbedder(mock).encode([special_text])
+        assert len(result.dense) == 1
+
+    def test_empty_sparse_weights(self) -> None:
+        mock = MagicMock()
+        mock.encode.return_value = {
+            "dense_vecs": [[0.1] * 1024],
+            "lexical_weights": [{}],
+        }
+        result = BGEEmbedder(mock).encode(["text"])
+        assert result.sparse[0] == {}
+
+    def test_dense_values_within_valid_range(self) -> None:
+        mock = MagicMock()
+        mock.encode.return_value = {
+            "dense_vecs": [[0.5] * 1024],
+            "lexical_weights": [{}],
+        }
+        result = BGEEmbedder(mock).encode(["text"])
+        assert all(-1.0 <= v <= 1.0 for v in result.dense[0])

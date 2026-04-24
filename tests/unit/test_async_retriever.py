@@ -170,3 +170,44 @@ class TestAsyncRetrieverRetrieve:
             reranker=_make_reranker(),
         )
         assert isinstance(r, AsyncRetrieverProtocol)
+
+
+@pytest.mark.unit
+class TestAsyncRetrieverExceptionHandling:
+    @pytest.mark.anyio
+    async def test_single_source_retrieval_error_raises_when_only_source(self) -> None:
+        store = AsyncMock(spec=AsyncVectorStoreProtocol)
+        store.search.side_effect = RuntimeError("Connection failed")
+        r = AsyncRetriever(
+            embedder=_make_embedder(),
+            vector_store=store,
+            reranker=_make_reranker(),
+            candidates_per_source=10,
+        )
+        with pytest.raises(RetrievalError):
+            await r.retrieve("test", sources=["pokeapi"])
+
+    @pytest.mark.anyio
+    async def test_all_sources_raise_exception_group_raises_first(self) -> None:
+        store = AsyncMock(spec=AsyncVectorStoreProtocol)
+        store.search.side_effect = RuntimeError("All failed")
+        r = AsyncRetriever(
+            embedder=_make_embedder(),
+            vector_store=store,
+            reranker=_make_reranker(),
+        )
+        with pytest.raises(RetrievalError):
+            await r.retrieve("test")
+
+    @pytest.mark.anyio
+    async def test_async_task_group_creates_concurrent_tasks(self) -> None:
+        store = AsyncMock(spec=AsyncVectorStoreProtocol)
+        store.search.return_value = [make_chunk()]
+        r = AsyncRetriever(
+            embedder=_make_embedder(),
+            vector_store=store,
+            reranker=_make_reranker(),
+        )
+        result = await r.retrieve("test")
+        assert store.search.call_count == 3
+        assert isinstance(result, RetrievalResult)

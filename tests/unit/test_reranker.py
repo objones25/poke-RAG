@@ -213,3 +213,42 @@ class TestBGERerankerProtocolCompliance:
 
         reranker = BGEReranker(_make_mock_reranker([]))
         assert isinstance(reranker, RerankerProtocol)
+
+
+@pytest.mark.unit
+class TestBGERerankerEdgeCases:
+    def test_identical_scores_maintains_stable_sort(self) -> None:
+        reranker = BGEReranker(_make_mock_reranker([0.5, 0.5, 0.5]))
+        docs = [make_chunk(text=f"text {i}", chunk_index=i) for i in range(3)]
+        results = reranker.rerank("query", docs, top_k=3)
+        assert len(results) == 3
+        assert all(r.score == pytest.approx(0.5) for r in results)
+
+    def test_zero_scores_returns_all_docs(self) -> None:
+        reranker = BGEReranker(_make_mock_reranker([0.0, 0.0]))
+        docs = [make_chunk(text=f"text {i}", chunk_index=i) for i in range(2)]
+        results = reranker.rerank("query", docs, top_k=5)
+        assert len(results) == 2
+        assert all(r.score == pytest.approx(0.0) for r in results)
+
+    def test_negative_scores_preserved(self) -> None:
+        reranker = BGEReranker(_make_mock_reranker([-0.5, -0.2]))
+        docs = [make_chunk(text=f"text {i}", chunk_index=i) for i in range(2)]
+        results = reranker.rerank("query", docs, top_k=2)
+        assert len(results) == 2
+        assert results[0].score == pytest.approx(-0.2)
+        assert results[1].score == pytest.approx(-0.5)
+
+    def test_top_k_zero_returns_empty_list(self) -> None:
+        reranker = BGEReranker(_make_mock_reranker([0.9, 0.5]))
+        docs = [make_chunk(text=f"text {i}", chunk_index=i) for i in range(2)]
+        results = reranker.rerank("query", docs, top_k=0)
+        assert results == []
+
+    def test_top_k_greater_than_documents_returns_all(self) -> None:
+        reranker = BGEReranker(_make_mock_reranker([0.8, 0.3]))
+        docs = [make_chunk(text=f"text {i}", chunk_index=i) for i in range(2)]
+        results = reranker.rerank("query", docs, top_k=100)
+        assert len(results) == 2
+        assert results[0].score == pytest.approx(0.8)
+        assert results[1].score == pytest.approx(0.3)

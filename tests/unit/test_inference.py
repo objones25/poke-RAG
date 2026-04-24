@@ -209,3 +209,40 @@ class TestInferencerInfer:
         inferencer, _, fake_processor, _ = _make_inferencer(decoded="\n\t  \r\n")
         with pytest.raises(RuntimeError, match="empty|whitespace"):
             inferencer.infer("prompt")
+
+
+@pytest.mark.unit
+class TestInferencerEdgeCases:
+    def test_empty_source_chunks_with_zero_chunks(self) -> None:
+        from src.generation.inference import Inferencer
+        from src.generation.models import GenerationConfig
+
+        fake_model = MagicMock()
+        fake_model.device = "cpu"
+        fake_processor = MagicMock()
+        fake_inputs = _make_fake_inputs(3)
+        fake_processor.apply_chat_template.return_value = "text"
+        fake_processor.return_value = fake_inputs
+        fake_model.generate.return_value = torch.arange(5).unsqueeze(0)
+        fake_processor.decode.return_value = "answer"
+
+        config = GenerationConfig(model_id="test/model")
+        inferencer = Inferencer(fake_model, fake_processor, config)
+        result = inferencer.infer("test")
+
+        assert isinstance(result, str)
+        assert result == "answer"
+
+    def test_model_output_shape_zero_raises_error(self) -> None:
+        inferencer, fake_model, _, _ = _make_inferencer()
+        fake_model.generate.return_value = torch.zeros((0, 5))
+
+        with pytest.raises(RuntimeError, match="no sequences"):
+            inferencer.infer("prompt")
+
+    def test_output_shape_batch_zero_raises_error(self) -> None:
+        inferencer, fake_model, _, _ = _make_inferencer(prompt_len=3)
+        fake_model.generate.return_value = torch.zeros((0, 10))
+
+        with pytest.raises(RuntimeError, match="no sequences"):
+            inferencer.infer("prompt")

@@ -872,3 +872,75 @@ class TestConfigParameterBounds:
         monkeypatch.setenv("DO_SAMPLE", "maybe")
         with pytest.raises(ValueError, match="DO_SAMPLE"):
             Settings.from_env()
+
+
+@pytest.mark.unit
+class TestParseBoolUnexpectedValue:
+    def test_parse_bool_unexpected_string_raises_value_error(self) -> None:
+        from src.config import _parse_bool
+
+        with pytest.raises(ValueError, match="TEST_FLAG"):
+            _parse_bool("maybe", "TEST_FLAG", False)
+
+
+@pytest.mark.unit
+class TestSettingsMissingQdrantUrl:
+    def test_settings_from_env_missing_qdrant_url_raises_key_error(self) -> None:
+        from src.config import Settings
+
+        with patch.dict(os.environ, {}, clear=True), pytest.raises(KeyError):
+            Settings.from_env()
+
+
+@pytest.mark.unit
+class TestHydeConfidenceThresholdBoundary:
+    def test_hyde_confidence_threshold_at_zero_valid(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("HYDE_CONFIDENCE_THRESHOLD", "0.0")
+        settings = Settings.from_env()
+        assert settings.hyde_confidence_threshold == 0.0
+
+    def test_hyde_confidence_threshold_at_one_valid(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("HYDE_CONFIDENCE_THRESHOLD", "1.0")
+        settings = Settings.from_env()
+        assert settings.hyde_confidence_threshold == 1.0
+
+    def test_hyde_confidence_threshold_below_zero_raises_value_error(
+        self, monkeypatch
+    ) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("HYDE_CONFIDENCE_THRESHOLD", "-0.1")
+        with pytest.raises(ValueError, match="HYDE_CONFIDENCE_THRESHOLD"):
+            Settings.from_env()
+
+    def test_hyde_confidence_threshold_above_one_raises_value_error(
+        self, monkeypatch
+    ) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("HYDE_CONFIDENCE_THRESHOLD", "1.1")
+        with pytest.raises(ValueError, match="HYDE_CONFIDENCE_THRESHOLD"):
+            Settings.from_env()
+
+
+@pytest.mark.unit
+class TestTrustedProxyCountAsFloat:
+    def test_trusted_proxy_count_as_float_via_middleware(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from fastapi import FastAPI
+
+        from src.api.app import RateLimitMiddleware
+
+        monkeypatch.setenv("TRUSTED_PROXY_COUNT", "1.5")
+        test_app = FastAPI()
+        with pytest.raises(ValueError, match="TRUSTED_PROXY_COUNT"):
+            RateLimitMiddleware(app=test_app)

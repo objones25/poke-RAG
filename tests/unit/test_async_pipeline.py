@@ -126,3 +126,51 @@ class TestAsyncRAGPipeline:
         )
         await pipeline.query("test", sources=["smogon"])
         router.route.assert_not_called()
+
+    @pytest.mark.anyio
+    async def test_concurrent_queries_resolve_independently(self) -> None:
+        import asyncio
+
+        retriever1 = _make_async_retriever()
+        retriever2 = _make_async_retriever()
+        gen1 = _make_generator()
+        gen2 = _make_generator()
+
+        pipeline1 = AsyncRAGPipeline(retriever=retriever1, generator=gen1)
+        pipeline2 = AsyncRAGPipeline(retriever=retriever2, generator=gen2)
+
+        results = await asyncio.gather(
+            pipeline1.query("What type is Pikachu?"),
+            pipeline2.query("What type is Charizard?"),
+        )
+
+        assert len(results) == 2
+        queries = ["What type is Pikachu?", "What type is Charizard?"]
+        assert all(r.query in queries for r in results)
+
+    @pytest.mark.anyio
+    async def test_retrieval_error_propagates_not_caught(self) -> None:
+        retriever = AsyncMock(spec=AsyncRetrieverProtocol)
+        retriever.retrieve.side_effect = RetrievalError("Connection timeout")
+        gen = _make_generator()
+        pipeline = AsyncRAGPipeline(retriever=retriever, generator=gen)
+
+        with pytest.raises(RetrievalError, match="Connection timeout"):
+            await pipeline.query("test")
+
+    @pytest.mark.anyio
+    async def test_timeout_integration_asyncio_timeout(self) -> None:
+        import asyncio
+
+        retriever = AsyncMock(spec=AsyncRetrieverProtocol)
+
+        async def slow_retrieve(*args, **kwargs):
+            await asyncio.sleep(0.05)
+            return RetrievalResult(documents=tuple([make_chunk(score=1.5)]), query="test")
+
+        retriever.retrieve.side_effect = slow_retrieve
+        gen = _make_generator()
+        pipeline = AsyncRAGPipeline(retriever=retriever, generator=gen)
+
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(pipeline.query("test"), timeout=0.01)

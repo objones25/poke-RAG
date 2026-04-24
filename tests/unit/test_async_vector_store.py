@@ -400,6 +400,110 @@ class TestAsyncClose:
 
 
 @pytest.mark.unit
+class TestAsyncUpsertBatchBoundaries:
+    @pytest.mark.anyio
+    async def test_upsert_empty_documents(self) -> None:
+        client = _make_async_client()
+        store = AsyncQdrantVectorStore(client)
+        await store.upsert("pokeapi", [], _make_embeddings(n=0))
+        client.upsert.assert_not_called()
+
+    @pytest.mark.anyio
+    async def test_upsert_99_documents_one_batch(self) -> None:
+        client = _make_async_client()
+        store = AsyncQdrantVectorStore(client)
+        chunks = [_make_chunk(original_doc_id=f"doc_{i}") for i in range(99)]
+        await store.upsert("pokeapi", chunks, _make_embeddings(n=99))
+        assert client.upsert.call_count == 1
+        points = client.upsert.call_args[1]["points"]
+        assert len(points) == 99
+
+    @pytest.mark.anyio
+    async def test_upsert_100_documents_exactly_one_batch(self) -> None:
+        client = _make_async_client()
+        store = AsyncQdrantVectorStore(client)
+        chunks = [_make_chunk(original_doc_id=f"doc_{i}") for i in range(100)]
+        await store.upsert("pokeapi", chunks, _make_embeddings(n=100))
+        assert client.upsert.call_count == 1
+        points = client.upsert.call_args[1]["points"]
+        assert len(points) == 100
+
+    @pytest.mark.anyio
+    async def test_upsert_101_documents_two_batches(self) -> None:
+        client = _make_async_client()
+        store = AsyncQdrantVectorStore(client)
+        chunks = [_make_chunk(original_doc_id=f"doc_{i}") for i in range(101)]
+        await store.upsert("pokeapi", chunks, _make_embeddings(n=101))
+        assert client.upsert.call_count == 2
+        first_batch = client.upsert.call_args_list[0][1]["points"]
+        second_batch = client.upsert.call_args_list[1][1]["points"]
+        assert len(first_batch) == 100
+        assert len(second_batch) == 1
+
+    @pytest.mark.anyio
+    async def test_upsert_200_documents_exactly_two_batches(self) -> None:
+        client = _make_async_client()
+        store = AsyncQdrantVectorStore(client)
+        chunks = [_make_chunk(original_doc_id=f"doc_{i}") for i in range(200)]
+        await store.upsert("pokeapi", chunks, _make_embeddings(n=200))
+        assert client.upsert.call_count == 2
+        first_batch = client.upsert.call_args_list[0][1]["points"]
+        second_batch = client.upsert.call_args_list[1][1]["points"]
+        assert len(first_batch) == 100
+        assert len(second_batch) == 100
+
+
+@pytest.mark.unit
+class TestAsyncEnsureCollectionsErrorHandling:
+    @pytest.mark.anyio
+    async def test_ensure_collections_propagates_collection_exists_error(self) -> None:
+        client = _make_async_client()
+        client.collection_exists.side_effect = Exception("connection error")
+        store = AsyncQdrantVectorStore(client)
+        with pytest.raises(Exception, match="connection error"):
+            await store.ensure_collections()
+
+    @pytest.mark.anyio
+    async def test_ensure_collections_propagates_create_collection_error(self) -> None:
+        from qdrant_client.http.exceptions import UnexpectedResponse
+
+        client = _make_async_client()
+        client.collection_exists.return_value = False
+        client.create_collection.side_effect = UnexpectedResponse(
+            status_code=500,
+            reason_phrase="server error",
+            content=b"",
+            headers={},  # type: ignore[arg-type]
+        )
+        store = AsyncQdrantVectorStore(client)
+        with pytest.raises(UnexpectedResponse):
+            await store.ensure_collections()
+
+
+@pytest.mark.unit
+class TestAsyncConcurrentUpsert:
+    @pytest.mark.anyio
+    async def test_concurrent_upserts_do_not_interleave(self) -> None:
+        import asyncio
+
+        client = _make_async_client()
+        store = AsyncQdrantVectorStore(client)
+        chunks1 = [_make_chunk(original_doc_id=f"doc_1_{i}") for i in range(50)]
+        chunks2 = [_make_chunk(original_doc_id=f"doc_2_{i}") for i in range(50)]
+        embeddings1 = _make_embeddings(n=50)
+        embeddings2 = _make_embeddings(n=50)
+        await asyncio.gather(
+            store.upsert("pokeapi", chunks1, embeddings1),
+            store.upsert("pokeapi", chunks2, embeddings2),
+        )
+        assert client.upsert.call_count == 2
+        first_call_points = client.upsert.call_args_list[0][1]["points"]
+        second_call_points = client.upsert.call_args_list[1][1]["points"]
+        assert len(first_call_points) == 50
+        assert len(second_call_points) == 50
+
+
+@pytest.mark.unit
 class TestAsyncVectorStoreProtocolCompliance:
     def test_satisfies_async_vector_store_protocol(self) -> None:
         from src.retrieval.protocols import AsyncVectorStoreProtocol

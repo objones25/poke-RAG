@@ -590,3 +590,156 @@ class TestStatsEndpointRateLimit:
             c.get("/stats")
             response = c.get("/stats")
             assert response.status_code == 429
+
+
+@pytest.mark.unit
+class TestRateLimitMiddlewareTrustedProxyValidation:
+    def test_trusted_proxy_count_non_integer_raises_value_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from fastapi import FastAPI
+
+        from src.api.app import RateLimitMiddleware
+
+        monkeypatch.setenv("TRUSTED_PROXY_COUNT", "abc")
+        test_app = FastAPI()
+        with pytest.raises(ValueError, match="TRUSTED_PROXY_COUNT.*non-negative integer"):
+            RateLimitMiddleware(app=test_app)
+
+    def test_trusted_proxy_count_negative_raises_value_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from fastapi import FastAPI
+
+        from src.api.app import RateLimitMiddleware
+
+        monkeypatch.setenv("TRUSTED_PROXY_COUNT", "-1")
+        test_app = FastAPI()
+        with pytest.raises(ValueError, match="TRUSTED_PROXY_COUNT.*non-negative integer"):
+            RateLimitMiddleware(app=test_app)
+
+
+@pytest.mark.unit
+class TestRateLimitMiddlewareXForwardedForInjection:
+    def test_xff_extraction_with_trusted_proxy_count_one(self) -> None:
+        from src.api.app import _get_client_ip
+
+        request = MagicMock()
+        request.client.host = "socket_ip"
+        request.headers.get.return_value = "client,proxy"
+        result = _get_client_ip(request, trusted_proxy_count=1)
+        assert result == "proxy"
+
+    def test_xff_extraction_with_trusted_proxy_count_two_exact_ips(self) -> None:
+        from src.api.app import _get_client_ip
+
+        request = MagicMock()
+        request.client.host = "socket_ip"
+        request.headers.get.return_value = "client,proxy1,proxy2"
+        result = _get_client_ip(request, trusted_proxy_count=2)
+        assert result == "proxy1"
+
+    def test_xff_fallback_when_too_many_ips(self) -> None:
+        from src.api.app import _get_client_ip
+
+        request = MagicMock()
+        request.client.host = "socket_ip"
+        request.headers.get.return_value = "fake1,fake2,fake3,real_client,proxy"
+        result = _get_client_ip(request, trusted_proxy_count=1)
+        assert result == "socket_ip"
+
+
+@pytest.mark.unit
+class TestRateLimitMiddlewareCapacityEviction:
+    def test_ip_eviction_at_capacity(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from src.api.app import RateLimitMiddleware
+
+        monkeypatch.setenv("RATE_LIMIT_ENABLED", "true")
+        from fastapi import FastAPI
+
+        test_app = FastAPI()
+        middleware = RateLimitMiddleware(app=test_app, requests_per_minute=1000)
+
+        small_capacity = 10
+        for i in range(small_capacity):
+            ip = f"192.168.0.{i}"
+            middleware.request_times[ip] = [1.0]
+
+        assert len(middleware.request_times) == small_capacity
+        first_ip = list(middleware.request_times.keys())[0]
+
+        for i in range(small_capacity, small_capacity + 2):
+            ip = f"192.168.0.{i + 100}"
+            if len(middleware.request_times) >= small_capacity:
+                middleware.request_times.popitem(last=False)
+            middleware.request_times[ip] = [1.0]
+
+        new_first = list(middleware.request_times.keys())[0]
+        assert first_ip != new_first
+
+
+@pytest.mark.unit
+class TestBodySizeLimitMiddlewareEdgeCases:
+    def test_content_length_exactly_at_limit(self) -> None:
+        from fastapi import FastAPI
+
+        from src.api.app import BodySizeLimitMiddleware
+
+        test_app = FastAPI()
+        test_app.add_middleware(BodySizeLimitMiddleware, max_bytes=65536)
+
+        @test_app.post("/upload")
+        async def _upload() -> dict[str, bool]:
+            return {"ok": True}
+
+        with TestClient(test_app) as c:
+            response = c.post("/upload", headers={"Content-Length": "65536"})
+            assert response.status_code == 200
+
+    def test_content_length_one_byte_over_limit(self) -> None:
+        from fastapi import FastAPI
+
+        from src.api.app import BodySizeLimitMiddleware
+
+        test_app = FastAPI()
+        test_app.add_middleware(BodySizeLimitMiddleware, max_bytes=65536)
+
+        @test_app.post("/upload")
+        async def _upload() -> dict[str, bool]:
+            return {"ok": True}
+
+        with TestClient(test_app) as c:
+            response = c.post("/upload", headers={"Content-Length": "65537"})
+            assert response.status_code == 413
+
+    def test_content_length_zero(self) -> None:
+        from fastapi import FastAPI
+
+        from src.api.app import BodySizeLimitMiddleware
+
+        test_app = FastAPI()
+        test_app.add_middleware(BodySizeLimitMiddleware, max_bytes=100)
+
+        @test_app.post("/upload")
+        async def _upload() -> dict[str, bool]:
+            return {"ok": True}
+
+        with TestClient(test_app) as c:
+            response = c.post("/upload", headers={"Content-Length": "0"})
+            assert response.status_code == 200
+
+    def test_content_length_negative(self) -> None:
+        from fastapi import FastAPI
+
+        from src.api.app import BodySizeLimitMiddleware
+
+        test_app = FastAPI()
+        test_app.add_middleware(BodySizeLimitMiddleware, max_bytes=100)
+
+        @test_app.post("/upload")
+        async def _upload() -> dict[str, bool]:
+            return {"ok": True}
+
+        with TestClient(test_app) as c:
+            response = c.post("/upload", headers={"Content-Length": "-1"})
+            assert response.status_code == 413

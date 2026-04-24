@@ -428,6 +428,114 @@ class TestSearch:
 
 
 @pytest.mark.unit
+class TestUpsertBatchBoundaries:
+    def test_upsert_empty_documents(self) -> None:
+        client = _make_client()
+        store = QdrantVectorStore(client)
+        store.upsert("pokeapi", [], _make_embeddings(n=0))
+        client.upsert.assert_not_called()
+
+    def test_upsert_99_documents_one_batch(self) -> None:
+        client = _make_client()
+        store = QdrantVectorStore(client)
+        chunks = [_make_chunk(original_doc_id=f"doc_{i}") for i in range(99)]
+        store.upsert("pokeapi", chunks, _make_embeddings(n=99))
+        assert client.upsert.call_count == 1
+        points = client.upsert.call_args[1]["points"]
+        assert len(points) == 99
+
+    def test_upsert_100_documents_exactly_one_batch(self) -> None:
+        client = _make_client()
+        store = QdrantVectorStore(client)
+        chunks = [_make_chunk(original_doc_id=f"doc_{i}") for i in range(100)]
+        store.upsert("pokeapi", chunks, _make_embeddings(n=100))
+        assert client.upsert.call_count == 1
+        points = client.upsert.call_args[1]["points"]
+        assert len(points) == 100
+
+    def test_upsert_101_documents_two_batches(self) -> None:
+        client = _make_client()
+        store = QdrantVectorStore(client)
+        chunks = [_make_chunk(original_doc_id=f"doc_{i}") for i in range(101)]
+        store.upsert("pokeapi", chunks, _make_embeddings(n=101))
+        assert client.upsert.call_count == 2
+        first_batch = client.upsert.call_args_list[0][1]["points"]
+        second_batch = client.upsert.call_args_list[1][1]["points"]
+        assert len(first_batch) == 100
+        assert len(second_batch) == 1
+
+    def test_upsert_200_documents_exactly_two_batches(self) -> None:
+        client = _make_client()
+        store = QdrantVectorStore(client)
+        chunks = [_make_chunk(original_doc_id=f"doc_{i}") for i in range(200)]
+        store.upsert("pokeapi", chunks, _make_embeddings(n=200))
+        assert client.upsert.call_count == 2
+        first_batch = client.upsert.call_args_list[0][1]["points"]
+        second_batch = client.upsert.call_args_list[1][1]["points"]
+        assert len(first_batch) == 100
+        assert len(second_batch) == 100
+
+
+@pytest.mark.unit
+class TestSearchEdgeCases:
+    def _make_scored_point(self, text: str, score: float, entity: str | None = None) -> MagicMock:
+        p = MagicMock()
+        p.score = score
+        p.payload = {
+            "text": text,
+            "source": "pokeapi",
+            "entity_name": entity,
+            "entity_type": None,
+            "chunk_index": 0,
+            "original_doc_id": "doc_0",
+        }
+        return p
+
+    def test_search_with_top_k_zero_returns_empty(self) -> None:
+        client = _make_client()
+        client.query_points.return_value.points = []
+        store = QdrantVectorStore(client)
+        results = store.search("pokeapi", [0.1] * 1024, {}, top_k=0)
+        assert results == []
+
+    def test_search_with_negative_top_k(self) -> None:
+        client = _make_client()
+        client.query_points.return_value.points = []
+        store = QdrantVectorStore(client)
+        store.search("pokeapi", [0.1] * 1024, {}, top_k=-1)
+        call_kwargs = client.query_points.call_args[1]
+        assert call_kwargs.get("limit") == -1
+
+    def test_search_with_whitespace_entity_name_creates_filter(self) -> None:
+        client = _make_client()
+        client.query_points.return_value.points = [self._make_scored_point("text", 0.9, "")]
+        store = QdrantVectorStore(client)
+        store.search("pokeapi", [0.1] * 1024, {}, top_k=5, entity_name="   ")
+        first_call_kwargs = client.query_points.call_args_list[0][1]
+        query_filter = first_call_kwargs.get("query_filter")
+        assert query_filter is not None
+        assert query_filter.must[0].match.value == ""
+
+
+@pytest.mark.unit
+class TestEnsureCollectionsErrorHandling:
+    def test_ensure_collections_propagates_general_exception(self) -> None:
+        from qdrant_client.http.exceptions import UnexpectedResponse
+
+        client = _make_client()
+        client.create_collection.side_effect = UnexpectedResponse(
+            status_code=503,
+            reason_phrase="service unavailable",
+            content=b"",
+            headers={},  # type: ignore[arg-type]
+        )
+        store = QdrantVectorStore(client)
+        with pytest.raises(UnexpectedResponse) as exc_info:
+            store.ensure_collections()
+        assert exc_info.value.status_code == 503
+
+
+@pytest.mark.unit
 class TestVectorStoreProtocolCompliance:
     def test_satisfies_vector_store_protocol(self) -> None:
         from src.retrieval.protocols import VectorStoreProtocol

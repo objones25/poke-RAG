@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from src.retrieval.query_transformer import HyDETransformer
-from src.retrieval.retriever import Retriever
+from src.retrieval.retriever import Retriever, _sigmoid
 from src.retrieval.types import EmbeddingOutput
 from src.types import RetrievalError, RetrievalResult, RetrievedChunk, Source
 from tests.conftest import make_chunk
@@ -32,6 +32,37 @@ def _make_reranker(chunks: list[RetrievedChunk] | None = None) -> MagicMock:
     mock = MagicMock()
     mock.rerank.return_value = chunks if chunks is not None else [make_chunk()]
     return mock
+
+
+@pytest.mark.unit
+class TestSigmoid:
+    def test_sigmoid_zero_returns_half(self) -> None:
+        assert abs(_sigmoid(0.0) - 0.5) < 1e-6
+
+    def test_sigmoid_positive_infinity_returns_one(self) -> None:
+        result = _sigmoid(float('inf'))
+        assert result == 1.0
+
+    def test_sigmoid_negative_infinity_returns_zero(self) -> None:
+        result = _sigmoid(float('-inf'))
+        assert result == 0.0
+
+    def test_sigmoid_nan_does_not_crash(self) -> None:
+        result = _sigmoid(float('nan'))
+        assert isinstance(result, float)
+
+    def test_sigmoid_large_positive_value_near_one(self) -> None:
+        result = _sigmoid(1000.0)
+        assert 0.99 < result <= 1.0
+
+    def test_sigmoid_large_negative_value_near_zero(self) -> None:
+        result = _sigmoid(-1000.0)
+        assert 0.0 <= result < 0.01
+
+    def test_sigmoid_standard_values(self) -> None:
+        assert 0.0 < _sigmoid(-1.0) < 0.5
+        assert _sigmoid(1.0) > 0.5
+        assert _sigmoid(0.0) == 0.5
 
 
 @pytest.mark.unit
@@ -772,3 +803,81 @@ class TestRetrieverMultiDraftHyDE:
         )
         with pytest.raises(RetrievalError, match="timeout"):
             retriever.retrieve("query")
+
+
+@pytest.mark.unit
+class TestRetrieverEntityNameEdgeCases:
+    def test_entity_name_empty_string_passed_to_search(self) -> None:
+        vector_store = _make_vector_store()
+        retriever = Retriever(
+            embedder=_make_embedder(),
+            vector_store=vector_store,
+            reranker=_make_reranker(),
+        )
+        retriever.retrieve("query", entity_name="")
+        for call in vector_store.search.call_args_list:
+            assert call[1]["entity_name"] == ""
+
+    def test_entity_name_whitespace_only_passed_to_search(self) -> None:
+        vector_store = _make_vector_store()
+        retriever = Retriever(
+            embedder=_make_embedder(),
+            vector_store=vector_store,
+            reranker=_make_reranker(),
+        )
+        retriever.retrieve("query", entity_name="  ")
+        for call in vector_store.search.call_args_list:
+            assert call[1]["entity_name"] == "  "
+
+    def test_entity_name_none_passed_to_search(self) -> None:
+        vector_store = _make_vector_store()
+        retriever = Retriever(
+            embedder=_make_embedder(),
+            vector_store=vector_store,
+            reranker=_make_reranker(),
+        )
+        retriever.retrieve("query", entity_name=None)
+        for call in vector_store.search.call_args_list:
+            assert call[1]["entity_name"] is None
+
+
+@pytest.mark.unit
+class TestRetrieverCandidatePoolCap:
+    def test_candidates_per_source_calculation_with_all_sources(self) -> None:
+        vector_store = _make_vector_store()
+        retriever = Retriever(
+            embedder=_make_embedder(),
+            vector_store=vector_store,
+            reranker=_make_reranker(),
+            candidates_per_source=10,
+        )
+        retriever.retrieve("query", sources=["bulbapedia", "pokeapi", "smogon"])
+        for call in vector_store.search.call_args_list:
+            top_k = call[1]["top_k"]
+            assert top_k >= 10
+
+    def test_candidates_per_source_scales_up_for_single_source(self) -> None:
+        vector_store = _make_vector_store()
+        retriever = Retriever(
+            embedder=_make_embedder(),
+            vector_store=vector_store,
+            reranker=_make_reranker(),
+            candidates_per_source=10,
+        )
+        retriever.retrieve("query", sources=["pokeapi"])
+        call_kwargs = vector_store.search.call_args_list[0][1]
+        top_k = call_kwargs["top_k"]
+        assert top_k >= 75
+
+    def test_candidates_per_source_respects_minimum(self) -> None:
+        vector_store = _make_vector_store()
+        retriever = Retriever(
+            embedder=_make_embedder(),
+            vector_store=vector_store,
+            reranker=_make_reranker(),
+            candidates_per_source=50,
+        )
+        retriever.retrieve("query", sources=["pokeapi"])
+        call_kwargs = vector_store.search.call_args_list[0][1]
+        top_k = call_kwargs["top_k"]
+        assert top_k >= 50

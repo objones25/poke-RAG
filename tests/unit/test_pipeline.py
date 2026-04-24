@@ -309,6 +309,18 @@ class TestRAGPipelineConfidenceScore:
         result = pipeline.query("Any question.")
         assert result.confidence_score is None
 
+    def test_confidence_score_is_none_for_negative_inf_score(self, mocker) -> None:
+        from src.pipeline.rag_pipeline import RAGPipeline
+
+        chunks = (_make_chunk(original_doc_id="doc_0", chunk_index=0, score=float("-inf")),)
+        retriever = mocker.MagicMock()
+        retriever.retrieve.return_value = _make_retrieval_result(chunks=chunks)
+        generator = mocker.MagicMock()
+        generator.generate.return_value = _make_generation_result()
+        pipeline = RAGPipeline(retriever=retriever, generator=generator)
+        result = pipeline.query("Any question.")
+        assert result.confidence_score is None
+
 
 @pytest.mark.unit
 class TestRAGPipelineValidation:

@@ -540,3 +540,133 @@ class TestModelLoaderLoraAdapter:
             )
             with pytest.raises(RuntimeError, match="google/gemma-4-E4B-it"):
                 loader.load()
+
+
+@pytest.mark.unit
+class TestModelLoaderDeviceSpecific:
+    def test_cuda_device_map_auto_passed(self) -> None:
+        from src.generation.loader import ModelLoader
+        from src.generation.models import GenerationConfig
+
+        fake_model = MagicMock()
+        fake_processor = MagicMock()
+
+        with (
+            patch(
+                "src.generation.loader.AutoModelForImageTextToText.from_pretrained",
+                return_value=fake_model,
+            ) as mock_model_load,
+            patch(
+                "src.generation.loader.AutoProcessor.from_pretrained",
+                return_value=fake_processor,
+            ),
+        ):
+            loader = ModelLoader(
+                config=GenerationConfig(model_id="google/gemma-4-E4B-it"), device="cuda"
+            )
+            loader.load()
+
+            _, kwargs = mock_model_load.call_args
+            assert kwargs["device_map"] == "auto"
+
+    def test_cpu_uses_device_map_auto(self) -> None:
+        from src.generation.loader import ModelLoader
+        from src.generation.models import GenerationConfig
+
+        fake_model = MagicMock()
+        fake_processor = MagicMock()
+
+        with (
+            patch(
+                "src.generation.loader.AutoModelForImageTextToText.from_pretrained",
+                return_value=fake_model,
+            ) as mock_model_load,
+            patch(
+                "src.generation.loader.AutoProcessor.from_pretrained",
+                return_value=fake_processor,
+            ),
+        ):
+            loader = ModelLoader(
+                config=GenerationConfig(model_id="google/gemma-4-E4B-it"), device="cpu"
+            )
+            loader.load()
+
+            _, kwargs = mock_model_load.call_args
+            assert kwargs["device_map"] == "auto"
+
+    def test_attn_implementation_sdpa_for_cuda(self) -> None:
+        from src.generation.loader import ModelLoader
+        from src.generation.models import GenerationConfig
+
+        fake_model = MagicMock()
+        fake_processor = MagicMock()
+
+        with (
+            patch(
+                "src.generation.loader.AutoModelForImageTextToText.from_pretrained",
+                return_value=fake_model,
+            ) as mock_model_load,
+            patch(
+                "src.generation.loader.AutoProcessor.from_pretrained",
+                return_value=fake_processor,
+            ),
+        ):
+            loader = ModelLoader(
+                config=GenerationConfig(model_id="google/gemma-4-E4B-it"), device="cuda"
+            )
+            loader.load()
+
+            _, kwargs = mock_model_load.call_args
+            assert kwargs["attn_implementation"] == "sdpa"
+
+    def test_attn_implementation_sdpa_for_mps(self) -> None:
+        from src.generation.loader import ModelLoader
+        from src.generation.models import GenerationConfig
+
+        fake_model = MagicMock()
+        fake_processor = MagicMock()
+        fake_model.to.return_value = fake_model
+
+        with (
+            patch(
+                "src.generation.loader.AutoModelForImageTextToText.from_pretrained",
+                return_value=fake_model,
+            ) as mock_model_load,
+            patch(
+                "src.generation.loader.AutoProcessor.from_pretrained",
+                return_value=fake_processor,
+            ),
+        ):
+            loader = ModelLoader(
+                config=GenerationConfig(model_id="google/gemma-4-E4B-it"), device="mps"
+            )
+            loader.load()
+
+            _, kwargs = mock_model_load.call_args
+            assert kwargs["attn_implementation"] == "sdpa"
+
+    def test_mps_unload_calls_torch_mps_empty_cache(self) -> None:
+        from src.generation.loader import ModelLoader
+        from src.generation.models import GenerationConfig
+
+        fake_model = MagicMock()
+        fake_processor = MagicMock()
+
+        with (
+            patch(
+                "src.generation.loader.AutoModelForImageTextToText.from_pretrained",
+                return_value=fake_model,
+            ),
+            patch(
+                "src.generation.loader.AutoProcessor.from_pretrained",
+                return_value=fake_processor,
+            ),
+            patch("src.generation.loader.torch.mps.empty_cache") as mock_mps_cache,
+        ):
+            loader = ModelLoader(
+                config=GenerationConfig(model_id="google/gemma-4-E4B-it"), device="mps"
+            )
+            loader.load()
+            loader.unload()
+
+            mock_mps_cache.assert_called_once()
