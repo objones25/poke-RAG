@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
 import torch
 
 
-class _FakeInputs(dict):
+class _FakeInputs(dict[str, Any]):
     """Dict-like batch that supports .to(device), mirrors BatchFeature."""
 
 
@@ -24,7 +25,7 @@ def _make_inferencer(
     prompt_len: int = 3,
     decoded: str = "  parsed answer  ",
     device: str = "cpu",
-) -> tuple:
+) -> tuple[Any, ...]:
     from src.generation.inference import Inferencer
     from src.generation.models import GenerationConfig
 
@@ -170,6 +171,14 @@ class TestInferencerInfer:
 
         _, kwargs = fake_model.generate.call_args
         assert kwargs["max_new_tokens"] == 50
+
+    def test_raises_when_model_returns_no_new_tokens(self) -> None:
+        inferencer, fake_model, _, _ = _make_inferencer(prompt_len=3)
+        # Return a tensor with exactly prompt_len tokens — no new tokens generated
+        fake_model.generate.return_value = torch.arange(3).unsqueeze(0)
+
+        with pytest.raises(RuntimeError, match="no new tokens"):
+            inferencer.infer("prompt")
 
     def test_max_new_tokens_none_uses_config_default(self) -> None:
         from src.generation.inference import Inferencer

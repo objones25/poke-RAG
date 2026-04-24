@@ -52,7 +52,14 @@ class Inferencer:
                 f"Model generate() returned no sequences (shape={output_ids.shape!r})"
             )
 
-        response: str = self._processor.decode(output_ids[0][input_len:], skip_special_tokens=True)
+        response_ids = output_ids[0][input_len:]
+        if response_ids.shape[-1] == 0:
+            raise RuntimeError(
+                f"Model generate() returned no new tokens (input_len={input_len}, "
+                f"output_len={output_ids.shape[-1]})"
+            )
+
+        response: str = self._processor.decode(response_ids, skip_special_tokens=True)
         if not isinstance(response, str):
             raise TypeError(f"Processor returned {type(response).__name__}, expected str")
 

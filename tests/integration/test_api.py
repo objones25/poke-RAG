@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -10,17 +12,17 @@ from src.pipeline.types import PipelineResult
 from src.types import RetrievalError
 
 
-def _make_result(**overrides: object) -> PipelineResult:
-    defaults: dict[str, object] = {
+def _make_result(**overrides: Any) -> PipelineResult:
+    defaults: dict[str, Any] = {
         "answer": "Pikachu is Electric-type.",
         "sources_used": ("pokeapi",),
         "num_chunks_used": 3,
         "model_name": "google/gemma-4-E4B-it",
         "query": "What type is Pikachu?",
-        "confidence_score": None,
+        "confidence_score": 0.5,
     }
     defaults.update(overrides)
-    return PipelineResult(**defaults)  # type: ignore[arg-type]
+    return PipelineResult(**defaults)
 
 
 @pytest.fixture()

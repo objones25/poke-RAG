@@ -9,7 +9,10 @@ from src.types import RetrievalError, Source
 
 
 def _sigmoid(x: float) -> float:
-    return 1.0 / (1.0 + math.exp(-x))
+    if x >= 0:
+        return 1.0 / (1.0 + math.exp(-x))
+    ex = math.exp(x)
+    return ex / (1.0 + ex)
 
 
 class RAGPipeline:

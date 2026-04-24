@@ -107,10 +107,10 @@ class TestBuildPromptSanitization:
     def test_invalid_source_in_chunk_becomes_unknown(self) -> None:
         from src.types import RetrievedChunk
 
-        chunk = RetrievedChunk(  # type: ignore[arg-type]
+        chunk = RetrievedChunk(
             text="Some text.",
             score=0.9,
-            source="wikipedia",
+            source="wikipedia",  # type: ignore[arg-type]
             entity_name=None,
             entity_type=None,
             chunk_index=0,

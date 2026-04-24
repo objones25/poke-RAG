@@ -18,7 +18,7 @@ from tests.conftest import make_chunk as _chunk
 _GEMMA_ID = "google/gemma-4-E4B-it"
 
 
-class _FakeInputs(dict):
+class _FakeInputs(dict[str, Any]):
     """Dict-like batch that supports .to(device), mirrors BatchFeature."""
 
 

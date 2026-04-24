@@ -258,6 +258,20 @@ class TestRAGPipelineConfidenceScore:
         expected_confidence = 1.0 / (1.0 + math.exp(-5.0))
         assert result.confidence_score == pytest.approx(expected_confidence)
 
+    def test_confidence_score_stable_for_large_negative_score(self, mocker) -> None:
+        from src.pipeline.rag_pipeline import RAGPipeline
+
+        chunks = (_make_chunk(original_doc_id="doc_0", chunk_index=0, score=-800.0),)
+        retriever = mocker.MagicMock()
+        retriever.retrieve.return_value = _make_retrieval_result(chunks=chunks)
+        generator = mocker.MagicMock()
+        generator.generate.return_value = _make_generation_result()
+        pipeline = RAGPipeline(retriever=retriever, generator=generator)
+
+        result = pipeline.query("Any question.")
+        assert result.confidence_score is not None
+        assert 0.0 <= result.confidence_score <= 1.0
+
     def test_confidence_score_none_when_no_chunks(self, mocker) -> None:
         from src.pipeline.rag_pipeline import RAGPipeline
 
@@ -299,7 +313,7 @@ class TestRAGPipelineValidation:
 class TestRAGPipelineQueryRouter:
     """Router wired into pipeline: routes when sources=None, explicit sources wins."""
 
-    def _make_pipeline_with_router(self, mocker, router_sources: list):
+    def _make_pipeline_with_router(self, mocker, router_sources: list[Source]):
         from src.pipeline.rag_pipeline import RAGPipeline
 
         retriever = mocker.MagicMock()

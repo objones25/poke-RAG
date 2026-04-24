@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from unittest.mock import MagicMock
 
 import pytest
@@ -10,7 +11,7 @@ from src.generation.protocols import GeneratorProtocol
 from src.pipeline.rag_pipeline import RAGPipeline
 from src.pipeline.types import PipelineResult
 from src.retrieval.protocols import RetrieverProtocol
-from src.types import GenerationResult, RetrievalError, RetrievalResult
+from src.types import GenerationResult, RetrievalError, RetrievalResult, RetrievedChunk, Source
 
 
 @pytest.mark.integration
@@ -18,7 +19,7 @@ class TestRAGPipelineQuery:
     """Test RAGPipeline.query() orchestration and return value."""
 
     @pytest.fixture
-    def mock_retriever(self, make_chunk: callable) -> RetrieverProtocol:
+    def mock_retriever(self, make_chunk: Callable[..., RetrievedChunk]) -> MagicMock:
         """Mock retriever returning two chunks from different sources."""
         retriever = MagicMock(spec=RetrieverProtocol)
         retriever.retrieve.return_value = RetrievalResult(
@@ -31,15 +32,17 @@ class TestRAGPipelineQuery:
         return retriever
 
     @pytest.fixture
-    def mock_generator(self) -> GeneratorProtocol:
+    def mock_generator(self) -> MagicMock:
         """Mock generator returning a generation result based on input chunks."""
         generator = MagicMock(spec=GeneratorProtocol)
 
-        def generate_side_effect(query: str, chunks: tuple) -> GenerationResult:
+        def generate_side_effect(
+            query: str, chunks: tuple[RetrievedChunk, ...]
+        ) -> GenerationResult:
             """Generate result with sources and count derived from chunks."""
             sources_used = tuple(sorted({c.source for c in chunks}))
             return GenerationResult(
-                answer="Pikachu is an Electric-type Pokémon.",
+                answer="Pikachu is an Electric-type Pokemon.",
                 sources_used=sources_used,
                 model_name="google/gemma-4-E4B-it",
                 num_chunks_used=len(chunks),
@@ -50,8 +53,8 @@ class TestRAGPipelineQuery:
 
     def test_returns_pipeline_result(
         self,
-        mock_retriever: RetrieverProtocol,
-        mock_generator: GeneratorProtocol,
+        mock_retriever: MagicMock,
+        mock_generator: MagicMock,
     ) -> None:
         """query() returns a PipelineResult instance."""
         pipeline = RAGPipeline(retriever=mock_retriever, generator=mock_generator)
@@ -60,11 +63,11 @@ class TestRAGPipelineQuery:
 
     def test_answer_comes_from_generator(
         self,
-        mock_retriever: RetrieverProtocol,
-        mock_generator: GeneratorProtocol,
+        mock_retriever: MagicMock,
+        mock_generator: MagicMock,
     ) -> None:
         """result.answer equals generator's answer."""
-        expected_answer = "Pikachu is an Electric-type Pokémon."
+        expected_answer = "Pikachu is an Electric-type Pokemon."
         mock_generator.generate.return_value = GenerationResult(
             answer=expected_answer,
             sources_used=("pokeapi",),
@@ -77,8 +80,8 @@ class TestRAGPipelineQuery:
 
     def test_query_preserved_in_result(
         self,
-        mock_retriever: RetrieverProtocol,
-        mock_generator: GeneratorProtocol,
+        mock_retriever: MagicMock,
+        mock_generator: MagicMock,
     ) -> None:
         """result.query equals the input query."""
         pipeline = RAGPipeline(retriever=mock_retriever, generator=mock_generator)
@@ -88,9 +91,9 @@ class TestRAGPipelineQuery:
 
     def test_num_chunks_used_matches_retrieval_count(
         self,
-        mock_retriever: RetrieverProtocol,
-        mock_generator: GeneratorProtocol,
-        make_chunk: callable,
+        mock_retriever: MagicMock,
+        mock_generator: MagicMock,
+        make_chunk: Callable[..., RetrievedChunk],
     ) -> None:
         """result.num_chunks_used equals the number of chunks from retrieval."""
         chunks = (
@@ -108,8 +111,8 @@ class TestRAGPipelineQuery:
 
     def test_model_name_comes_from_generator(
         self,
-        mock_retriever: RetrieverProtocol,
-        mock_generator: GeneratorProtocol,
+        mock_retriever: MagicMock,
+        mock_generator: MagicMock,
     ) -> None:
         """result.model_name equals generator's model_name."""
         expected_model = "google/gemma-4-E4B-it"
@@ -125,9 +128,9 @@ class TestRAGPipelineQuery:
 
     def test_sources_used_deduplicated_and_sorted(
         self,
-        mock_retriever: RetrieverProtocol,
-        mock_generator: GeneratorProtocol,
-        make_chunk: callable,
+        mock_retriever: MagicMock,
+        mock_generator: MagicMock,
+        make_chunk: Callable[..., RetrievedChunk],
     ) -> None:
         """result.sources_used deduplicates and sorts chunk sources."""
         chunks = (
@@ -146,8 +149,8 @@ class TestRAGPipelineQuery:
 
     def test_top_k_forwarded_to_retriever(
         self,
-        mock_retriever: RetrieverProtocol,
-        mock_generator: GeneratorProtocol,
+        mock_retriever: MagicMock,
+        mock_generator: MagicMock,
     ) -> None:
         """top_k parameter is forwarded to retriever.retrieve()."""
         pipeline = RAGPipeline(retriever=mock_retriever, generator=mock_generator)
@@ -158,12 +161,12 @@ class TestRAGPipelineQuery:
 
     def test_sources_forwarded_to_retriever(
         self,
-        mock_retriever: RetrieverProtocol,
-        mock_generator: GeneratorProtocol,
+        mock_retriever: MagicMock,
+        mock_generator: MagicMock,
     ) -> None:
         """sources parameter is forwarded to retriever.retrieve()."""
         pipeline = RAGPipeline(retriever=mock_retriever, generator=mock_generator)
-        sources_filter = ["pokeapi", "smogon"]
+        sources_filter: list[Source] = ["pokeapi", "smogon"]
         pipeline.query("test", sources=sources_filter)
         mock_retriever.retrieve.assert_called_once()
         call_kwargs = mock_retriever.retrieve.call_args[1]
@@ -171,8 +174,8 @@ class TestRAGPipelineQuery:
 
     def test_retriever_receives_exact_query(
         self,
-        mock_retriever: RetrieverProtocol,
-        mock_generator: GeneratorProtocol,
+        mock_retriever: MagicMock,
+        mock_generator: MagicMock,
     ) -> None:
         """retriever.retrieve() receives the exact query string."""
         pipeline = RAGPipeline(retriever=mock_retriever, generator=mock_generator)
@@ -183,9 +186,9 @@ class TestRAGPipelineQuery:
 
     def test_generator_receives_chunks_from_retrieval(
         self,
-        mock_retriever: RetrieverProtocol,
-        mock_generator: GeneratorProtocol,
-        make_chunk: callable,
+        mock_retriever: MagicMock,
+        mock_generator: MagicMock,
+        make_chunk: Callable[..., RetrievedChunk],
     ) -> None:
         """generator.generate() receives the exact chunks from retrieval."""
         chunks = (
@@ -203,8 +206,8 @@ class TestRAGPipelineQuery:
 
     def test_generator_receives_query(
         self,
-        mock_retriever: RetrieverProtocol,
-        mock_generator: GeneratorProtocol,
+        mock_retriever: MagicMock,
+        mock_generator: MagicMock,
     ) -> None:
         """generator.generate() receives the query string."""
         pipeline = RAGPipeline(retriever=mock_retriever, generator=mock_generator)
@@ -215,8 +218,8 @@ class TestRAGPipelineQuery:
 
     def test_default_top_k_is_five(
         self,
-        mock_retriever: RetrieverProtocol,
-        mock_generator: GeneratorProtocol,
+        mock_retriever: MagicMock,
+        mock_generator: MagicMock,
     ) -> None:
         """top_k defaults to 5 when not provided."""
         pipeline = RAGPipeline(retriever=mock_retriever, generator=mock_generator)
@@ -226,8 +229,8 @@ class TestRAGPipelineQuery:
 
     def test_default_sources_is_none(
         self,
-        mock_retriever: RetrieverProtocol,
-        mock_generator: GeneratorProtocol,
+        mock_retriever: MagicMock,
+        mock_generator: MagicMock,
     ) -> None:
         """sources defaults to None when not provided."""
         pipeline = RAGPipeline(retriever=mock_retriever, generator=mock_generator)
@@ -237,8 +240,8 @@ class TestRAGPipelineQuery:
 
     def test_empty_chunks_returned_from_retrieval_raises_error(
         self,
-        mock_retriever: RetrieverProtocol,
-        mock_generator: GeneratorProtocol,
+        mock_retriever: MagicMock,
+        mock_generator: MagicMock,
     ) -> None:
         """Pipeline raises RetrievalError when retrieval returns zero chunks."""
         mock_retriever.retrieve.return_value = RetrievalResult(
@@ -257,19 +260,19 @@ class TestRAGPipelineErrorPropagation:
     """Test error handling and propagation in RAGPipeline."""
 
     @pytest.fixture
-    def mock_retriever(self) -> RetrieverProtocol:
+    def mock_retriever(self) -> MagicMock:
         """Mock retriever."""
         return MagicMock(spec=RetrieverProtocol)
 
     @pytest.fixture
-    def mock_generator(self) -> GeneratorProtocol:
+    def mock_generator(self) -> MagicMock:
         """Mock generator."""
         return MagicMock(spec=GeneratorProtocol)
 
     def test_retrieval_error_propagates_without_calling_generator(
         self,
-        mock_retriever: RetrieverProtocol,
-        mock_generator: GeneratorProtocol,
+        mock_retriever: MagicMock,
+        mock_generator: MagicMock,
     ) -> None:
         """RetrievalError from retriever propagates; generator is never called."""
         mock_retriever.retrieve.side_effect = RetrievalError("vector index down")
@@ -280,8 +283,8 @@ class TestRAGPipelineErrorPropagation:
 
     def test_empty_query_raises_value_error(
         self,
-        mock_retriever: RetrieverProtocol,
-        mock_generator: GeneratorProtocol,
+        mock_retriever: MagicMock,
+        mock_generator: MagicMock,
     ) -> None:
         """Empty query string raises ValueError."""
         pipeline = RAGPipeline(retriever=mock_retriever, generator=mock_generator)
@@ -292,8 +295,8 @@ class TestRAGPipelineErrorPropagation:
 
     def test_whitespace_only_query_raises_value_error(
         self,
-        mock_retriever: RetrieverProtocol,
-        mock_generator: GeneratorProtocol,
+        mock_retriever: MagicMock,
+        mock_generator: MagicMock,
     ) -> None:
         """Whitespace-only query raises ValueError."""
         pipeline = RAGPipeline(retriever=mock_retriever, generator=mock_generator)
@@ -304,9 +307,9 @@ class TestRAGPipelineErrorPropagation:
 
     def test_generator_error_propagates(
         self,
-        mock_retriever: RetrieverProtocol,
-        mock_generator: GeneratorProtocol,
-        make_chunk: callable,
+        mock_retriever: MagicMock,
+        mock_generator: MagicMock,
+        make_chunk: Callable[..., RetrievedChunk],
     ) -> None:
         """RuntimeError from generator propagates."""
         mock_retriever.retrieve.return_value = RetrievalResult(
@@ -320,8 +323,8 @@ class TestRAGPipelineErrorPropagation:
 
     def test_query_validation_happens_before_retrieval(
         self,
-        mock_retriever: RetrieverProtocol,
-        mock_generator: GeneratorProtocol,
+        mock_retriever: MagicMock,
+        mock_generator: MagicMock,
     ) -> None:
         """Query validation (empty check) happens before any retrieval call."""
         pipeline = RAGPipeline(retriever=mock_retriever, generator=mock_generator)
@@ -334,7 +337,9 @@ class TestRAGPipelineErrorPropagation:
 class TestRAGPipelineProtocolCompliance:
     """Test that RAGPipeline correctly uses the protocol interfaces."""
 
-    def test_pipeline_uses_retriever_protocol(self, make_chunk: callable) -> None:
+    def test_pipeline_uses_retriever_protocol(
+        self, make_chunk: Callable[..., RetrievedChunk]
+    ) -> None:
         """Pipeline calls retriever with correct protocol signature."""
         retriever = MagicMock(spec=RetrieverProtocol)
         generator = MagicMock(spec=GeneratorProtocol)
@@ -360,7 +365,9 @@ class TestRAGPipelineProtocolCompliance:
             entity_name=None,
         )
 
-    def test_pipeline_uses_generator_protocol(self, make_chunk: callable) -> None:
+    def test_pipeline_uses_generator_protocol(
+        self, make_chunk: Callable[..., RetrievedChunk]
+    ) -> None:
         """Pipeline calls generator with correct protocol signature."""
         retriever = MagicMock(spec=RetrieverProtocol)
         generator = MagicMock(spec=GeneratorProtocol)

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from scripts.training.sampler import ChunkSampler, extract_entity_name
@@ -36,7 +38,7 @@ class TestExtractEntityName:
 
 @pytest.mark.unit
 class TestChunkSampler:
-    def test_samples_from_all_sources(self, tmp_path: pytest.TempPathFactory) -> None:
+    def test_samples_from_all_sources(self, tmp_path: Path) -> None:
         for source in ("bulbapedia", "pokeapi", "smogon"):
             d = tmp_path / source
             d.mkdir()
@@ -56,7 +58,7 @@ class TestChunkSampler:
         assert counts["smogon"] < counts["bulbapedia"]
         assert counts["smogon"] < counts["pokeapi"]
 
-    def test_excludes_aug_files_by_default(self, tmp_path: pytest.TempPathFactory) -> None:
+    def test_excludes_aug_files_by_default(self, tmp_path: Path) -> None:
         d = tmp_path / "pokeapi"
         d.mkdir()
         (d / "pokemon_species.txt").write_text("Pikachu is a real entity.\n")
@@ -66,7 +68,7 @@ class TestChunkSampler:
         lines = [result[0] for result in sampled if result is not None]
         assert all("real entity" in line for line in lines)
 
-    def test_returns_none_when_exhausted(self, tmp_path: pytest.TempPathFactory) -> None:
+    def test_returns_none_when_exhausted(self, tmp_path: Path) -> None:
         d = tmp_path / "pokeapi"
         d.mkdir()
         (d / "x.txt").write_text("OnlyOneLine is a singleton.\n")

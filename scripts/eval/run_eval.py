@@ -153,7 +153,7 @@ def _run(
             query=q.query,
             hit5=hit_at_k(chunks, keywords=kw, k=5),
             hit10=hit_at_k(chunks, keywords=kw, k=10),
-            hit20=hit_at_k(chunks, keywords=kw, k=min(top_k, 20)),
+            hit20=hit_at_k(chunks, keywords=kw, k=20),
             mrr10=mrr_at_k(chunks, keywords=kw, k=10),
             top_sources=[c.source for c in chunks[:5]],
         )

@@ -65,6 +65,12 @@ class QdrantVectorStore:
         documents: list[RetrievedChunk],
         embeddings: EmbeddingOutput,
     ) -> None:
+        if len(documents) != len(embeddings.dense) or len(documents) != len(embeddings.sparse):
+            raise ValueError(
+                f"documents/embeddings length mismatch: "
+                f"documents={len(documents)}, dense={len(embeddings.dense)}, "
+                f"sparse={len(embeddings.sparse)}"
+            )
         _LOG.info("Upserting %d point(s) into '%s'", len(documents), collection)
         points = [
             PointStruct(

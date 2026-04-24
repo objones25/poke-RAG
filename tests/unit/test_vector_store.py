@@ -40,11 +40,11 @@ class TestEnsureCollections:
         assert names == {"bulbapedia", "pokeapi", "smogon"}
 
     def test_skips_existing_collections(self) -> None:
-        from qdrant_client.http.exceptions import UnexpectedResponse  # type: ignore[import-untyped]
+        from qdrant_client.http.exceptions import UnexpectedResponse
 
         client = _make_client()
         client.create_collection.side_effect = UnexpectedResponse(
-            status_code=400, reason_phrase="already exists", content=b"", headers={}
+            status_code=400, reason_phrase="already exists", content=b"", headers={}  # type: ignore[arg-type]
         )
         store = QdrantVectorStore(client)
         store.ensure_collections()  # must not raise
@@ -135,6 +135,14 @@ class TestUpsert:
         store.upsert("pokeapi", [chunk], _make_embeddings(n=1))
         payload = client.upsert.call_args[1]["points"][0].payload
         assert payload["entity_name"] == ""
+
+    def test_raises_on_embedding_length_mismatch(self) -> None:
+        client = _make_client()
+        store = QdrantVectorStore(client)
+        chunks = [_make_chunk(original_doc_id=f"doc_{i}") for i in range(3)]
+        embeddings = _make_embeddings(n=2)  # only 2 embeddings for 3 chunks
+        with pytest.raises(ValueError, match="length mismatch"):
+            store.upsert("pokeapi", chunks, embeddings)
 
 
 @pytest.mark.unit

@@ -5,6 +5,7 @@ Uses a mocked model that returns deterministic output — no GPU required.
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -18,7 +19,7 @@ from src.generation.prompt_builder import build_prompt
 from src.types import GenerationResult, RetrievedChunk
 
 
-class _FakeInputs(dict):
+class _FakeInputs(dict[str, Any]):
     """Dict-like batch that supports .to(device), mirrors BatchFeature."""
 
 

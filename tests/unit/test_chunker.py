@@ -291,7 +291,7 @@ class TestChunkFile:
         p = tmp_path / "empty.txt"  # type: ignore[operator]
         p.write_text("", encoding="utf-8")
         for source in ("pokeapi", "smogon", "bulbapedia"):
-            chunks = chunk_file(p, source=source)  # type: ignore[arg-type]
+            chunks = chunk_file(p, source=source)
             assert chunks == [], f"expected [] for source={source}"
 
 

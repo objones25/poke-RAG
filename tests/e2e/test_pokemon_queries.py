@@ -187,7 +187,7 @@ class TestPokemonQueryAnswers:
 
         result = e2e_pipeline.query("What are Garchomp's base stats?")
         assert isinstance(result.confidence_score, float)
-        assert math.isfinite(result.confidence_score)  # type: ignore[arg-type]
+        assert math.isfinite(result.confidence_score)
 
     def test_top_k_bounds_num_chunks(self, e2e_pipeline):
         result = e2e_pipeline.query("What type is Pikachu?", top_k=3)
@@ -242,4 +242,4 @@ class TestPipelineInvariants:
 
         result = e2e_pipeline.query("What type is Pikachu?")
         with pytest.raises(FrozenInstanceError):
-            result.answer = "mutated"  # type: ignore[misc]
+            result.answer = "mutated"
