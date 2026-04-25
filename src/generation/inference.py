@@ -118,7 +118,7 @@ class Inferencer:
                 )
             except Exception as exc:
                 exc_holder.append(exc)
-                streamer.end()
+                streamer.end()  # type: ignore[no-untyped-call]
 
         thread = threading.Thread(target=_generate, daemon=True)
         thread.start()

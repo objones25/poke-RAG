@@ -4,9 +4,9 @@ import asyncio
 import contextlib
 import math
 from collections.abc import AsyncGenerator
-from typing import Any
+from typing import Any, cast
 
-from src.generation.protocols import GeneratorProtocol
+from src.generation.protocols import GeneratorProtocol, StreamingGeneratorProtocol
 from src.pipeline.types import PipelineResult
 from src.retrieval.protocols import AsyncRetrieverProtocol, QueryRouterProtocol, RetrieverProtocol
 from src.types import RetrievalError, Source
@@ -167,7 +167,8 @@ class AsyncRAGPipeline:
 
         def _produce() -> None:
             try:
-                for token in self._generator.stream_generate(query, chunks):
+                streaming = cast(StreamingGeneratorProtocol, self._generator)
+                for token in streaming.stream_generate(query, chunks):
                     loop.call_soon_threadsafe(queue.put_nowait, token)
             except Exception as exc:
                 loop.call_soon_threadsafe(queue.put_nowait, exc)
