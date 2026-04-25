@@ -19,11 +19,14 @@ class BGEEmbedder:
     Pass a mock model directly in tests for full isolation.
     """
 
-    def __init__(self, model: Any) -> None:
+    def __init__(self, model: Any, *, colbert_enabled: bool = False) -> None:
         self._model = model
+        self._colbert_enabled = colbert_enabled
 
     @classmethod
-    def from_pretrained(cls, *, model_name: str, device: str) -> BGEEmbedder:
+    def from_pretrained(
+        cls, *, model_name: str, device: str, colbert_enabled: bool = False
+    ) -> BGEEmbedder:
         from FlagEmbedding import BGEM3FlagModel  # type: ignore[import-untyped]
 
         use_fp16 = device in ("cuda", "mps")
@@ -32,23 +35,31 @@ class BGEEmbedder:
             message=".*fast tokenizer.*`__call__`.*",
             category=UserWarning,
         )
-        _LOG.info("Loading BGE-M3 embedder '%s' on %s (fp16=%s)", model_name, device, use_fp16)
+        _LOG.info(
+            "Loading BGE-M3 embedder '%s' on %s (fp16=%s, colbert=%s)",
+            model_name,
+            device,
+            use_fp16,
+            colbert_enabled,
+        )
         instance = cls(
-            BGEM3FlagModel(model_name_or_path=model_name, use_fp16=use_fp16, device=device)
+            BGEM3FlagModel(model_name_or_path=model_name, use_fp16=use_fp16, device=device),
+            colbert_enabled=colbert_enabled,
         )
         _LOG.info("BGE-M3 embedder '%s' ready", model_name)
         return instance
 
     def encode(self, texts: list[str]) -> EmbeddingOutput:
         if not texts:
-            return EmbeddingOutput(dense=[], sparse=[])
+            empty_colbert: list[list[list[float]]] | None = [] if self._colbert_enabled else None
+            return EmbeddingOutput(dense=[], sparse=[], colbert=empty_colbert)
 
-        _LOG.debug("Encoding %d text(s)", len(texts))
+        _LOG.debug("Encoding %d text(s) (colbert=%s)", len(texts), self._colbert_enabled)
         raw = self._model.encode(
             texts,
             return_dense=True,
             return_sparse=True,
-            return_colbert_vecs=False,
+            return_colbert_vecs=self._colbert_enabled,
         )
 
         dense: list[list[float]] = [list(map(float, vec)) for vec in raw["dense_vecs"]]
@@ -66,5 +77,12 @@ class BGEEmbedder:
                 deduped[k_int] = new_val
             sparse.append(deduped)
 
+        colbert: list[list[list[float]]] | None = None
+        if self._colbert_enabled:
+            colbert = [
+                [list(map(float, token_vec)) for token_vec in doc_vecs]
+                for doc_vecs in raw["colbert_vecs"]
+            ]
+
         _LOG.debug("Encoded %d texts → dense_dim=%d", len(dense), len(dense[0]) if dense else 0)
-        return EmbeddingOutput(dense=dense, sparse=sparse)
+        return EmbeddingOutput(dense=dense, sparse=sparse, colbert=colbert)

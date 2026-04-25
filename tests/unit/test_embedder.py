@@ -334,3 +334,83 @@ class TestBGEEmbedderEdgeCases:
         }
         result = BGEEmbedder(mock).encode(["text"])
         assert all(-1.0 <= v <= 1.0 for v in result.dense[0])
+
+
+def _make_mock_model_colbert(n: int = 1, seq_len: int = 4, dense_dim: int = 1024) -> MagicMock:
+    """Return a MagicMock that mimics BGEM3FlagModel.encode() output with colbert_vecs."""
+    import numpy as np
+
+    mock = MagicMock()
+    mock.encode.return_value = {
+        "dense_vecs": [[0.1] * dense_dim for _ in range(n)],
+        "lexical_weights": [{i: 0.5 for i in range(3)} for _ in range(n)],
+        "colbert_vecs": [np.ones((seq_len, dense_dim), dtype="float32") for _ in range(n)],
+    }
+    return mock
+
+
+@pytest.mark.unit
+class TestBGEEmbedderColBERT:
+    def test_colbert_requested_when_enabled(self) -> None:
+        mock = _make_mock_model_colbert(n=1)
+        BGEEmbedder(mock, colbert_enabled=True).encode(["text"])
+        call_kwargs = mock.encode.call_args[1]
+        assert call_kwargs.get("return_colbert_vecs") is True
+
+    def test_colbert_not_requested_when_disabled(self) -> None:
+        mock = _make_mock_model(n=1)
+        BGEEmbedder(mock, colbert_enabled=False).encode(["text"])
+        call_kwargs = mock.encode.call_args[1]
+        assert call_kwargs.get("return_colbert_vecs") is False
+
+    def test_colbert_field_populated_when_enabled(self) -> None:
+        mock = _make_mock_model_colbert(n=2)
+        result = BGEEmbedder(mock, colbert_enabled=True).encode(["a", "b"])
+        assert result.colbert is not None
+        assert len(result.colbert) == 2
+
+    def test_colbert_field_is_none_when_disabled(self) -> None:
+        mock = _make_mock_model(n=1)
+        result = BGEEmbedder(mock, colbert_enabled=False).encode(["text"])
+        assert result.colbert is None
+
+    def test_colbert_token_vectors_are_float_lists(self) -> None:
+        mock = _make_mock_model_colbert(n=1, seq_len=5)
+        result = BGEEmbedder(mock, colbert_enabled=True).encode(["text"])
+        assert result.colbert is not None
+        for doc_vecs in result.colbert:
+            for token_vec in doc_vecs:
+                assert all(isinstance(v, float) for v in token_vec)
+
+    def test_colbert_token_vectors_have_correct_dim(self) -> None:
+        mock = _make_mock_model_colbert(n=1, seq_len=3, dense_dim=1024)
+        result = BGEEmbedder(mock, colbert_enabled=True).encode(["text"])
+        assert result.colbert is not None
+        assert len(result.colbert[0][0]) == 1024
+
+    def test_colbert_empty_input_returns_empty_list(self) -> None:
+        mock = MagicMock()
+        result = BGEEmbedder(mock, colbert_enabled=True).encode([])
+        assert result.colbert == []
+        mock.encode.assert_not_called()
+
+    def test_colbert_empty_input_disabled_returns_none(self) -> None:
+        mock = MagicMock()
+        result = BGEEmbedder(mock, colbert_enabled=False).encode([])
+        assert result.colbert is None
+
+    def test_from_pretrained_passes_colbert_enabled(self) -> None:
+        from unittest.mock import patch
+
+        with patch("FlagEmbedding.BGEM3FlagModel"):
+            embedder = BGEEmbedder.from_pretrained(
+                model_name="BAAI/bge-m3", device="cpu", colbert_enabled=True
+            )
+            assert embedder._colbert_enabled is True
+
+    def test_from_pretrained_colbert_disabled_by_default(self) -> None:
+        from unittest.mock import patch
+
+        with patch("FlagEmbedding.BGEM3FlagModel"):
+            embedder = BGEEmbedder.from_pretrained(model_name="BAAI/bge-m3", device="cpu")
+            assert embedder._colbert_enabled is False

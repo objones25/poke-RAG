@@ -56,20 +56,36 @@ def group_by_source(
     if not chunks:
         return {}
 
-    grouped: dict[Source, tuple[list[RetrievedChunk], list[list[float]], list[dict[int, float]]]]
+    grouped: dict[
+        Source,
+        tuple[
+            list[RetrievedChunk],
+            list[list[float]],
+            list[dict[int, float]],
+            list[list[list[float]]] | None,
+        ],
+    ]
     grouped = {}
 
     for idx, chunk in enumerate(chunks):
         source = chunk.source
         if source not in grouped:
-            grouped[source] = ([], [], [])
+            colbert_acc: list[list[list[float]]] | None = (
+                [] if embeddings.colbert is not None else None
+            )
+            grouped[source] = ([], [], [], colbert_acc)
         grouped[source][0].append(chunk)
         grouped[source][1].append(embeddings.dense[idx])
         grouped[source][2].append(embeddings.sparse[idx])
+        if embeddings.colbert is not None and grouped[source][3] is not None:
+            grouped[source][3].append(embeddings.colbert[idx])
 
     return {
-        src: (clist, EmbeddingOutput(dense=dlist, sparse=slist))
-        for src, (clist, dlist, slist) in grouped.items()
+        src: (
+            clist,
+            EmbeddingOutput(dense=dlist, sparse=slist, colbert=cblist),
+        )
+        for src, (clist, dlist, slist, cblist) in grouped.items()
     }
 
 
@@ -96,6 +112,8 @@ def run(
     batch_size: int = _DEFAULT_BATCH_SIZE,
     dry_run: bool = False,
     checkpoint_path: Path | None = None,
+    drop_collections: bool = False,
+    colbert_enabled: bool = False,
 ) -> None:
     files = discover_files(processed_dir, sources)
     if not files:
@@ -117,6 +135,9 @@ def run(
     )
 
     if not dry_run:
+        if drop_collections:
+            _LOG.info("Dropping existing collections before rebuild")
+            vector_store.drop_collections()
         vector_store.ensure_collections()
 
     for source, path in remaining:
@@ -133,6 +154,14 @@ def run(
                     raise RuntimeError(
                         f"Embedder returned {len(result.dense)} dense and "
                         f"{len(result.sparse)} sparse vectors for batch of {len(batch)}"
+                    )
+                if colbert_enabled and (
+                    result.colbert is None or len(result.colbert) != len(batch)
+                ):
+                    raise RuntimeError(
+                        f"ColBERT enabled but embedder returned "
+                        f"{len(result.colbert) if result.colbert else None} ColBERT vectors "
+                        f"for batch of {len(batch)}"
                     )
                 if dry_run:
                     _LOG.info("[dry-run] would upsert %d chunk(s) into '%s'", len(batch), source)
@@ -180,10 +209,21 @@ def main() -> None:
         action="store_true",
         help="Disable checkpointing (re-index everything).",
     )
+    parser.add_argument(
+        "--colbert",
+        action="store_true",
+        help="Enable ColBERT multi-vector embeddings (requires --drop-collections on first run).",
+    )
+    parser.add_argument(
+        "--drop-collections",
+        action="store_true",
+        help="Drop existing Qdrant collections before indexing (required when changing schema).",
+    )
     args = parser.parse_args()
 
     sources: tuple[Source, ...] = tuple(args.sources) if args.sources else _ALL_SOURCES
     checkpoint_path: Path | None = None if args.no_checkpoint else args.checkpoint
+    colbert_enabled: bool = args.colbert
 
     try:
         from src.config import Settings
@@ -198,12 +238,17 @@ def main() -> None:
     from src.retrieval.embedder import BGEEmbedder
     from src.retrieval.vector_store import QdrantVectorStore
 
-    embedder = BGEEmbedder.from_pretrained(model_name=settings.embed_model, device=settings.device)
+    embedder = BGEEmbedder.from_pretrained(
+        model_name=settings.embed_model,
+        device=settings.device,
+        colbert_enabled=colbert_enabled,
+    )
     api_key_str = (
         None if settings.qdrant_api_key is None else settings.qdrant_api_key.get_secret_value()
     )
-    client = QdrantClient(url=settings.qdrant_url, api_key=api_key_str)
-    vector_store = QdrantVectorStore(client)
+    timeout = 120 if colbert_enabled else 30
+    client = QdrantClient(url=settings.qdrant_url, api_key=api_key_str, timeout=timeout)
+    vector_store = QdrantVectorStore(client, colbert_enabled=colbert_enabled)
 
     run(
         embedder=embedder,
@@ -213,6 +258,8 @@ def main() -> None:
         batch_size=args.batch_size,
         dry_run=args.dry_run,
         checkpoint_path=checkpoint_path,
+        drop_collections=args.drop_collections,
+        colbert_enabled=colbert_enabled,
     )
 
 

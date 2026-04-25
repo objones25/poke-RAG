@@ -542,3 +542,173 @@ class TestVectorStoreProtocolCompliance:
 
         store = QdrantVectorStore(_make_client())
         assert isinstance(store, VectorStoreProtocol)
+
+
+def _make_colbert_embeddings(
+    n: int = 1, seq_len: int = 4, dense_dim: int = 1024
+) -> EmbeddingOutput:
+    return EmbeddingOutput(
+        dense=[[0.1] * dense_dim for _ in range(n)],
+        sparse=[{i: 0.5 for i in range(3)} for _ in range(n)],
+        colbert=[[[0.1] * dense_dim for _ in range(seq_len)] for _ in range(n)],
+    )
+
+
+@pytest.mark.unit
+class TestDropCollections:
+    def test_calls_delete_for_all_three_sources(self) -> None:
+        client = _make_client()
+        store = QdrantVectorStore(client)
+        store.drop_collections()
+        assert client.delete_collection.call_count == 3
+
+    def test_delete_called_for_each_source(self) -> None:
+        client = _make_client()
+        store = QdrantVectorStore(client)
+        store.drop_collections()
+        names = {c[1]["collection_name"] for c in client.delete_collection.call_args_list}
+        assert names == {"bulbapedia", "pokeapi", "smogon"}
+
+    def test_delete_failure_is_swallowed(self) -> None:
+        client = _make_client()
+        client.delete_collection.side_effect = Exception("not found")
+        store = QdrantVectorStore(client)
+        store.drop_collections()  # must not raise
+
+
+@pytest.mark.unit
+class TestEnsureCollectionsColBERT:
+    def test_colbert_vector_config_added_when_enabled(self) -> None:
+        client = _make_client()
+        store = QdrantVectorStore(client, colbert_enabled=True)
+        store.ensure_collections()
+        vectors_config = client.create_collection.call_args_list[0][1]["vectors_config"]
+        assert "colbert" in vectors_config
+
+    def test_colbert_vector_config_absent_when_disabled(self) -> None:
+        client = _make_client()
+        store = QdrantVectorStore(client, colbert_enabled=False)
+        store.ensure_collections()
+        vectors_config = client.create_collection.call_args_list[0][1]["vectors_config"]
+        assert "colbert" not in vectors_config
+
+    def test_colbert_vector_uses_multivector_config(self) -> None:
+        from qdrant_client.models import MultiVectorComparator, MultiVectorConfig
+
+        client = _make_client()
+        store = QdrantVectorStore(client, colbert_enabled=True)
+        store.ensure_collections()
+        vectors_config = client.create_collection.call_args_list[0][1]["vectors_config"]
+        colbert_params = vectors_config["colbert"]
+        assert colbert_params.multivector_config == MultiVectorConfig(
+            comparator=MultiVectorComparator.MAX_SIM
+        )
+
+
+@pytest.mark.unit
+class TestUpsertColBERT:
+    def _make_scored_point(self, text: str, score: float, entity: str) -> MagicMock:
+        p = MagicMock()
+        p.score = score
+        p.payload = {
+            "text": text,
+            "source": "pokeapi",
+            "entity_name": entity,
+            "entity_type": "pokemon",
+            "chunk_index": 0,
+            "original_doc_id": "doc1",
+        }
+        return p
+
+    def test_upsert_includes_colbert_vector_when_enabled(self) -> None:
+        client = _make_client()
+        store = QdrantVectorStore(client, colbert_enabled=True)
+        chunk = _make_chunk()
+        embeddings = _make_colbert_embeddings(n=1)
+        store.upsert("pokeapi", [chunk], embeddings)
+        point = client.upsert.call_args[1]["points"][0]
+        assert "colbert" in point.vector
+
+    def test_upsert_excludes_colbert_vector_when_disabled(self) -> None:
+        client = _make_client()
+        store = QdrantVectorStore(client, colbert_enabled=False)
+        chunk = _make_chunk()
+        embeddings = _make_embeddings(n=1)
+        store.upsert("pokeapi", [chunk], embeddings)
+        point = client.upsert.call_args[1]["points"][0]
+        assert "colbert" not in point.vector
+
+    def test_upsert_raises_when_colbert_enabled_but_missing(self) -> None:
+        client = _make_client()
+        store = QdrantVectorStore(client, colbert_enabled=True)
+        chunk = _make_chunk()
+        embeddings = _make_embeddings(n=1)  # colbert=None
+        with pytest.raises(ValueError, match="ColBERT enabled"):
+            store.upsert("pokeapi", [chunk], embeddings)
+
+    def test_upsert_raises_when_colbert_length_mismatch(self) -> None:
+        client = _make_client()
+        store = QdrantVectorStore(client, colbert_enabled=True)
+        chunks = [_make_chunk(), _make_chunk()]
+        embeddings_bad = EmbeddingOutput(
+            dense=[[0.1] * 1024, [0.2] * 1024],
+            sparse=[{}, {}],
+            colbert=[[[0.1] * 1024]],  # only 1 doc worth
+        )
+        with pytest.raises(ValueError, match="ColBERT enabled"):
+            store.upsert("pokeapi", chunks, embeddings_bad)
+
+
+@pytest.mark.unit
+class TestSearchColBERT:
+    def _make_scored_point(self, text: str, score: float, entity: str) -> MagicMock:
+        p = MagicMock()
+        p.score = score
+        p.payload = {
+            "text": text,
+            "source": "pokeapi",
+            "entity_name": entity,
+            "entity_type": "pokemon",
+            "chunk_index": 0,
+            "original_doc_id": "doc1",
+        }
+        return p
+
+    def test_search_adds_colbert_prefetch_when_enabled(self) -> None:
+        client = _make_client()
+        client.query_points.return_value.points = []
+        store = QdrantVectorStore(client, colbert_enabled=True)
+        query_colbert = [[0.1] * 1024, [0.2] * 1024]
+        store.search("pokeapi", [0.1] * 1024, {1: 0.5}, top_k=5, query_colbert=query_colbert)
+        call_kwargs = client.query_points.call_args[1]
+        prefetch = call_kwargs["prefetch"]
+        using_names = [p.using for p in prefetch]
+        assert "colbert" in using_names
+
+    def test_search_has_two_prefetch_legs_when_colbert_disabled(self) -> None:
+        client = _make_client()
+        client.query_points.return_value.points = []
+        store = QdrantVectorStore(client, colbert_enabled=False)
+        store.search("pokeapi", [0.1] * 1024, {1: 0.5}, top_k=5)
+        call_kwargs = client.query_points.call_args[1]
+        prefetch = call_kwargs["prefetch"]
+        assert len(prefetch) == 2
+
+    def test_search_has_three_prefetch_legs_when_colbert_enabled(self) -> None:
+        client = _make_client()
+        client.query_points.return_value.points = []
+        store = QdrantVectorStore(client, colbert_enabled=True)
+        query_colbert = [[0.1] * 1024]
+        store.search("pokeapi", [0.1] * 1024, {1: 0.5}, top_k=5, query_colbert=query_colbert)
+        call_kwargs = client.query_points.call_args[1]
+        prefetch = call_kwargs["prefetch"]
+        assert len(prefetch) == 3
+
+    def test_search_colbert_prefetch_none_skips_third_leg(self) -> None:
+        client = _make_client()
+        client.query_points.return_value.points = []
+        store = QdrantVectorStore(client, colbert_enabled=True)
+        store.search("pokeapi", [0.1] * 1024, {1: 0.5}, top_k=5, query_colbert=None)
+        call_kwargs = client.query_points.call_args[1]
+        prefetch = call_kwargs["prefetch"]
+        assert len(prefetch) == 2

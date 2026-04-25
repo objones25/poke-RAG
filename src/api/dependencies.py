@@ -39,14 +39,18 @@ def get_async_pipeline(request: Request) -> AsyncRAGPipeline:
 def build_pipeline() -> tuple[RAGPipeline, ModelLoader, QdrantClient]:
     settings = Settings.from_env()
 
-    embedder = BGEEmbedder.from_pretrained(model_name=settings.embed_model, device=settings.device)
+    embedder = BGEEmbedder.from_pretrained(
+        model_name=settings.embed_model,
+        device=settings.device,
+        colbert_enabled=settings.colbert_enabled,
+    )
     reranker = BGEReranker.from_pretrained(model_name=settings.rerank_model, device=settings.device)
 
     api_key_str = (
         None if settings.qdrant_api_key is None else settings.qdrant_api_key.get_secret_value()
     )
     client = QdrantClient(url=settings.qdrant_url, api_key=api_key_str)
-    vector_store = QdrantVectorStore(client)
+    vector_store = QdrantVectorStore(client, colbert_enabled=settings.colbert_enabled)
     vector_store.ensure_collections()
 
     gen_config = GenerationConfig(
@@ -121,14 +125,20 @@ def build_pipeline() -> tuple[RAGPipeline, ModelLoader, QdrantClient]:
 def build_async_pipeline() -> tuple[AsyncRAGPipeline, ModelLoader, AsyncQdrantClient]:
     settings = Settings.from_env()
 
-    embedder = BGEEmbedder.from_pretrained(model_name=settings.embed_model, device=settings.device)
+    embedder = BGEEmbedder.from_pretrained(
+        model_name=settings.embed_model,
+        device=settings.device,
+        colbert_enabled=settings.colbert_enabled,
+    )
     reranker = BGEReranker.from_pretrained(model_name=settings.rerank_model, device=settings.device)
 
     api_key_str = (
         None if settings.qdrant_api_key is None else settings.qdrant_api_key.get_secret_value()
     )
     async_client = AsyncQdrantClient(url=settings.qdrant_url, api_key=api_key_str)
-    async_vector_store = AsyncQdrantVectorStore(async_client)
+    async_vector_store = AsyncQdrantVectorStore(
+        async_client, colbert_enabled=settings.colbert_enabled
+    )
 
     gen_config = GenerationConfig(
         model_id=settings.gen_model,

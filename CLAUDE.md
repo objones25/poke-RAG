@@ -173,6 +173,7 @@ These protocols enable unit testing with mocks instead of loading real models.
 - `HYDE_MAX_TOKENS=N` — Max tokens for HyDE output (default: 150)
 - `HYDE_NUM_DRAFTS=N` — Number of hypothetical passages for MultiDraftHyDE (default: 1)
 - `HYDE_CONFIDENCE_THRESHOLD=F` — Optional threshold (0.0–1.0) to gate weak answers; None if unset
+- `COLBERT_ENABLED=true/false` — Enable ColBERT multi-vector late-interaction reranking (default: false). **Requires index rebuild** with `--colbert --drop-collections` when first enabled.
 - `LORA_ADAPTER_PATH=/path/to/adapter` — Path to LoRA weights (optional, only if fine-tuned on RunPod)
 - `qdrant_api_key` — `SecretStr` (Pydantic), masked in logs/repr (optional, only if Qdrant requires auth)
 

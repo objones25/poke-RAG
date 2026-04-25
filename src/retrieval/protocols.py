@@ -49,8 +49,9 @@ class VectorStoreProtocol(Protocol):
         query_sparse: dict[int, float],
         top_k: int,
         entity_name: str | None = None,
+        query_colbert: list[list[float]] | None = None,
     ) -> list[RetrievedChunk]:
-        """Hybrid dense+sparse search with optional entity_name payload filter.
+        """Hybrid dense+sparse search with optional ColBERT and entity_name payload filter.
 
         Raises:
             OSError: If vector store is unavailable or connection fails.
@@ -134,8 +135,9 @@ class AsyncVectorStoreProtocol(Protocol):
         query_sparse: dict[int, float],
         top_k: int,
         entity_name: str | None = None,
+        query_colbert: list[list[float]] | None = None,
     ) -> list[RetrievedChunk]:
-        """Hybrid dense+sparse search with optional entity_name payload filter.
+        """Hybrid dense+sparse search with optional ColBERT and entity_name payload filter.
 
         Raises:
             OSError: If vector store is unavailable or connection fails.
