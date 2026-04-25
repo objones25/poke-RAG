@@ -51,8 +51,8 @@ class BGEEmbedder:
 
     def encode(self, texts: list[str]) -> EmbeddingOutput:
         if not texts:
-            colbert: list[list[list[float]]] | None = [] if self._colbert_enabled else None
-            return EmbeddingOutput(dense=[], sparse=[], colbert=colbert)
+            empty_colbert: list[list[list[float]]] | None = [] if self._colbert_enabled else None
+            return EmbeddingOutput(dense=[], sparse=[], colbert=empty_colbert)
 
         _LOG.debug("Encoding %d text(s) (colbert=%s)", len(texts), self._colbert_enabled)
         raw = self._model.encode(

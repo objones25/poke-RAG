@@ -162,7 +162,7 @@ def run(
                         f"ColBERT enabled but embedder returned "
                         f"{len(result.colbert) if result.colbert else None} ColBERT vectors "
                         f"for batch of {len(batch)}"
-                        )
+                    )
                 if dry_run:
                     _LOG.info("[dry-run] would upsert %d chunk(s) into '%s'", len(batch), source)
                 else:

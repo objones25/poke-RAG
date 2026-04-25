@@ -165,9 +165,7 @@ class QdrantVectorStore:
                         )
                         time.sleep(delay)
                     else:
-                        raise VectorIndexError(
-                            f"Upsert to '{collection}' failed: {exc}"
-                        ) from exc
+                        raise VectorIndexError(f"Upsert to '{collection}' failed: {exc}") from exc
             _LOG.debug(
                 "Upserted points %d–%d into '%s'",
                 i,
@@ -395,9 +393,7 @@ class AsyncQdrantVectorStore:
                         )
                         await asyncio.sleep(delay)
                     else:
-                        raise VectorIndexError(
-                            f"Upsert to '{collection}' failed: {exc}"
-                        ) from exc
+                        raise VectorIndexError(f"Upsert to '{collection}' failed: {exc}") from exc
             _LOG.debug(
                 "Upserted points %d–%d into '%s'",
                 i,

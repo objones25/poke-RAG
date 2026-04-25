@@ -264,7 +264,5 @@ class Settings:
             async_pipeline_enabled=_parse_bool(
                 os.getenv("ASYNC_PIPELINE_ENABLED"), "ASYNC_PIPELINE_ENABLED", False
             ),
-            colbert_enabled=_parse_bool(
-                os.getenv("COLBERT_ENABLED"), "COLBERT_ENABLED", False
-            ),
+            colbert_enabled=_parse_bool(os.getenv("COLBERT_ENABLED"), "COLBERT_ENABLED", False),
         )
