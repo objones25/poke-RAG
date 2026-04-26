@@ -62,9 +62,10 @@ import os
 import re
 import sys
 from collections import defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 import yaml  # type: ignore[import-untyped]
 
@@ -324,6 +325,7 @@ def _build_retriever(*, routing: bool, hyde: bool) -> tuple[Any, Any]:
     os.environ.setdefault("HYDE_ENABLED", "true" if hyde else "false")
 
     from qdrant_client import QdrantClient
+
     from src.config import Settings
     from src.retrieval.embedder import BGEEmbedder
     from src.retrieval.query_router import QueryRouter

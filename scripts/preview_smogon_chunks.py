@@ -45,7 +45,9 @@ def _print_chunk(chunk, index: int) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Preview smogon_data chunks")
     parser.add_argument("--n", type=int, default=20, help="max chunks to display (default 20)")
-    parser.add_argument("--pokemon", type=str, default=None, help="filter by entity_name (case-insensitive)")
+    parser.add_argument(
+        "--pokemon", type=str, default=None, help="filter by entity_name (case-insensitive)"
+    )
     parser.add_argument("--format", type=str, default=None, help="filter by format name in doc_id")
     parser.add_argument("--stats", action="store_true", help="print summary stats only")
     args = parser.parse_args()
