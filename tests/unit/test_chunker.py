@@ -309,12 +309,9 @@ _DASH_SEP = "-" * 40
 _SMOGON_DATA_SAMPLE = (
     _EQ_SEP + "\n"
     "VENUSAUR  (Grass/Poison)  —  introduced Gen 1\n"
-    "Smogon form: Venusaur\n"
-    + _EQ_SEP + "\n"
-    "\n"
-    + _DASH_SEP + "\n"
-    " Format: gen1ou\n"
-    + _DASH_SEP + "\n"
+    "Smogon form: Venusaur\n" + _EQ_SEP + "\n"
+    "\n" + _DASH_SEP + "\n"
+    " Format: gen1ou\n" + _DASH_SEP + "\n"
     "\n"
     "[ Overview ]\n"
     "Venusaur is a strong sleeper in gen1ou. It can threaten Water-types.\n"
@@ -328,10 +325,8 @@ _SMOGON_DATA_SAMPLE = (
     "\n"
     "  Description:\n"
     "  Sleep Powder lets Venusaur incapacitate foes.\n"
-    "\n"
-    + _DASH_SEP + "\n"
-    " Format: gen1pu\n"
-    + _DASH_SEP + "\n"
+    "\n" + _DASH_SEP + "\n"
+    " Format: gen1pu\n" + _DASH_SEP + "\n"
     "\n"
     "[ Set: Sleeper ]\n"
     "  Moves:\n"
@@ -339,10 +334,8 @@ _SMOGON_DATA_SAMPLE = (
     "    - Razor Leaf\n"
     "    - Body Slam\n"
     "    - Hyper Beam\n"
-    "\n"
-    + _DASH_SEP + "\n"
-    " Format: gen9uu\n"
-    + _DASH_SEP + "\n"
+    "\n" + _DASH_SEP + "\n"
+    " Format: gen9uu\n" + _DASH_SEP + "\n"
     "\n"
     "[ Set: Sun Sweeper ]\n"
     "  Tera Type: Fire\n"
@@ -359,15 +352,11 @@ _SMOGON_DATA_SAMPLE = (
     "\n"
     "  Description:\n"
     "  Venusaur uses Chlorophyll to sweep in sun.\n"
-    "\n"
-    + _EQ_SEP + "\n"
+    "\n" + _EQ_SEP + "\n"
     "CHARIZARD  (Fire/Flying)  —  introduced Gen 1\n"
-    "Smogon form: Charizard\n"
-    + _EQ_SEP + "\n"
-    "\n"
-    + _DASH_SEP + "\n"
-    " Format: gen1ou\n"
-    + _DASH_SEP + "\n"
+    "Smogon form: Charizard\n" + _EQ_SEP + "\n"
+    "\n" + _DASH_SEP + "\n"
+    " Format: gen1ou\n" + _DASH_SEP + "\n"
     "\n"
     "[ Overview ]\n"
     "Charizard is unviable in RBY OU.\n"
@@ -413,9 +402,7 @@ class TestChunkSmogonDataFile:
 
     def test_overview_chunk_text_format(self) -> None:
         chunks = self._chunks()
-        overview = next(
-            c for c in chunks if c.entity_name == "Venusaur" and "Overview" in c.text
-        )
+        overview = next(c for c in chunks if c.entity_name == "Venusaur" and "Overview" in c.text)
         assert overview.text.startswith("Venusaur in gen1ou — Overview")
         assert "strong sleeper" in overview.text
 
@@ -430,9 +417,7 @@ class TestChunkSmogonDataFile:
 
     def test_set_chunk_without_description_is_produced(self) -> None:
         chunks = self._chunks()
-        sleeper = next(
-            c for c in chunks if c.entity_name == "Venusaur" and "Sleeper" in c.text
-        )
+        sleeper = next(c for c in chunks if c.entity_name == "Venusaur" and "Sleeper" in c.text)
         assert "Venusaur in gen1pu — Set: Sleeper" in sleeper.text
         assert "Sleep Powder" in sleeper.text
 

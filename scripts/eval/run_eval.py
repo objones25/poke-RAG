@@ -140,13 +140,13 @@ def resolve_chunk_id(chunk: Any) -> str | None:
 
 
 _TEXT_FALLBACK_RESOLVERS: list[tuple[str, re.Pattern[str]]] = [
-    ("pokemon_species",    re.compile(r"^([A-Z][^.\n]+?) is a (?:[A-Za-z][\w\-]* )*Pokémon\.")),
+    ("pokemon_species", re.compile(r"^([A-Z][^.\n]+?) is a (?:[A-Za-z][\w\-]* )*Pokémon\.")),
     ("pokemon_encounters", re.compile(r"^([A-Z][^.\n]+?) is a wild Pokémon found in:")),
-    ("move",               re.compile(r"^([A-Z][^.\n]+?) is a Pokémon move\.")),
-    ("ability",            re.compile(r"^([A-Z][^.\n]+?) is a Pokémon ability\.")),
-    ("item",               re.compile(r"^([A-Z][^.\n]+?) is a Pokémon item\.")),
-    ("pokemon",            re.compile(r"^([A-Z][^()]+?) \([A-Z]+ competitive strategy\):")),
-    ("pokemon_moves",      re.compile(r"^([A-Z][^.\n]*?) (?:learns|can learn|can hatch)\b")),
+    ("move", re.compile(r"^([A-Z][^.\n]+?) is a Pokémon move\.")),
+    ("ability", re.compile(r"^([A-Z][^.\n]+?) is a Pokémon ability\.")),
+    ("item", re.compile(r"^([A-Z][^.\n]+?) is a Pokémon item\.")),
+    ("pokemon", re.compile(r"^([A-Z][^()]+?) \([A-Z]+ competitive strategy\):")),
+    ("pokemon_moves", re.compile(r"^([A-Z][^.\n]*?) (?:learns|can learn|can hatch)\b")),
 ]
 
 
@@ -230,9 +230,7 @@ def ndcg_at_k(chunk_ids: list[str | None], *, gold: set[str], k: int) -> float:
     return dcg / idcg if idcg > 0 else 0.0
 
 
-def hard_negative_leak_at_k(
-    chunk_ids: list[str | None], *, hard_negs: set[str], k: int
-) -> float:
+def hard_negative_leak_at_k(chunk_ids: list[str | None], *, hard_negs: set[str], k: int) -> float:
     """Fraction of top-k that are flagged hard negatives (with dedup)."""
     if not hard_negs or k <= 0:
         return 0.0
@@ -302,24 +300,27 @@ def _load_questions(path: Path) -> list[_Question]:
     raw = yaml.safe_load(path.read_text(encoding="utf-8"))
     out: list[_Question] = []
     for item in raw:
-        out.append(_Question(
-            id=item["id"],
-            query=item["query"],
-            category=item["category"],
-            difficulty=item["difficulty"],
-            source_hint=item.get("source_hint"),
-            gold=set(item.get("gold") or []),
-            hard_negatives=set(item.get("hard_negatives") or []),
-            match=item.get("match", "any"),
-            min_recall=float(item.get("min_recall", 1.0)),
-            requires_decomposition=bool(item.get("requires_decomposition", False)),
-            notes=item.get("notes"),
-        ))
+        out.append(
+            _Question(
+                id=item["id"],
+                query=item["query"],
+                category=item["category"],
+                difficulty=item["difficulty"],
+                source_hint=item.get("source_hint"),
+                gold=set(item.get("gold") or []),
+                hard_negatives=set(item.get("hard_negatives") or []),
+                match=item.get("match", "any"),
+                min_recall=float(item.get("min_recall", 1.0)),
+                requires_decomposition=bool(item.get("requires_decomposition", False)),
+                notes=item.get("notes"),
+            )
+        )
     return out
 
 
 def _build_retriever(*, routing: bool, hyde: bool) -> tuple[Any, Any]:
     from dotenv import load_dotenv
+
     load_dotenv()
     os.environ.setdefault("ROUTING_ENABLED", "true" if routing else "false")
     os.environ.setdefault("HYDE_ENABLED", "true" if hyde else "false")
@@ -343,7 +344,9 @@ def _build_retriever(*, routing: bool, hyde: bool) -> tuple[Any, Any]:
     router = QueryRouter() if routing else None
     transformer = PassthroughTransformer()
     retriever = Retriever(
-        vector_store=store, embedder=embedder, reranker=reranker,
+        vector_store=store,
+        embedder=embedder,
+        reranker=reranker,
         query_transformer=transformer,
     )
     return retriever, router
@@ -403,8 +406,13 @@ def _audit_print(q: _Question, chunks: list[Any]) -> None:
 
 
 def _run(
-    questions: list[_Question], retriever: Any, router: Any,
-    *, top_k: int, verbose: bool, audit: bool,
+    questions: list[_Question],
+    retriever: Any,
+    router: Any,
+    *,
+    top_k: int,
+    verbose: bool,
+    audit: bool,
 ) -> list[_Result]:
     out: list[_Result] = []
     for q in questions:
@@ -414,14 +422,27 @@ def _run(
             chunks = list(retrieval.documents)
         except Exception as exc:  # noqa: BLE001
             print(f"  ERROR {q.id}: {exc}", file=sys.stderr)
-            out.append(_Result(
-                qid=q.id, category=q.category, difficulty=q.difficulty,
-                source_hint=q.source_hint, requires_decomposition=q.requires_decomposition,
-                hit5=False, hit10=False, hit20=False,
-                recall5=0.0, recall10=0.0, recall20=0.0,
-                precision10=0.0, mrr10=0.0, ndcg10=0.0,
-                passed=False, hard_neg_leak10=0.0, top_ids=[],
-            ))
+            out.append(
+                _Result(
+                    qid=q.id,
+                    category=q.category,
+                    difficulty=q.difficulty,
+                    source_hint=q.source_hint,
+                    requires_decomposition=q.requires_decomposition,
+                    hit5=False,
+                    hit10=False,
+                    hit20=False,
+                    recall5=0.0,
+                    recall10=0.0,
+                    recall20=0.0,
+                    precision10=0.0,
+                    mrr10=0.0,
+                    ndcg10=0.0,
+                    passed=False,
+                    hard_neg_leak10=0.0,
+                    top_ids=[],
+                )
+            )
             continue
 
         if audit:
@@ -456,24 +477,33 @@ def _agg(rs: Iterable[_Result]) -> dict[str, float]:
         return {}
     n = len(rs)
     return {
-        "n":           n,
-        "pass_rate":   sum(r.passed for r in rs) / n,
-        "hit@5":       sum(r.hit5 for r in rs) / n,
-        "hit@10":      sum(r.hit10 for r in rs) / n,
-        "hit@20":      sum(r.hit20 for r in rs) / n,
-        "ctx_recall@10":    sum(r.recall10 for r in rs) / n,    # = recall@10
-        "ctx_recall@20":    sum(r.recall20 for r in rs) / n,
+        "n": n,
+        "pass_rate": sum(r.passed for r in rs) / n,
+        "hit@5": sum(r.hit5 for r in rs) / n,
+        "hit@10": sum(r.hit10 for r in rs) / n,
+        "hit@20": sum(r.hit20 for r in rs) / n,
+        "ctx_recall@10": sum(r.recall10 for r in rs) / n,  # = recall@10
+        "ctx_recall@20": sum(r.recall20 for r in rs) / n,
         "ctx_precision@10": sum(r.precision10 for r in rs) / n,
-        "mrr@10":      sum(r.mrr10 for r in rs) / n,
-        "ndcg@10":     sum(r.ndcg10 for r in rs) / n,
+        "mrr@10": sum(r.mrr10 for r in rs) / n,
+        "ndcg@10": sum(r.ndcg10 for r in rs) / n,
         "hard_neg@10": sum(r.hard_neg_leak10 for r in rs) / n,
     }
 
 
 def _print_breakdown(label: str, groups: dict[str, list[_Result]]) -> None:
     print(f"\n{label}:")
-    headers = ["bucket", "n", "pass", "hit@5", "hit@10",
-               "ctx_R@10", "ctx_P@10", "nDCG@10", "hard@10"]
+    headers = [
+        "bucket",
+        "n",
+        "pass",
+        "hit@5",
+        "hit@10",
+        "ctx_R@10",
+        "ctx_P@10",
+        "nDCG@10",
+        "hard@10",
+    ]
     print("  " + "  ".join(f"{h:>11}" for h in headers))
     print("  " + "  ".join("-" * 11 for _ in headers))
     for k in sorted(groups):
@@ -481,11 +511,15 @@ def _print_breakdown(label: str, groups: dict[str, list[_Result]]) -> None:
         if not a:
             continue
         row = [
-            k, f"{a['n']:.0f}",
+            k,
+            f"{a['n']:.0f}",
             f"{a['pass_rate']:.3f}",
-            f"{a['hit@5']:.3f}", f"{a['hit@10']:.3f}",
-            f"{a['ctx_recall@10']:.3f}", f"{a['ctx_precision@10']:.3f}",
-            f"{a['ndcg@10']:.3f}", f"{a['hard_neg@10']:.3f}",
+            f"{a['hit@5']:.3f}",
+            f"{a['hit@10']:.3f}",
+            f"{a['ctx_recall@10']:.3f}",
+            f"{a['ctx_precision@10']:.3f}",
+            f"{a['ndcg@10']:.3f}",
+            f"{a['hard_neg@10']:.3f}",
         ]
         print("  " + "  ".join(f"{v:>11}" for v in row))
 
@@ -505,9 +539,18 @@ def _print_report(
         single = [r for r in results if not r.requires_decomposition]
         print("\n=== Single-pass retrieval (vanilla expectation) ===")
         a = _agg(single)
-        for k in ["n", "pass_rate", "hit@5", "hit@10", "hit@20",
-                  "ctx_recall@10", "ctx_precision@10",
-                  "mrr@10", "ndcg@10", "hard_neg@10"]:
+        for k in [
+            "n",
+            "pass_rate",
+            "hit@5",
+            "hit@10",
+            "hit@20",
+            "ctx_recall@10",
+            "ctx_precision@10",
+            "mrr@10",
+            "ndcg@10",
+            "hard_neg@10",
+        ]:
             v = a.get(k, 0.0)
             if k == "n":
                 print(f"  {k:<22} {int(v)}")
@@ -525,9 +568,18 @@ def _print_report(
     else:
         print("\n=== Overall ===")
         a = _agg(results)
-        for k in ["n", "pass_rate", "hit@5", "hit@10", "hit@20",
-                  "ctx_recall@10", "ctx_precision@10",
-                  "mrr@10", "ndcg@10", "hard_neg@10"]:
+        for k in [
+            "n",
+            "pass_rate",
+            "hit@5",
+            "hit@10",
+            "hit@20",
+            "ctx_recall@10",
+            "ctx_precision@10",
+            "mrr@10",
+            "ndcg@10",
+            "hard_neg@10",
+        ]:
             v = a.get(k, 0.0)
             if k == "n":
                 print(f"  {k:<22} {int(v)}")
@@ -536,9 +588,9 @@ def _print_report(
         rs_for_breakdown = results
 
     keys = {
-        "category":   lambda r: r.category,
+        "category": lambda r: r.category,
         "difficulty": lambda r: r.difficulty,
-        "source":     lambda r: r.source_hint or "?",
+        "source": lambda r: r.source_hint or "?",
     }
     for b in breakdowns:
         if b not in keys:
@@ -569,17 +621,23 @@ def main() -> None:
     p.add_argument("--no-hyde", dest="hyde", action="store_false")
     p.add_argument("--top-k", type=int, default=20)
     p.add_argument("--verbose", action="store_true", default=False)
-    p.add_argument("--audit", action="store_true", default=False,
-                   help="Print every retrieved chunk's id + text head per question.")
+    p.add_argument(
+        "--audit",
+        action="store_true",
+        default=False,
+        help="Print every retrieved chunk's id + text head per question.",
+    )
     p.add_argument("--questions", type=Path, default=_QUESTIONS_PATH)
-    p.add_argument("--by", action="append", default=None,
-                   choices=["category", "difficulty", "source"])
+    p.add_argument(
+        "--by", action="append", default=None, choices=["category", "difficulty", "source"]
+    )
     p.add_argument(
         "--include-decomposition",
-        action="store_true", default=False,
+        action="store_true",
+        default=False,
         help="Mix decomposition-required questions into the headline numbers "
-             "instead of bucketing them out. Use this when you've enabled "
-             "--hyde or have a query rewriter and want to see if those help.",
+        "instead of bucketing them out. Use this when you've enabled "
+        "--hyde or have a query rewriter and want to see if those help.",
     )
     args = p.parse_args()
 
@@ -587,15 +645,17 @@ def main() -> None:
 
     print(f"Loading questions from {args.questions}")
     qs = _load_questions(args.questions)
-    print(f"Loaded {len(qs)} questions  "
-          f"({sum(q.requires_decomposition for q in qs)} require decomposition)")
+    print(
+        f"Loaded {len(qs)} questions  "
+        f"({sum(q.requires_decomposition for q in qs)} require decomposition)"
+    )
     print(f"Config: routing={args.routing} hyde={args.hyde} top_k={args.top_k}\n")
 
     retriever, router = _build_retriever(routing=args.routing, hyde=args.hyde)
-    results = _run(qs, retriever, router,
-                   top_k=args.top_k, verbose=args.verbose, audit=args.audit)
+    results = _run(qs, retriever, router, top_k=args.top_k, verbose=args.verbose, audit=args.audit)
     _print_report(
-        results, breakdowns=breakdowns,
+        results,
+        breakdowns=breakdowns,
         bucket_decomposition=not args.include_decomposition,
     )
 

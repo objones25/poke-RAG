@@ -27,9 +27,7 @@ _RE_SD_FORMAT_NAME = re.compile(r"^\s*Format:\s*(\S+)\s*$", re.MULTILINE)
 _RE_SD_SECTION = re.compile(r"^\[\s*(Overview|Set:\s*[^\]]+?)\s*\]\s*$", re.MULTILINE)
 _RE_SD_MOVES_HEADER = re.compile(r"^\s*Moves:\s*$", re.MULTILINE)
 _RE_SD_DESC_HEADER = re.compile(r"^\s*Description:\s*$", re.MULTILINE)
-_RE_SD_ATTR = re.compile(
-    r"^\s*(Tera Type|Item|Ability|Nature|EVs|IVs):\s*(.+)$", re.MULTILINE
-)
+_RE_SD_ATTR = re.compile(r"^\s*(Tera Type|Item|Ability|Nature|EVs|IVs):\s*(.+)$", re.MULTILINE)
 _RE_SD_MOVE_ITEM = re.compile(r"^\s*-\s*(.+)$", re.MULTILINE)
 
 _SMOGON_TARGET_TOKENS = 400
@@ -278,9 +276,7 @@ def _parse_set_body(
     desc_match = _RE_SD_DESC_HEADER.search(body)
 
     attr_end = (
-        moves_match.start()
-        if moves_match
-        else (desc_match.start() if desc_match else len(body))
+        moves_match.start() if moves_match else (desc_match.start() if desc_match else len(body))
     )
     for m in _RE_SD_ATTR.finditer(body[:attr_end]):
         attrs[m.group(1)] = m.group(2).strip()
