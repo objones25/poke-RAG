@@ -77,6 +77,7 @@ class _Result:
     hit20: bool
     mrr10: float
     top_sources: list[str]
+    source_hint: str | None = None
 
 
 def _load_questions(path: Path) -> list[_Question]:
@@ -156,6 +157,7 @@ def _run(
             hit20=hit_at_k(chunks, keywords=kw, k=20),
             mrr10=mrr_at_k(chunks, keywords=kw, k=10),
             top_sources=[c.source for c in chunks[:5]],
+            source_hint=q.source_hint,
         )
         results.append(result)
 
@@ -184,6 +186,19 @@ def _print_table(results: list[_Result]) -> None:
     print(f"| Hit@20    | {hit20:.3f}  |")
     print(f"| MRR@10    | {mrr10:.3f}  |")
     print(f"| Questions | {n}      |")
+
+    # Per-source breakdown
+    by_source: dict[str, list[_Result]] = {}
+    for r in results:
+        key = r.source_hint or "unknown"
+        by_source.setdefault(key, []).append(r)
+
+    if len(by_source) > 1:
+        print("\nPer-source Hit@5:")
+        for src in sorted(by_source):
+            grp = by_source[src]
+            h5 = sum(r.hit5 for r in grp) / len(grp)
+            print(f"  {src:<12} {h5:.3f}  ({len(grp)} questions)")
 
     misses = [r for r in results if not r.hit20]
     if misses:

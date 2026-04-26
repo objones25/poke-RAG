@@ -253,3 +253,87 @@
 - query: "What does the Leftovers item do?"
   expected_keywords: ["Leftovers", "HP", "restore", "held item"]
   source_hint: bulbapedia
+
+# --- pokeapi moves (10) ---
+
+- query: "What moves does Gengar learn by leveling up?"
+  expected_keywords: ["Gengar", "leveling up"]
+  source_hint: pokeapi
+
+- query: "What TM moves can Pikachu learn?"
+  expected_keywords: ["Pikachu", "TM and HM"]
+  source_hint: pokeapi
+
+- query: "What level does Charizard learn Flamethrower?"
+  expected_keywords: ["Charizard", "Flamethrower", "level"]
+  source_hint: pokeapi
+
+- query: "What egg moves does Bulbasaur have?"
+  expected_keywords: ["Bulbasaur", "egg moves"]
+  source_hint: pokeapi
+
+- query: "What moves can Dragonite learn from a move tutor?"
+  expected_keywords: ["Dragonite", "move tutor"]
+  source_hint: pokeapi
+
+- query: "What level does Alakazam learn Psychic?"
+  expected_keywords: ["Alakazam", "Psychic", "level"]
+  source_hint: pokeapi
+
+- query: "What TM moves can Garchomp learn?"
+  expected_keywords: ["Garchomp", "TM and HM"]
+  source_hint: pokeapi
+
+- query: "What moves does Mewtwo learn by leveling up?"
+  expected_keywords: ["Mewtwo", "leveling up"]
+  source_hint: pokeapi
+
+- query: "What are Gyarados's level-up moves?"
+  expected_keywords: ["Gyarados", "leveling up"]
+  source_hint: pokeapi
+
+- query: "What egg moves can Pichu learn?"
+  expected_keywords: ["Pichu", "egg moves"]
+  source_hint: pokeapi
+
+# --- pokeapi encounters (10) ---
+
+- query: "Where can I find Gengar in the wild?"
+  expected_keywords: ["Gengar", "wild"]
+  source_hint: pokeapi
+
+- query: "Where can I catch Magikarp in the wild?"
+  expected_keywords: ["Magikarp", "wild"]
+  source_hint: pokeapi
+
+- query: "Where can I find Gastly in the wild?"
+  expected_keywords: ["Gastly", "wild"]
+  source_hint: pokeapi
+
+- query: "What games can you find Machop in the wild?"
+  expected_keywords: ["Machop", "wild"]
+  source_hint: pokeapi
+
+- query: "Where is Ralts found in the wild?"
+  expected_keywords: ["Ralts", "wild"]
+  source_hint: pokeapi
+
+- query: "Where can I catch Dratini in the wild?"
+  expected_keywords: ["Dratini", "wild"]
+  source_hint: pokeapi
+
+- query: "What wild encounter locations does Geodude have?"
+  expected_keywords: ["Geodude", "wild"]
+  source_hint: pokeapi
+
+- query: "Where can I find Zubat in the wild?"
+  expected_keywords: ["Zubat", "wild"]
+  source_hint: pokeapi
+
+- query: "What locations can you encounter Chansey in the wild?"
+  expected_keywords: ["Chansey", "wild"]
+  source_hint: pokeapi
+
+- query: "Where is Tentacool found in the wild?"
+  expected_keywords: ["Tentacool", "wild"]
+  source_hint: pokeapi
