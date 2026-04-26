@@ -249,6 +249,105 @@ class TestCheckSufficiency:
         gaps = self._check("OU Garchomp sets", ["Gen 6 Garchomp sets"])
         assert "ou" in gaps
 
+    def _check_chunks(self, query: str, chunks: list) -> list[str]:
+        from src.retrieval.knowledge_refiner import KnowledgeRefiner
+
+        return KnowledgeRefiner._check_sufficiency(query, chunks)
+
+    def test_smogon_gen_mismatch_detected_via_metadata(self) -> None:
+        # Text mentions gen9 (cross-gen reference), but chunk is actually gen6.
+        # Old code: "gen9" found as substring → no gap (false negative).
+        # New code: metadata["generation"]=6 != 9 → gap detected.
+        chunk = make_chunk(
+            source="smogon",
+            text="In gen9 this mon dropped to uu, but here is the gen6ou set.",
+            metadata={"generation": 6, "tier": "ou"},
+        )
+        gaps = self._check_chunks("gen9 ou sets", [chunk])
+        assert "gen9" in gaps
+
+    def test_smogon_gen_match_via_metadata_no_gap(self) -> None:
+        chunk = make_chunk(
+            source="smogon",
+            text="Scizor gen6ou standard set.",
+            metadata={"generation": 6, "tier": "ou"},
+        )
+        gaps = self._check_chunks("gen6 ou Scizor sets", [chunk])
+        assert "gen6" not in gaps
+
+    def test_smogon_tier_mismatch_detected_via_metadata(self) -> None:
+        # "ou" appears as substring of "our" in text — old code finds it, new code checks metadata.
+        chunk = make_chunk(
+            source="smogon",
+            text="Our best UU Pokemon options for this format.",
+            metadata={"generation": 9, "tier": "uu"},
+        )
+        gaps = self._check_chunks("ou Scizor sets", [chunk])
+        assert "ou" in gaps
+
+    def test_smogon_tier_match_via_metadata_no_gap(self) -> None:
+        chunk = make_chunk(
+            source="smogon",
+            text="Standard OU set.",
+            metadata={"generation": 9, "tier": "ou"},
+        )
+        gaps = self._check_chunks("ou Scizor sets", [chunk])
+        assert "ou" not in gaps
+
+    def test_smogon_missing_metadata_falls_back_to_text(self) -> None:
+        chunk = make_chunk(source="smogon", text="gen9ou Scizor set.", metadata=None)
+        gaps = self._check_chunks("gen9 ou sets", [chunk])
+        assert "gen9" not in gaps
+        assert "ou" not in gaps
+
+    def test_smogon_missing_generation_key_falls_back_to_text(self) -> None:
+        # Metadata present but "generation" key absent → text fallback for gen keyword.
+        chunk = make_chunk(
+            source="smogon",
+            text="gen9ou Scizor set.",
+            metadata={"tier": "ou"},
+        )
+        gaps = self._check_chunks("gen9 ou sets", [chunk])
+        assert "gen9" not in gaps
+
+    def test_smogon_missing_tier_key_falls_back_to_text(self) -> None:
+        chunk = make_chunk(
+            source="smogon",
+            text="This OU set includes Scizor.",
+            metadata={"generation": 9},
+        )
+        gaps = self._check_chunks("ou sets", [chunk])
+        assert "ou" not in gaps
+
+    def test_non_smogon_uses_text_search(self) -> None:
+        chunk = make_chunk(source="bulbapedia", text="gen9ou tier list analysis.")
+        gaps = self._check_chunks("gen9 ou", [chunk])
+        assert "gen9" not in gaps
+        assert "ou" not in gaps
+
+    def test_mixed_sources_gap_only_when_all_miss(self) -> None:
+        # Smogon chunk is gen6 (metadata), bulbapedia chunk doesn't mention gen9 in text.
+        # Neither covers gen9 → gap detected.
+        smogon_chunk = make_chunk(
+            source="smogon",
+            text="In gen9 this dropped to uu.",
+            metadata={"generation": 6, "tier": "ou"},
+        )
+        bulba_chunk = make_chunk(source="bulbapedia", text="Scizor is a Steel-type Pokemon.")
+        gaps = self._check_chunks("gen9 ou sets", [smogon_chunk, bulba_chunk])
+        assert "gen9" in gaps
+
+    def test_mixed_sources_covered_by_non_smogon_text(self) -> None:
+        # Smogon chunk is gen6 (doesn't cover gen9 via metadata), but bulbapedia text has gen9.
+        smogon_chunk = make_chunk(
+            source="smogon",
+            text="gen6ou Scizor bullet punch.",
+            metadata={"generation": 6, "tier": "ou"},
+        )
+        bulba_chunk = make_chunk(source="bulbapedia", text="gen9 OU viability analysis.")
+        gaps = self._check_chunks("gen9 ou sets", [smogon_chunk, bulba_chunk])
+        assert "gen9" not in gaps
+
 
 @pytest.mark.unit
 class TestRefine:

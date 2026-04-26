@@ -53,7 +53,12 @@ class QueryResponse(BaseModel):
     query: str = Field(..., description="The parsed query that was processed")
     confidence_score: float | None = Field(
         default=None,
-        description="Sigmoid of the top-ranked chunk's reranker score; None if score is non-finite",
+        description=(
+            "Sigmoid of the top-ranked chunk's BGE reranker logit. Measures retrieval relevance "
+            "of the best chunk, not answer quality. Topically-related queries typically produce "
+            "values ≥ 0.5 because the reranker assigns positive logits to on-topic content. "
+            "None if the top chunk's score is non-finite."
+        ),
     )
     knowledge_gaps: list[str] | None = Field(
         default=None,

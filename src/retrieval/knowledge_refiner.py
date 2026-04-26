@@ -111,13 +111,33 @@ class KnowledgeRefiner:
         return keywords
 
     @staticmethod
+    def _covers_keyword(chunk: RetrievedChunk, keyword: str) -> bool:
+        """Return True if chunk satisfies the constraint keyword.
+
+        Smogon chunks use metadata fields (generation/tier) when available to avoid
+        false matches from cross-gen text references. All other sources use text search.
+        """
+        meta = chunk.metadata or {}
+        if chunk.source == "smogon":
+            if keyword.startswith("gen") and "generation" in meta:
+                try:
+                    return bool(meta["generation"] == int(keyword[3:]))
+                except ValueError:
+                    return False
+            if not keyword.startswith("gen") and "tier" in meta:
+                return bool(str(meta["tier"]).lower() == keyword)
+        return keyword in chunk.text.lower()
+
+    @staticmethod
     def _check_sufficiency(query: str, chunks: list[RetrievedChunk]) -> list[str]:
         """Return constraint keywords that appear in the query but not in any surviving chunk."""
         keywords = KnowledgeRefiner._extract_constraint_keywords(query)
         if not keywords:
             return []
-        all_text = " ".join(c.text for c in chunks).lower()
-        return [kw for kw in keywords if kw not in all_text]
+        return [
+            kw for kw in keywords
+            if not any(KnowledgeRefiner._covers_keyword(c, kw) for c in chunks)
+        ]
 
     # ------------------------------------------------------------------
     # Public interface
