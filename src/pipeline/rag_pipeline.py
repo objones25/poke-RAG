@@ -8,7 +8,12 @@ from typing import Any, cast
 
 from src.generation.protocols import GeneratorProtocol, StreamingGeneratorProtocol
 from src.pipeline.types import PipelineResult
-from src.retrieval.protocols import AsyncRetrieverProtocol, QueryRouterProtocol, RetrieverProtocol
+from src.retrieval.protocols import (
+    AsyncRetrieverProtocol,
+    KnowledgeRefinerProtocol,
+    QueryRouterProtocol,
+    RetrieverProtocol,
+)
 from src.types import RetrievalError, Source
 
 _SENTINEL = object()
@@ -30,10 +35,12 @@ class RAGPipeline:
         retriever: RetrieverProtocol,
         generator: GeneratorProtocol,
         query_router: QueryRouterProtocol | None = None,
+        knowledge_refiner: KnowledgeRefinerProtocol | None = None,
     ) -> None:
         self._retriever = retriever
         self._generator = generator
         self._query_router = query_router
+        self._knowledge_refiner = knowledge_refiner
 
     def query(
         self,
@@ -63,6 +70,14 @@ class RAGPipeline:
         if not chunks:
             raise RetrievalError("Retrieval returned no documents for query")
 
+        knowledge_gaps: tuple[str, ...] | None = None
+        if self._knowledge_refiner is not None:
+            refinement = self._knowledge_refiner.refine(query, list(chunks))
+            if not refinement.chunks:
+                raise RetrievalError("KnowledgeRefiner dropped all chunks for query")
+            chunks = refinement.chunks
+            knowledge_gaps = refinement.gaps if refinement.gaps else None
+
         gen_result = self._generator.generate(query, chunks)
 
         raw_score = chunks[0].score
@@ -75,6 +90,7 @@ class RAGPipeline:
             model_name=gen_result.model_name,
             query=query,
             confidence_score=confidence_score,
+            knowledge_gaps=knowledge_gaps,
         )
 
 
@@ -87,10 +103,12 @@ class AsyncRAGPipeline:
         retriever: AsyncRetrieverProtocol,
         generator: GeneratorProtocol,
         query_router: QueryRouterProtocol | None = None,
+        knowledge_refiner: KnowledgeRefinerProtocol | None = None,
     ) -> None:
         self._retriever = retriever
         self._generator = generator
         self._query_router = query_router
+        self._knowledge_refiner = knowledge_refiner
 
     async def query(
         self,
@@ -120,6 +138,14 @@ class AsyncRAGPipeline:
         if not chunks:
             raise RetrievalError("Retrieval returned no documents for query")
 
+        knowledge_gaps: tuple[str, ...] | None = None
+        if self._knowledge_refiner is not None:
+            refinement = self._knowledge_refiner.refine(query, list(chunks))
+            if not refinement.chunks:
+                raise RetrievalError("KnowledgeRefiner dropped all chunks for query")
+            chunks = refinement.chunks
+            knowledge_gaps = refinement.gaps if refinement.gaps else None
+
         gen_result = await asyncio.to_thread(self._generator.generate, query, chunks)
 
         raw_score = chunks[0].score
@@ -132,6 +158,7 @@ class AsyncRAGPipeline:
             model_name=gen_result.model_name,
             query=query,
             confidence_score=confidence_score,
+            knowledge_gaps=knowledge_gaps,
         )
 
     async def stream_query(

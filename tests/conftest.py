@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any
 
 import pytest
 
@@ -35,6 +36,7 @@ def make_chunk(
     entity_type: EntityType | None = "pokemon",
     chunk_index: int = 0,
     original_doc_id: str | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> RetrievedChunk:
     return RetrievedChunk(
         text=text,
@@ -44,6 +46,7 @@ def make_chunk(
         entity_type=entity_type,
         chunk_index=chunk_index,
         original_doc_id=(original_doc_id if original_doc_id is not None else f"doc_{chunk_index}"),
+        metadata=metadata,
     )
 
 

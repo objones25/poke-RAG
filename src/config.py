@@ -121,6 +121,16 @@ def _parse_int_positive(
     return parsed
 
 
+def _parse_float_unbounded(value: str | None, env_var_name: str, default: float) -> float:
+    """Parse a float from environment variable with no range restriction."""
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        raise ValueError(f"{env_var_name} must be a valid float, got: {value!r}") from None
+
+
 def _detect_device() -> str:
     import torch
 
@@ -161,6 +171,10 @@ class Settings:
     redis_password: SecretStr | None = None
     async_pipeline_enabled: bool = False
     colbert_enabled: bool = False
+    refiner_enabled: bool = False
+    refiner_upper_threshold: float = 0.0
+    refiner_lower_threshold: float = -3.0
+    refiner_strip_threshold: float = -1.0
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -265,4 +279,14 @@ class Settings:
                 os.getenv("ASYNC_PIPELINE_ENABLED"), "ASYNC_PIPELINE_ENABLED", False
             ),
             colbert_enabled=_parse_bool(os.getenv("COLBERT_ENABLED"), "COLBERT_ENABLED", False),
+            refiner_enabled=_parse_bool(os.getenv("REFINER_ENABLED"), "REFINER_ENABLED", False),
+            refiner_upper_threshold=_parse_float_unbounded(
+                os.getenv("REFINER_UPPER_THRESHOLD"), "REFINER_UPPER_THRESHOLD", 0.0
+            ),
+            refiner_lower_threshold=_parse_float_unbounded(
+                os.getenv("REFINER_LOWER_THRESHOLD"), "REFINER_LOWER_THRESHOLD", -3.0
+            ),
+            refiner_strip_threshold=_parse_float_unbounded(
+                os.getenv("REFINER_STRIP_THRESHOLD"), "REFINER_STRIP_THRESHOLD", -1.0
+            ),
         )
