@@ -51,7 +51,7 @@ _RE_BULBA_DOC_SPLIT = re.compile(r"\n(?=Title:)")
 
 def _build_client() -> genai.Client:
     api_key = os.environ["GEMINI_API_KEY"]
-    return genai.Client(api_key=api_key, http_options=HttpOptions(timeout=30))
+    return genai.Client(api_key=api_key, http_options=HttpOptions(timeout=60_000))
 
 
 def _call_gemini(client: genai.Client, chunk_text: str) -> dict:
@@ -63,7 +63,6 @@ def _call_gemini(client: genai.Client, chunk_text: str) -> dict:
                 contents=prompt,
                 config=GenerateContentConfig(
                     response_mime_type="application/json",
-                    http_options=HttpOptions(timeout=30),
                 ),
             )
             raw = response.text.strip()
