@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from unittest.mock import MagicMock
 
 import pytest
@@ -43,24 +44,18 @@ def client(mock_pipeline):
 
 @pytest.mark.unit
 class TestStatsEndpoint:
-    def test_stats_returns_200(self, client) -> None:
-        import os
-
-        stats_key = os.getenv("STATS_API_KEY")
-        if stats_key:
-            response = client.get("/stats", headers={"Authorization": f"Bearer {stats_key}"})
-        else:
-            response = client.get("/stats")
+    def test_stats_returns_200_with_valid_key(
+        self, client, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("STATS_API_KEY", "test-key")
+        response = client.get("/stats", headers={"Authorization": "Bearer test-key"})
         assert response.status_code == 200
 
-    def test_stats_returns_dict_with_collections(self, client) -> None:
-        import os
-
-        stats_key = os.getenv("STATS_API_KEY")
-        if stats_key:
-            response = client.get("/stats", headers={"Authorization": f"Bearer {stats_key}"})
-        else:
-            response = client.get("/stats")
+    def test_stats_returns_dict_with_collections(
+        self, client, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("STATS_API_KEY", "test-key")
+        response = client.get("/stats", headers={"Authorization": "Bearer test-key"})
         result = response.json()
         assert isinstance(result, dict)
 
@@ -556,15 +551,13 @@ class TestStatsApiKeyTiming:
         response = client.get("/stats", headers={"Authorization": "Bearer wrong-key"})
         assert response.status_code == 401
 
-    def test_stats_public_when_no_api_key_set(self, client: TestClient) -> None:
-        """Stats should be public (200) when STATS_API_KEY is not set."""
-        # Ensure STATS_API_KEY is not set
-        import os
-
-        if "STATS_API_KEY" in os.environ:
-            del os.environ["STATS_API_KEY"]
+    def test_stats_returns_403_when_no_api_key_configured(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Stats must return 403 when STATS_API_KEY is not configured (S1 fix)."""
+        monkeypatch.delenv("STATS_API_KEY", raising=False)
         response = client.get("/stats")
-        assert response.status_code == 200
+        assert response.status_code == 403
 
 
 @pytest.mark.unit
@@ -676,6 +669,127 @@ class TestRateLimitMiddlewareCapacityEviction:
 
         new_first = list(middleware.request_times.keys())[0]
         assert first_ip != new_first
+
+
+@pytest.mark.unit
+class TestRateLimitMiddlewareLRUEviction:
+    """B8: dispatch() must call move_to_end() for existing IPs so FIFO eviction cannot
+    purge recently-active rate-limited IPs and let them bypass the limit."""
+
+    @staticmethod
+    def _get_app_module():
+        import importlib
+
+        return importlib.import_module("src.api.app")
+
+    def test_existing_ip_moved_to_tail_on_dispatch(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """dispatch() in the existing-IP branch must call move_to_end() so that
+        recently-active IPs migrate to the tail and are not the first victims of eviction.
+
+        RED before fix: victim stays at HEAD (insertion order).
+        GREEN after fix: dispatch() calls move_to_end() → victim at TAIL.
+        """
+        import asyncio
+        from unittest.mock import MagicMock
+
+        from src.api.app import RateLimitMiddleware
+
+        monkeypatch.setenv("RATE_LIMIT_ENABLED", "true")
+
+        middleware = RateLimitMiddleware(
+            app=MagicMock(),
+            requests_per_minute=100,
+            trusted_proxy_count=0,
+        )
+
+        # victim inserted first (HEAD), two more IPs push it away from TAIL.
+        middleware.request_times["victim"] = [time.time()]
+        middleware.request_times["other-1"] = [time.time()]
+        middleware.request_times["other-2"] = [time.time()]
+
+        # Call actual dispatch() for victim — existing-IP branch should call move_to_end().
+        request = MagicMock()
+        request.url.path = "/query"
+        request.client.host = "victim"
+        request.headers.get.return_value = ""
+
+        async def call_next(req: object) -> object:
+            from starlette.responses import Response
+
+            return Response(status_code=200)
+
+        asyncio.run(middleware.dispatch(request, call_next))
+
+        keys = list(middleware.request_times.keys())
+        assert keys[-1] == "victim", (
+            f"B8: dispatch() must call move_to_end() for existing IPs — got order: {keys}"
+        )
+
+    def test_rate_limited_ip_stays_blocked_after_capacity_flood(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """B8 core: victim must stay rate-limited after FIFO eviction would reset its state.
+
+        Sequence (CAPACITY=3, RPM=2):
+          1. victim: 2 requests (fills budget) — inserted first, at HEAD.
+          2. flood-0, flood-1 added to reach CAPACITY; victim still at HEAD.
+          3. victim: 3rd request → 429. FIX calls move_to_end() → victim to TAIL.
+          4. flood-2 triggers eviction. BUG evicts victim (HEAD); FIX evicts flood-0.
+          5. victim: 4th request. BUG → 200 (bypass); FIX → 429 (still blocked).
+
+        Uses trusted_proxy_count=1 + X-Forwarded-For so each header IP is tracked
+        separately (TestClient always presents the same socket IP otherwise).
+        """
+        app_module = self._get_app_module()
+        CAPACITY = 3
+        RPM = 2
+        monkeypatch.setattr(app_module, "_MAX_TRACKED_IPS", CAPACITY)
+        monkeypatch.setenv("RATE_LIMIT_ENABLED", "true")
+
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from src.api.app import RateLimitMiddleware
+
+        test_app = FastAPI()
+        test_app.add_middleware(
+            RateLimitMiddleware,
+            requests_per_minute=RPM,
+            trusted_proxy_count=1,  # enables X-Forwarded-For so each test IP is distinct
+        )
+
+        @test_app.post("/query")
+        async def _query() -> dict[str, bool]:
+            return {"ok": True}
+
+        def xff(ip: str) -> dict[str, str]:
+            return {"X-Forwarded-For": ip}
+
+        with TestClient(test_app) as c:
+            # Step 1: victim fills its rate-limit budget (inserted first → HEAD)
+            for _ in range(RPM):
+                c.post("/query", headers=xff("victim"))
+
+            # Step 2: flood-0, flood-1 fill dict to CAPACITY (victim still at HEAD)
+            c.post("/query", headers=xff("flood-0"))
+            c.post("/query", headers=xff("flood-1"))
+
+            # Step 3: victim's 3rd request is blocked; FIX moves it to TAIL here
+            rate_limited = c.post("/query", headers=xff("victim"))
+            assert rate_limited.status_code == 429, "pre-condition: victim must be rate-limited"
+
+            # Step 4: flood-2 triggers eviction
+            # BUG: HEAD = victim → evicted. FIX: HEAD = flood-0 → evicted, victim survives.
+            c.post("/query", headers=xff("flood-2"))
+
+            # Step 5: victim's request must still be blocked
+            after_eviction = c.post("/query", headers=xff("victim"))
+            assert after_eviction.status_code == 429, (
+                "B8: rate-limited IP bypassed limit after FIFO eviction — "
+                "dispatch() must call move_to_end() in the existing-IP branch"
+            )
 
 
 @pytest.mark.unit

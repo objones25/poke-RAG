@@ -37,7 +37,7 @@ Items marked **DONE** have been fixed. Remaining items are ordered by priority.
 | C2  | Quality  | Async `ensure_collections()` uses bare `raise exc` without exception chaining                                                                  | `vector_store.py:307,325`            | [x]    |
 | C3  | Quality  | Sync `_query()` missing the `if p.payload is None` guard present in the async version                                                          | `vector_store.py:213`                | [x]    |
 | C4  | Quality  | `async_qdrant_client.close()` is only called on the exception path of lifespan teardown; normal teardown leaves it open                        | `app.py:191-200`                     | [x]    |
-| S3  | Security | Rate limiter uses FIFO eviction — attacker can cycle IPs to bypass per-IP limits                                                               | `app.py:38`                          | [ ]    |
+| S3  | Security | Rate limiter uses FIFO eviction — attacker can cycle IPs to bypass per-IP limits                                                               | `app.py:38`                          | [x]    |
 | S4  | Security | `X-Forwarded-For` not validated when behind an undeclared proxy; warns only if `TRUSTED_PROXY_COUNT` is explicitly set                         | `app.py:42`                          | [ ]    |
 | S5  | Security | HSTS disabled by default (`HTTPS_ENABLED=false`) — must be enabled explicitly in production                                                    | `app.py:136`                         | [ ]    |
 | S6  | Security | Query `max_length=2000` chars is too permissive for a RAG API; leaves more surface for prompt injection and increases tokenisation cost        | `models.py:15`                       | [ ]    |
@@ -49,7 +49,7 @@ Items marked **DONE** have been fixed. Remaining items are ordered by priority.
 | #   | Source   | Issue                                                                                                                           | Location                   | Status |
 | --- | -------- | ------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | ------ |
 | B7  | Bug      | Reranker `strict=True` zip will raise `ValueError` if model returns fewer scores than input documents                           | `reranker.py:55`           | [x]    |
-| B8  | Bug      | `RateLimitMiddleware` `OrderedDict` FIFO eviction enables IP-cycling bypass (overlap with S3)                                   | `app.py:112`               | [ ]    |
+| B8  | Bug      | `RateLimitMiddleware` `OrderedDict` FIFO eviction enables IP-cycling bypass (overlap with S3)                                   | `app.py:112`               | [x]    |
 | B9  | Bug      | No `strip_threshold` ordering validation in `Settings.from_env()`; invalid values surface only at `KnowledgeRefiner.__init__()` | `config.py:181`            | [x]    |
 | C5  | Quality  | Single-character helper names `_w()`, `_p()`, `_prefix()` in `query_router.py` used across 500+ lines                           | `query_router.py:10-23`    | [ ]    |
 | C6  | Quality  | `top_k` not validated (positive, reasonable range) at the vector store boundary                                                 | `vector_store.py:243`      | [ ]    |

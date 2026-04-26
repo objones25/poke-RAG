@@ -107,6 +107,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 self.request_times[client_ip] = [
                     t for t in self.request_times[client_ip] if t > window_start
                 ]
+                # LRU: promote recently-active IPs to tail so FIFO only evicts idle IPs
+                self.request_times.move_to_end(client_ip)
             else:
                 # Evict oldest entry if at capacity
                 if len(self.request_times) >= _MAX_TRACKED_IPS:
