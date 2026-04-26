@@ -19,6 +19,17 @@ _RE_POKEAPI_NAME = re.compile(
 )
 _RE_BULBA_DOC_SPLIT = re.compile(r"\n(?=Title:)")
 
+# smogon_data.txt structured-format patterns
+_RE_SD_POKE_SEP = re.compile(r"^={80}$", re.MULTILINE)
+_RE_SD_FMT_SEP = re.compile(r"^-{40}$", re.MULTILINE)
+_RE_SD_SMOGON_FORM = re.compile(r"^Smogon form:\s*(.+)$", re.MULTILINE)
+_RE_SD_FORMAT_NAME = re.compile(r"^\s*Format:\s*(\S+)\s*$", re.MULTILINE)
+_RE_SD_SECTION = re.compile(r"^\[\s*(Overview|Set:\s*[^\]]+?)\s*\]\s*$", re.MULTILINE)
+_RE_SD_MOVES_HEADER = re.compile(r"^\s*Moves:\s*$", re.MULTILINE)
+_RE_SD_DESC_HEADER = re.compile(r"^\s*Description:\s*$", re.MULTILINE)
+_RE_SD_ATTR = re.compile(r"^\s*(Tera Type|Item|Ability|Nature|EVs|IVs):\s*(.+)$", re.MULTILINE)
+_RE_SD_MOVE_ITEM = re.compile(r"^\s*-\s*(.+)$", re.MULTILINE)
+
 _SMOGON_TARGET_TOKENS = 400
 _BULBA_TARGET_TOKENS = 400
 _OVERLAP_RATIO = 0.1
@@ -34,6 +45,7 @@ _STEM_TO_ENTITY_TYPE: dict[str, EntityType] = {
     "pokemon_encounters": "pokemon",
     "format": "format",
     "formats": "format",
+    "smogon_data": "pokemon",
 }
 
 
@@ -248,6 +260,186 @@ def chunk_bulbapedia_doc(
     ]
 
 
+def _slugify(name: str) -> str:
+    return re.sub(r"[^\w]+", "_", name.lower()).strip("_")
+
+
+def _parse_set_body(
+    body: str,
+) -> tuple[dict[str, str], list[str], str]:
+    """Return (attributes, moves, description) parsed from a set section body."""
+    attrs: dict[str, str] = {}
+    moves: list[str] = []
+    description = ""
+
+    moves_match = _RE_SD_MOVES_HEADER.search(body)
+    desc_match = _RE_SD_DESC_HEADER.search(body)
+
+    attr_end = (
+        moves_match.start() if moves_match else (desc_match.start() if desc_match else len(body))
+    )
+    for m in _RE_SD_ATTR.finditer(body[:attr_end]):
+        attrs[m.group(1)] = m.group(2).strip()
+
+    if moves_match:
+        moves_end = desc_match.start() if desc_match else len(body)
+        for m in _RE_SD_MOVE_ITEM.finditer(body[moves_match.end() : moves_end]):
+            moves.append(m.group(1).strip())
+
+    if desc_match:
+        description = body[desc_match.end() :].strip()
+
+    return attrs, moves, description
+
+
+def _make_set_header(
+    entity_name: str,
+    format_name: str,
+    set_name: str,
+    attrs: dict[str, str],
+    moves: list[str],
+) -> str:
+    parts = [f"{entity_name} in {format_name} — Set: {set_name}"]
+    if attrs:
+        parts.append(" | ".join(f"{k}: {v}" for k, v in attrs.items()))
+    if moves:
+        parts.append(f"Moves: {', '.join(moves)}")
+    return "\n".join(parts)
+
+
+def chunk_smogon_data_file(
+    text: str,
+    *,
+    tokenize_fn: Callable[[str], int] | None = None,
+) -> list[RetrievedChunk]:
+    """Parse the multi-block smogon_data.txt format into RetrievedChunks.
+
+    File structure:
+      ={80} line  ← Pokémon block separator
+      header (name + "Smogon form: <name>" line)
+      ={80} line
+      body: one or more format sections, each delimited by -{40} lines
+        Format header line: " Format: <name>"
+        [ Overview ]  and/or  [ Set: <name> ]  sections
+    """
+    chunks: list[RetrievedChunk] = []
+    poke_parts = _RE_SD_POKE_SEP.split(text)
+    # poke_parts layout: [pre, header, body, header, body, ...]
+    i = 1
+    while i + 1 < len(poke_parts):
+        header_block = poke_parts[i]
+        body_block = poke_parts[i + 1]
+        i += 2
+
+        form_match = _RE_SD_SMOGON_FORM.search(header_block)
+        if not form_match:
+            continue
+        entity_name = form_match.group(1).strip()
+        entity_slug = _slugify(entity_name)
+
+        fmt_parts = _RE_SD_FMT_SEP.split(body_block)
+        # fmt_parts layout: [pre, fmt_header, content, fmt_header, content, ...]
+        j = 1
+        while j + 1 < len(fmt_parts):
+            fmt_header = fmt_parts[j]
+            fmt_content = fmt_parts[j + 1]
+            j += 2
+
+            fmt_match = _RE_SD_FORMAT_NAME.search(fmt_header)
+            if not fmt_match:
+                continue
+            format_name = fmt_match.group(1).strip()
+
+            section_parts = _RE_SD_SECTION.split(fmt_content)
+            # section_parts: [pre, section_label, body, section_label, body, ...]
+            k = 1
+            while k + 1 < len(section_parts):
+                section_label = section_parts[k].strip()
+                section_body = section_parts[k + 1]
+                k += 2
+
+                if section_label == "Overview":
+                    overview_text = section_body.strip()
+                    if not overview_text:
+                        continue
+                    header = f"{entity_name} in {format_name} — Overview"
+                    doc_id = f"smogon_data_{entity_slug}_{format_name}_overview"
+                    full_text = f"{header}\n{overview_text}"
+                    if _approx_tokens(full_text, tokenize_fn=tokenize_fn) <= _SMOGON_TARGET_TOKENS:
+                        chunks.append(
+                            RetrievedChunk(
+                                text=full_text,
+                                score=0.0,
+                                source="smogon",
+                                entity_name=entity_name,
+                                entity_type="pokemon",
+                                chunk_index=0,
+                                original_doc_id=doc_id,
+                            )
+                        )
+                    else:
+                        header_tokens = _approx_tokens(header, tokenize_fn=tokenize_fn)
+                        sub_texts = _recursive_split(
+                            overview_text,
+                            _SMOGON_TARGET_TOKENS - header_tokens,
+                            tokenize_fn=tokenize_fn,
+                        )
+                        for ci, sub in enumerate(sub_texts):
+                            chunks.append(
+                                RetrievedChunk(
+                                    text=f"{header}\n{sub}",
+                                    score=0.0,
+                                    source="smogon",
+                                    entity_name=entity_name,
+                                    entity_type="pokemon",
+                                    chunk_index=ci,
+                                    original_doc_id=doc_id,
+                                )
+                            )
+
+                elif section_label.startswith("Set:"):
+                    set_name = section_label[len("Set:") :].strip()
+                    attrs, moves, description = _parse_set_body(section_body)
+                    set_header = _make_set_header(entity_name, format_name, set_name, attrs, moves)
+                    doc_id = f"smogon_data_{entity_slug}_{format_name}_set_{_slugify(set_name)}"
+                    full_text = (
+                        f"{set_header}\n{description}".strip() if description else set_header
+                    )
+                    if _approx_tokens(full_text, tokenize_fn=tokenize_fn) <= _SMOGON_TARGET_TOKENS:
+                        chunks.append(
+                            RetrievedChunk(
+                                text=full_text,
+                                score=0.0,
+                                source="smogon",
+                                entity_name=entity_name,
+                                entity_type="pokemon",
+                                chunk_index=0,
+                                original_doc_id=doc_id,
+                            )
+                        )
+                    else:
+                        header_tokens = _approx_tokens(set_header, tokenize_fn=tokenize_fn)
+                        desc_subs = _recursive_split(
+                            description,
+                            _SMOGON_TARGET_TOKENS - header_tokens,
+                            tokenize_fn=tokenize_fn,
+                        )
+                        for ci, sub in enumerate(desc_subs):
+                            chunks.append(
+                                RetrievedChunk(
+                                    text=f"{set_header}\n{sub}",
+                                    score=0.0,
+                                    source="smogon",
+                                    entity_name=entity_name,
+                                    entity_type="pokemon",
+                                    chunk_index=ci,
+                                    original_doc_id=doc_id,
+                                )
+                            )
+
+    return chunks
+
+
 def chunk_file(
     path: Path,
     *,
@@ -266,15 +458,18 @@ def chunk_file(
             )
 
     elif source == "smogon":
-        for i, line in enumerate(text.splitlines()):
-            chunks.extend(
-                chunk_smogon_line(
-                    line,
-                    doc_id=f"{path.stem}_{i}",
-                    entity_type=entity_type,
-                    tokenize_fn=tokenize_fn,
+        if path.stem == "smogon_data":
+            chunks.extend(chunk_smogon_data_file(text, tokenize_fn=tokenize_fn))
+        else:
+            for i, line in enumerate(text.splitlines()):
+                chunks.extend(
+                    chunk_smogon_line(
+                        line,
+                        doc_id=f"{path.stem}_{i}",
+                        entity_type=entity_type,
+                        tokenize_fn=tokenize_fn,
+                    )
                 )
-            )
 
     elif source == "bulbapedia":
         docs = _RE_BULBA_DOC_SPLIT.split(text)
