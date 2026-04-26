@@ -15,15 +15,9 @@ from src.retrieval.protocols import (
     RetrieverProtocol,
 )
 from src.types import RetrievalError, Source
+from src.utils.math import sigmoid as _sigmoid
 
 _SENTINEL = object()
-
-
-def _sigmoid(x: float) -> float:
-    if x >= 0:
-        return 1.0 / (1.0 + math.exp(-x))
-    ex = math.exp(x)
-    return ex / (1.0 + ex)
 
 
 class RAGPipeline:

@@ -33,7 +33,7 @@ Items marked **DONE** have been fixed. Remaining items are ordered by priority.
 | B4  | Bug      | `except* RetrievalError` re-raises only `eg.exceptions[0]`, silently dropping all other concurrent source failures                             | `retriever.py:375`                   | [x]    |
 | B5  | Bug      | Entity-name filter silently retried without filter when it returns 0 results — caller receives unfiltered data with no indication              | `vector_store.py:273` (sync + async) | [ ]    |
 | B6  | Bug      | `os.environ["QDRANT_URL"]` raises a bare `KeyError` instead of using the `_parse_string_required()` pattern used by every other required field | `config.py:250`                      | [x]    |
-| C1  | Quality  | `_sigmoid()` defined identically in both `rag_pipeline.py:22` and `retriever.py:25` — should live in `src/utils/math.py`                       | —                                    | [ ]    |
+| C1  | Quality  | `_sigmoid()` defined identically in both `rag_pipeline.py:22` and `retriever.py:25` — should live in `src/utils/math.py`                       | —                                    | [x]    |
 | C2  | Quality  | Async `ensure_collections()` uses bare `raise exc` without exception chaining                                                                  | `vector_store.py:307,325`            | [ ]    |
 | C3  | Quality  | Sync `_query()` missing the `if p.payload is None` guard present in the async version                                                          | `vector_store.py:213`                | [x]    |
 | C4  | Quality  | `async_qdrant_client.close()` is only called on the exception path of lifespan teardown; normal teardown leaves it open                        | `app.py:191-200`                     | [x]    |
@@ -66,7 +66,7 @@ Items marked **DONE** have been fixed. Remaining items are ordered by priority.
 | --- | -------- | ------------------------------------------------------------------------------------------------------------------------------- | -------------------- | ------ |
 | B10 | Bug      | `make_chunk` default `original_doc_id=f"doc_{chunk_index}"` never matches production ID format; can mask format-validation bugs | `conftest.py:48`     | [ ]    |
 | C8  | Quality  | `_RERANKER_MAX_LENGTH = 512` has no comment explaining its origin                                                               | `reranker.py:15`     | [ ]    |
-| C9  | Quality  | `import builtins` only used to qualify `builtins.TimeoutError`; built-in is already in scope                                    | `retriever.py:6`     | [ ]    |
+| C9  | Quality  | `import builtins` only used to qualify `builtins.TimeoutError`; built-in is already in scope                                    | `retriever.py:6`     | [x]    |
 | S10 | Security | Qdrant connectivity not verified at startup — first request fails if Qdrant is down                                             | `dependencies.py:40` | [ ]    |
 | S11 | Security | No audit logging of `entity_name` / `sources` per query — no access trail                                                       | `app.py:277`         | [ ]    |
 
