@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import math
+from collections.abc import AsyncGenerator
+from typing import Any, cast
 
-from src.generation.protocols import GeneratorProtocol
+from src.generation.protocols import GeneratorProtocol, StreamingGeneratorProtocol
 from src.pipeline.types import PipelineResult
 from src.retrieval.protocols import AsyncRetrieverProtocol, QueryRouterProtocol, RetrieverProtocol
 from src.types import RetrievalError, Source
+
+_SENTINEL = object()
 
 
 def _sigmoid(x: float) -> float:
@@ -128,3 +133,58 @@ class AsyncRAGPipeline:
             query=query,
             confidence_score=confidence_score,
         )
+
+    async def stream_query(
+        self,
+        query: str,
+        *,
+        top_k: int = 5,
+        sources: list[Source] | None = None,
+        entity_name: str | None = None,
+    ) -> AsyncGenerator[str, None]:
+        """Stream tokens for a RAG query one-at-a-time as the model produces them.
+
+        Raises:
+            ValueError: If query is empty or whitespace-only.
+            RetrievalError: Propagated immediately if retrieval returns no documents.
+        """
+        if not query.strip():
+            raise ValueError("query must not be empty or whitespace-only")
+
+        if sources is None and self._query_router is not None:
+            sources = self._query_router.route(query)
+
+        retrieval_result = await self._retriever.retrieve(
+            query, top_k=top_k, sources=sources, entity_name=entity_name
+        )
+        chunks = retrieval_result.documents
+
+        if not chunks:
+            raise RetrievalError("Retrieval returned no documents for query")
+
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue[Any] = asyncio.Queue()
+
+        def _produce() -> None:
+            try:
+                streaming = cast(StreamingGeneratorProtocol, self._generator)
+                for token in streaming.stream_generate(query, chunks):
+                    loop.call_soon_threadsafe(queue.put_nowait, token)
+            except Exception as exc:
+                loop.call_soon_threadsafe(queue.put_nowait, exc)
+            finally:
+                loop.call_soon_threadsafe(queue.put_nowait, _SENTINEL)
+
+        thread = loop.run_in_executor(None, _produce)
+
+        while True:
+            item = await queue.get()
+            if item is _SENTINEL:
+                break
+            if isinstance(item, BaseException):
+                with contextlib.suppress(Exception):
+                    await thread
+                raise item
+            yield item
+
+        await thread

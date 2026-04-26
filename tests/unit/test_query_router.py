@@ -134,7 +134,8 @@ class TestQueryRouterSmogon:
 
     def test_routes_ou_tier(self) -> None:
         router = QueryRouter()
-        assert router.route("Best OU Pokemon this generation?") == ["smogon"]
+        # "generation" also triggers bulbapedia (history/gen patterns)
+        assert router.route("Best OU Pokemon this generation?") == ["bulbapedia", "smogon"]
 
     def test_routes_uu_tier(self) -> None:
         router = QueryRouter()
@@ -166,7 +167,8 @@ class TestQueryRouterSmogon:
 
     def test_routes_coverage_query(self) -> None:
         router = QueryRouter()
-        assert router.route("What coverage moves does Dragonite run?") == ["smogon"]
+        # "moves" also triggers pokeapi (factual move data); "run" triggers smogon
+        assert router.route("What coverage moves does Dragonite run?") == ["pokeapi", "smogon"]
 
     def test_routes_teammates_query(self) -> None:
         router = QueryRouter()
@@ -184,7 +186,8 @@ class TestQueryRouterSmogon:
 
     def test_routes_iv_whole_word(self) -> None:
         router = QueryRouter()
-        assert router.route("What IV does Pikachu need for max speed?") == ["smogon"]
+        # "speed" also triggers pokeapi (stat pattern); "IV"/"max speed" trigger smogon
+        assert router.route("What IV does Pikachu need for max speed?") == ["pokeapi", "smogon"]
 
     def test_routes_iv_whole_word_not_substring(self) -> None:
         router = QueryRouter()
@@ -245,7 +248,8 @@ class TestQueryRouterBulbapedia:
 
     def test_routes_dex_entry_query(self) -> None:
         router = QueryRouter()
-        assert router.route("Read me the dex entry for Haunter") == ["bulbapedia"]
+        # "dex entry" matches both bulbapedia (flavor text) and pokeapi (factual data)
+        assert router.route("Read me the dex entry for Haunter") == ["bulbapedia", "pokeapi"]
 
     def test_routes_origin_query(self) -> None:
         router = QueryRouter()

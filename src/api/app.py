@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from qdrant_client import AsyncQdrantClient, QdrantClient
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
@@ -302,4 +302,40 @@ async def query(
         model_name=result.model_name,
         query=result.query,
         confidence_score=result.confidence_score,
+    )
+
+
+@app.post("/query/stream")
+async def query_stream(
+    body: QueryRequest,
+    request: Request,
+) -> StreamingResponse:
+    """Stream the RAG answer token-by-token via Server-Sent Events.
+
+    Each event is a JSON object on a ``data:`` line:
+    - Token event:  ``data: {"token": "..."}``
+    - Done event:   ``data: {"done": true}``
+    - Error event:  ``data: {"error": "..."}``
+    """
+    import json as _json
+
+    parsed = parse_query(body.query)
+    async_pipeline: AsyncRAGPipeline = get_async_pipeline(request)
+
+    async def _event_generator() -> AsyncGenerator[str, None]:
+        try:
+            async for token in async_pipeline.stream_query(
+                parsed, sources=body.sources, entity_name=body.entity_name
+            ):
+                yield f"data: {_json.dumps({'token': token})}\n\n"
+        except Exception as exc:
+            _LOG.error("Streaming generation error: %s", exc, exc_info=True)
+            yield f"data: {_json.dumps({'error': 'Stream generation failed'})}\n\n"
+        finally:
+            yield f"data: {_json.dumps({'done': True})}\n\n"
+
+    return StreamingResponse(
+        _event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

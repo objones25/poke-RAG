@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import logging
+import threading
+from collections.abc import Iterator
 from typing import Any
 
-from transformers import PreTrainedModel
+from transformers import PreTrainedModel, TextIteratorStreamer
 
 from src.generation.models import GenerationConfig
 
@@ -72,3 +74,61 @@ class Inferencer:
 
         _LOG.debug("Generated %d chars", len(stripped_response))
         return stripped_response
+
+    def stream_infer(self, prompt: str, *, max_new_tokens: int | None = None) -> Iterator[str]:
+        """Yield tokens one-at-a-time as the model produces them via TextIteratorStreamer.
+
+        Raises:
+            ValueError: If prompt is empty or whitespace-only.
+            RuntimeError: If model.generate() raises during streaming.
+        """
+        if not prompt.strip():
+            raise ValueError("prompt must not be empty")
+
+        resolved_max_new_tokens = (
+            max_new_tokens if max_new_tokens is not None else self._config.max_new_tokens
+        )
+
+        messages = [{"role": "user", "content": prompt}]
+        text: str = self._processor.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+            enable_thinking=False,
+        )
+        inputs = self._processor(text=text, return_tensors="pt").to(self._model.device)
+
+        streamer = TextIteratorStreamer(
+            self._processor,
+            skip_prompt=True,
+            skip_special_tokens=True,
+        )
+
+        exc_holder: list[BaseException] = []
+
+        def _generate() -> None:
+            try:
+                self._model.generate(  # type: ignore[operator]
+                    **inputs,
+                    max_new_tokens=resolved_max_new_tokens,
+                    temperature=self._config.temperature,
+                    top_p=self._config.top_p,
+                    do_sample=self._config.do_sample,
+                    streamer=streamer,
+                )
+            except Exception as exc:
+                exc_holder.append(exc)
+                streamer.end()  # type: ignore[no-untyped-call]
+
+        thread = threading.Thread(target=_generate, daemon=True)
+        thread.start()
+
+        try:
+            for text_piece in streamer:
+                if text_piece:
+                    yield text_piece
+        finally:
+            thread.join()
+
+        if exc_holder:
+            raise RuntimeError(f"Model generate() raised: {exc_holder[0]}") from exc_holder[0]

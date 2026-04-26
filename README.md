@@ -166,6 +166,63 @@ print(f"Confidence: {result.get('confidence_score')}")
 
 The `confidence_score` is the sigmoid of the top-ranked chunk's BGE Reranker v2-m3 score (0.0–1.0), indicating how confident the system is in the retrieved evidence. Use this to filter low-confidence responses in production. If reranking is skipped or disabled, `confidence_score` is `null`.
 
+### 7. Streaming Query
+
+The `/query/stream` endpoint streams tokens one-at-a-time via [Server-Sent Events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events) as the model produces them — making responses feel instant rather than waiting for the full answer.
+
+```bash
+curl -X POST "http://localhost:8000/query/stream" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "What moves does Gengar learn?"}' \
+  --no-buffer
+```
+
+Each line of the stream is a JSON event on a `data:` prefix:
+
+```
+data: {"token": "Gengar"}
+data: {"token": " learns"}
+data: {"token": " Shadow"}
+data: {"token": " Ball"}
+...
+data: {"done": true}
+```
+
+Python (`httpx` is already available as a transitive dependency via `qdrant-client`):
+
+```python
+import json
+import httpx
+
+with httpx.stream(
+    "POST",
+    "http://localhost:8000/query/stream",
+    json={"query": "What moves does Gengar learn?"},
+    timeout=None,
+) as response:
+    response.raise_for_status()
+    for line in response.iter_lines():
+        if not line.startswith("data: "):
+            continue
+        event = json.loads(line[len("data: "):])
+        if event.get("done"):
+            break
+        if "error" in event:
+            raise RuntimeError(f"Stream error: {event['error']}")
+        print(event["token"], end="", flush=True)
+print()  # newline after stream ends
+```
+
+**Event format:**
+
+| Event | Payload | When |
+|-------|---------|------|
+| Token | `{"token": "..."}` | Each token produced by the model |
+| Done  | `{"done": true}`   | Stream complete (always last event) |
+| Error | `{"error": "Stream generation failed"}` | Retrieval or generation failure |
+
+The streaming endpoint requires `ASYNC_PIPELINE_ENABLED=true` (the default when running the API normally). Rate limiting and body size limits apply identically to `/query`.
+
 ## Commands Reference
 
 ### Development
@@ -652,5 +709,5 @@ The FastAPI application includes several security features:
 
 ---
 
-**Last updated**: 2026-04-23  
+**Last updated**: 2026-04-25  
 **Status**: Active development

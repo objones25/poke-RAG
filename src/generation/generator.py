@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
 
 from src.generation.exceptions import GenerationError
 from src.generation.inference import Inferencer
@@ -56,3 +57,22 @@ class Generator:
             model_name=self._config.model_id,
             num_chunks_used=len(chunks),
         )
+
+    def stream_generate(self, query: str, chunks: tuple[RetrievedChunk, ...]) -> Iterator[str]:
+        if not chunks:
+            raise ValueError("chunks must not be empty — retrieval must succeed before generation")
+
+        _LOG.info(
+            "Streaming answer: query_len=%d chars, chunks=%d",
+            len(query),
+            len(chunks),
+        )
+
+        prompt = self._prompt_builder(query, chunks)
+        try:
+            for token in self._inferencer.stream_infer(prompt):  # noqa: UP028
+                yield token
+        except Exception as exc:
+            raise GenerationError(f"Inference failed: {exc}") from exc
+
+        _LOG.info("Streaming complete")
