@@ -116,13 +116,29 @@ Each Qdrant collection must be created with both `vectors_config` (dense, 1024-d
 
 **Chunking strategy per source**:
 
-| Source       | Strategy                                           | Target size     | Overlap        |
-| ------------ | -------------------------------------------------- | --------------- | -------------- |
-| `pokeapi`    | None — each line is one document                   | ~100–300 tokens | 0              |
-| `smogon`     | Recursive, sentence-aware                          | 256–512 tokens  | ~10%           |
-| `bulbapedia` | Split at `Title:` then recursive `\n\n` → sentence | 512 tokens      | Test 0% vs 10% |
+| Source       | Strategy                                                             | Target size     | Overlap        |
+| ------------ | -------------------------------------------------------------------- | --------------- | -------------- |
+| `pokeapi`    | None — each line is one document                                     | ~100–300 tokens | 0              |
+| `smogon`     | Recursive, sentence-aware (or 3-level hierarchy for smogon_data.txt) | 256–512 tokens  | ~10%           |
+| `bulbapedia` | Split at `Title:` then recursive `\n\n` → sentence                   | 512 tokens      | Test 0% vs 10% |
 
-Every chunk's Qdrant payload must include: `source`, `entity_name` (string, e.g. "Garchomp"), `entity_type` (string, e.g. "pokemon", "move", "item"), `chunk_index`, `original_doc_id`. This enables payload-filtered queries (e.g. `source == "smogon" AND entity_name == "Garchomp" AND entity_type == "pokemon"`) before the vector search runs.
+**Smogon structured data (smogon_data.txt)**:
+
+The `smogon_data.txt` file uses a three-level hierarchical parser (`chunk_smogon_data_file()`):
+
+1. Pokémon blocks delimited by `={80}` lines
+2. Format sections delimited by `-{40}` lines (e.g., "gen9ou", "gen9uu")
+3. Overview and Set sections (`[ Overview ]`, `[ Set: Name ]`)
+
+This generates ~17,336 chunks total (~3,094 overview, ~14,242 set), each with enriched metadata including format name, generation, tier, and (for sets) battle attributes (Item, Ability, Nature, Tera Type).
+
+Every chunk's Qdrant payload must include: `source`, `entity_name` (string, e.g. "Garchomp"), `entity_type` (string, e.g. "pokemon", "move", "item"), `chunk_index`, `original_doc_id`, and `metadata` (optional dict of source-specific enrichments). This enables payload-filtered queries (e.g. `source == "smogon" AND entity_name == "Garchomp" AND entity_type == "pokemon"`) before the vector search runs.
+
+**Metadata enrichment** (optional but recommended):
+
+- **Smogon**: `metadata["format_name"]`, `metadata["generation"]` (int), `metadata["tier"]`, `metadata["chunk_kind"]` ("overview" or "set"), `metadata["set_name"]`, `metadata["item"]`, `metadata["ability"]`, `metadata["nature"]`, `metadata["tera_type"]`
+- **PokeAPI**: `metadata["entity_subtype"]` ("species", "moves", "encounters", "ability", "item", "move")
+- **Bulbapedia**: `metadata["topics"]` (list of topic strings), `metadata["entity_type_hint"]` (string)
 
 **Retrieval pipeline**: dense+sparse hybrid fused with Qdrant `Prefetch` + `Fusion.RRF` → rerank top-K with `BAAI/bge-reranker-v2-m3` → assemble context. The reranker uses `FlagEmbedding.FlagReranker`, not the embedding model class. Generator dependency injection uses `PromptBuilderProtocol` (defined in `src/generation/protocols.py`) — any callable `(str, tuple[RetrievedChunk, ...]) -> str` satisfies it.
 
@@ -135,6 +151,14 @@ Every chunk's Qdrant payload must include: `source`, `entity_name` (string, e.g.
 **Query routing**: Optional per-query source selection via `QueryRouter` (keyword-based heuristics). Disabled by default; enable with `ROUTING_ENABLED=true`.
 
 **Query transformation**: Optional HyDE (Hypothetical Document Embeddings) expansion via `HyDETransformer`. Disabled by default; enable with `HYDE_ENABLED=true` and provide an inferencer instance to the transformer.
+
+**Post-retrieval refinement**: Optional CRAG-style `KnowledgeRefiner` for chunk score triage, strip-level filtering, and constraint gap detection. Disabled by default; enable with `REFINER_ENABLED=true` and set threshold environment variables:
+
+- `REFINER_UPPER_THRESHOLD` (default: 0.0) — chunks with score ≥ this are accepted unconditionally
+- `REFINER_LOWER_THRESHOLD` (default: -3.0) — chunks with score < this are dropped
+- `REFINER_STRIP_THRESHOLD` (default: -1.0) — sentence strips with score ≥ this are retained during filtering
+
+Refinement detects knowledge gaps by searching for constraint keywords (gen1–gen9, tier names like "OU", "UU") in the query that don't appear in final chunks. These gaps are returned in `PipelineResult.knowledge_gaps` and `QueryResponse.knowledge_gaps`.
 
 ## Workflow
 

@@ -302,6 +302,7 @@ async def query(
         model_name=result.model_name,
         query=result.query,
         confidence_score=result.confidence_score,
+        knowledge_gaps=list(result.knowledge_gaps) if result.knowledge_gaps else None,
     )
 
 

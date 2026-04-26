@@ -28,11 +28,13 @@ bulbapedia     pokeapi        smogon
     ↓
 [BGE Reranker v2-m3] — final relevance score
     ↓
+[Knowledge Refiner] (optional) — CRAG-style action triage & constraint checking
+    ↓
 [Context Assembler] — token-bounded context
     ↓
 [Gemma 4 Generator] — answer + attribution (optional LoRA adapter)
     ↓
-QueryResponse (answer, sources, chunks_used, confidence_score, model_name)
+QueryResponse (answer, sources, chunks_used, confidence_score, knowledge_gaps, model_name)
 ```
 
 Each query hits one or more collections via source filtering or keyword routing. Dense and sparse vectors are fused with Qdrant's reciprocal rank fusion (RRF), avoiding per-collection tuning. Optional query transformation (HyDE) and source routing for smarter retrieval.
@@ -45,9 +47,14 @@ Three read-only sources in `processed/`:
 | -------------- | ----------------------------------- | --------------------------------------------------------------- | --------------- | ------- |
 | **Bulbapedia** | `Title: ...\n<body>` (one per line) | Split at `Title:` boundary, then recursive by `\n\n` → sentence | 512 tokens      | ~10%    |
 | **PokéAPI**    | One entry per line, no header       | None — each line is atomic                                      | ~100–300 tokens | 0%      |
-| **Smogon**     | `Name (tier): ...` (one per line)   | Recursive, sentence-aware                                       | 256–512 tokens  | ~10%    |
+| **Smogon**     | Three-level hierarchical (Pokémon blocks / format sections / overview+set) via `chunk_smogon_data_file()` | Level 1: `={80}` delimiters; Level 2: `-{40}` delimiters; Level 3: subsections. Entity name from canonical `Smogon form:` line. Produces ~17,336 chunks (3,094 overview + 14,242 set) from 611 Pokémon. | ~400 tokens | N/A |
 
-Every chunk carries metadata: `source`, `entity_name` (Pokémon/move/ability name if extractable), `entity_type`, `chunk_index`, `original_doc_id`. This enables source-specific and entity-specific retrieval (e.g., "stats-only" queries hit `pokeapi` exclusively).
+Every chunk carries metadata including `source`, `entity_name` (Pokémon/move/ability if extractable), `entity_type`, `chunk_index`, `original_doc_id`. Additionally, each source now produces enriched metadata:
+- **Smogon**: `chunk_kind` (overview/set), `generation`, `tier`, `set_name`, `tera_type`, `item`, `ability`, `nature`
+- **PokéAPI**: `entity_subtype` (species/moves/encounters/ability/item/move)
+- **Bulbapedia**: `topics` (list of tags), `entity_type_hint` (from optional topic cache)
+
+All metadata round-trips through the Qdrant payload, enabling source-specific and entity-specific retrieval (e.g., "stats-only" queries hit `pokeapi` exclusively).
 
 Augmented variants (`*_aug.txt`) are paraphrased rewrites for training diversity—read-only like originals.
 
@@ -83,13 +90,28 @@ docker run -p 6333:6333 -p 6334:6334 qdrant/qdrant
 
 Qdrant will be available at `http://localhost:6333`. Set `QDRANT_URL=http://localhost:6333` in your `.env`.
 
-### 3. Build the Vector Index
+### 3. (Optional) Generate Bulbapedia Topic Cache
+
+```bash
+# Requires GOOGLE_API_KEY env var
+uv run python scripts/retrieval/bulbapedia_topic_extractor.py \
+    --processed-dir processed/bulbapedia \
+    --output cache/bulbapedia_topics.json
+```
+
+This offline CLI classifies Bulbapedia chunks into topic tags via Gemini and caches the results. The cache is optional but enables topic enrichment during indexing. Supports `--dry-run` for testing and incremental processing to skip already-classified chunks.
+
+### 4. Build the Vector Index
 
 ```bash
 uv run python scripts/build_index.py
 ```
 
-This discovers files in `processed/` (bulbapedia, pokeapi, smogon), chunks them, embeds with BGE-M3, and upserts into Qdrant. A checkpoint file `.build_index_checkpoint.json` tracks progress; re-run safely to index only new files.
+This discovers files in `processed/` (bulbapedia, pokeapi, smogon), chunks them, embeds with BGE-M3, and upserts into Qdrant. A checkpoint file `.build_index_checkpoint.json` tracks progress; re-run safely to index only new files. If you generated the Bulbapedia topic cache in step 3, pass it via:
+
+```bash
+uv run python scripts/build_index.py --topic-cache cache/bulbapedia_topics.json
+```
 
 Optional flags:
 
@@ -98,7 +120,7 @@ Optional flags:
 - `--dry-run` — log without writing
 - `--no-checkpoint` — rebuild from scratch
 
-### 4. Run the API
+### 5. Run the API
 
 ```bash
 uv run uvicorn src.api.app:app --reload
@@ -108,7 +130,7 @@ Server listens on `http://localhost:8000`. See `/docs` for Swagger UI.
 
 Rate limiting: 20 requests per minute per IP on `/query` endpoint (configurable via `RATE_LIMIT_ENABLED`).
 
-### 5. Check Service Status
+### 6. Check Service Status
 
 ```bash
 curl http://localhost:8000/stats
@@ -124,7 +146,7 @@ Response lists available Qdrant collections:
 }
 ```
 
-### 6. Example Query
+### 7. Example Query
 
 ```bash
 curl -X POST "http://localhost:8000/query" \
@@ -159,6 +181,7 @@ print(f"Confidence: {result.get('confidence_score')}")
   "sources_used": ["pokeapi"],
   "num_chunks_used": 3,
   "confidence_score": 0.87,
+  "knowledge_gaps": null,
   "model_name": "google/gemma-4-E4B-it",
   "query": "What are Charizard's base stats?"
 }
@@ -166,7 +189,9 @@ print(f"Confidence: {result.get('confidence_score')}")
 
 The `confidence_score` is the sigmoid of the top-ranked chunk's BGE Reranker v2-m3 score (0.0–1.0), indicating how confident the system is in the retrieved evidence. Use this to filter low-confidence responses in production. If reranking is skipped or disabled, `confidence_score` is `null`.
 
-### 7. Streaming Query
+The `knowledge_gaps` field is populated when `REFINER_ENABLED=true`, containing constraint keywords (e.g., `["gen9", "ou"]`) that appear in the query but were not found in any surviving chunks after refinement. If the refiner is disabled, `knowledge_gaps` is `null`.
+
+### 8. Streaming Query
 
 The `/query/stream` endpoint streams tokens one-at-a-time via [Server-Sent Events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events) as the model produces them — making responses feel instant rather than waiting for the full answer.
 
@@ -325,6 +350,8 @@ poke-RAG/
 │
 ├── scripts/
 │   ├── build_index.py          # Embed processed/ and upsert to Qdrant (main script)
+│   ├── retrieval/              # Optional retrieval utilities
+│   │   └── bulbapedia_topic_extractor.py # Offline CLI: classify Bulbapedia chunks into topic tags via Gemini, writes JSON cache; supports `--dry-run` and incremental processing
 │   ├── training/               # SFT fine-tuning (RunPod only, not imported by src/)
 │   │   ├── train_sft.py        # QLoRA SFT training via Unsloth + TRL
 │   │   ├── generate_sft_data.py # Generate SFT pairs from retrieval chunks
@@ -378,6 +405,12 @@ ROUTING_ENABLED=false                      # Enable keyword-based query router
 HYDE_ENABLED=false                         # Enable HyDE query transformation
 HYDE_MAX_TOKENS=150                        # Max tokens for HyDE pseudo-answer
 
+# Post-retrieval knowledge refinement (optional)
+REFINER_ENABLED=false                      # Enable post-retrieval knowledge refinement
+REFINER_UPPER_THRESHOLD=0.0                # Score threshold for accepting chunks (BGE reranker logit space)
+REFINER_LOWER_THRESHOLD=-3.0               # Score threshold below which chunks are dropped
+REFINER_STRIP_THRESHOLD=-1.0               # Score threshold for sentence-level filtering within chunks
+
 # Generation parameters
 TEMPERATURE=0.7                            # Model temperature (0.0-2.0)
 MAX_NEW_TOKENS=512                         # Max tokens to generate
@@ -415,6 +448,10 @@ settings = Settings.from_env()
 | `ROUTING_ENABLED` | `false` | No | Enable keyword-based query router to classify queries into sources |
 | `HYDE_ENABLED` | `false` | No | Enable HyDE query transformation (generates pseudo-answer for better retrieval) |
 | `HYDE_MAX_TOKENS` | `150` | No | Maximum tokens for HyDE pseudo-answer generation |
+| `REFINER_ENABLED` | `false` | No | Enable post-retrieval knowledge refinement (CRAG-style action triage) |
+| `REFINER_UPPER_THRESHOLD` | `0.0` | No | Score threshold for accepting chunks (BGE reranker logit space) |
+| `REFINER_LOWER_THRESHOLD` | `-3.0` | No | Score threshold below which chunks are dropped |
+| `REFINER_STRIP_THRESHOLD` | `-1.0` | No | Score threshold for sentence-level strip filtering within chunks |
 | `TEMPERATURE` | `0.7` | No | Model temperature for generation (0.0–2.0, higher = more creative) |
 | `MAX_NEW_TOKENS` | `512` | No | Maximum tokens to generate in response |
 | `TOP_P` | `0.9` | No | Top-P nucleus sampling (0.0–1.0) |
@@ -485,8 +522,13 @@ Each collection stores both `vectors_config` (dense, 1024-dim, cosine) and `spar
 3. **Embed query** — BGE-M3 dense + sparse (original or HyDE-transformed query)
 4. **Hybrid search** — Qdrant searches selected or all collections with RRF fusion
 5. **Rerank** — Top-K candidates reranked with `BAAI/bge-reranker-v2-m3`
-6. **Assemble context** — Chunks truncated to token budget, ordered by score, with metadata
-7. **Generate** — Gemma 4 answers with retrieved context, optionally using LoRA adapter
+6. **Knowledge Refinement** (optional, `REFINER_ENABLED=true`) — Post-retrieval CRAG-style action triage:
+   - *Accepted* chunks (score ≥ `REFINER_UPPER_THRESHOLD`, default 0.0): passed to sentence-level strip filtering via BGE reranker — low-scoring sentences (below `REFINER_STRIP_THRESHOLD`, default -1.0) are dropped and survivors recomposed in original order
+   - *Uncertain* chunks (`REFINER_LOWER_THRESHOLD` ≤ score < upper, default -3.0 to 0.0): passed through as-is, flagged with `metadata.uncertain=True`
+   - *Dropped* chunks (score < `REFINER_LOWER_THRESHOLD`): discarded
+   - *Constraint gap detection*: gen/tier keywords in the query (e.g., "gen9", "ou") are checked against surviving chunks; missing keywords surface as `knowledge_gaps` in the response
+7. **Assemble context** — Chunks truncated to token budget, ordered by score, with metadata
+8. **Generate** — Gemma 4 answers with retrieved context, optionally using LoRA adapter
 
 ### Query Router (Optional)
 

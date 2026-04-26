@@ -44,6 +44,7 @@ src/
     protocols.py          abstract interface definitions
     query_router.py       keyword-based source router (pokeapi/smogon/bulbapedia)
     query_transformer.py  HyDE and passthrough transformers
+    knowledge_refiner.py  CRAG-style post-retrieval refinement: action triage, strip-level filtering, constraint gap detection
     embedder.py, indexer.py, reranker.py, searcher.py  ...
   generation/   model loading, inference wrapper
     protocols.py          GeneratorProtocol
@@ -75,6 +76,8 @@ tests/
 
 scripts/
   build_index.py              embed and index processed/ data (run once)
+  retrieval/
+    bulbapedia_topic_extractor.py  offline Gemini CLI: classifies Bulbapedia chunks into topic tags, writes JSON cache; build_index.py --topic-cache consumes it
   training/
     generate_sft_data.py      SFT data generation via Gemini API
     train_sft.py              SFT training with Unsloth on RunPod
@@ -91,25 +94,27 @@ processed/              READ ONLY
 
 ## Data sources and chunking
 
-| Path                    | Format                                 | Chunking strategy                                                                                       |
-| ----------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `processed/bulbapedia/` | `Title: ...\n<body>`, one doc per line | Split at `Title:` boundary first, then recursive by `\n\n` → sentence. Target 512 tokens, ~10% overlap. |
-| `processed/pokeapi/`    | one entry per line, no header          | No chunking — each line is already an atomic fact (~100–300 tokens). One doc per line.                  |
-| `processed/smogon/`     | `Name (tier): ...`, one entry per line | Recursive sentence-aware split. Target 256–512 tokens, ~10% overlap.                                    |
+| Path                               | Format                                   | Chunking strategy                                                                                                                                                                                                                      |
+| ---------------------------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `processed/bulbapedia/`            | `Title: ...\n<body>`, one doc per line   | Split at `Title:` boundary first, then recursive by `\n\n` → sentence. Target 512 tokens, ~10% overlap.                                                                                                                                |
+| `processed/pokeapi/`               | one entry per line, no header            | No chunking — each line is already an atomic fact (~100–300 tokens). One doc per line.                                                                                                                                                 |
+| `processed/smogon/smogon_data.txt` | Pokémon blocks with `Smogon form:` lines | Three-level hierarchical chunking via `chunk_smogon_data_file()` in `src/retrieval/chunker.py`: blocks → format sections → Overview/Set subsections. Entity name from canonical `Smogon form:` line. Target ~400 tokens, ~10% overlap. |
 
-Every chunk must carry these metadata fields in its Qdrant payload: `source` (`bulbapedia` / `pokeapi` / `smogon`), `entity_name` (if extractable), `entity_type`, `chunk_index`, `original_doc_id`.
+Every chunk must carry these metadata fields in its Qdrant payload: `source` (`bulbapedia` / `pokeapi` / `smogon`), `entity_name` (if extractable), `entity_type`, `chunk_index`, `original_doc_id`. `RetrievedChunk` gained a `metadata: dict[str, Any] | None = None` field (backward-compatible); metadata is extracted by source-specific functions in `chunker.py` and round-trips through Qdrant payload. Smogon metadata includes `chunk_kind`, `generation`, `tier`, `set_name`, `tera_type`, `item`, `ability`, `nature`. PokéAPI adds `entity_subtype` (from `original_doc_id` stem). Bulbapedia adds `topics`, `entity_type_hint` (from optional topic cache).
 
 `_aug.txt` variants are paraphrased rewrites for training/retrieval diversity. Read-only like the originals.
 
 ## Retrieval pipeline
 
 **Query routing** (optional, enabled via `ROUTING_ENABLED=true`):
+
 - `QueryRouter` in `src/retrieval/query_router.py` classifies queries into sources via keyword patterns
 - Patterns use whole-word (`\b...\b`), phrase-prefix, and stem matching (case-insensitive)
 - If no patterns match, routes to all three sources
 - Implements `QueryRouterProtocol`
 
 **Query transformation** (optional, enabled via `HYDE_ENABLED=true`):
+
 - `HyDETransformer` in `src/retrieval/query_transformer.py` generates a single hypothetical answer before embedding
 - `MultiDraftHyDETransformer` generates multiple hypothetical passages, embeds them all, and fuses vectors (dense mean, sparse max per token)
 - Shifts retrieval from query-to-doc to answer-to-answer similarity
@@ -119,16 +124,26 @@ Every chunk must carry these metadata fields in its Qdrant payload: `source` (`b
 - Implements `QueryTransformerProtocol`; `PassthroughTransformer` is the identity function
 
 **Embedding**:
+
 - **Model**: `BAAI/bge-m3` via `FlagEmbedding.BGEM3FlagModel`
 - **Output types**: Dense (1024-dim, always indexed), Sparse (keyword/lexical, free), ColBERT multi-vector (optional, higher recall/cost)
 
 **Vector storage**:
+
 - **DB**: Qdrant (local Docker in dev, hosted or RunPod-attached in prod)
 - **Collections**: Each source (`bulbapedia`, `pokeapi`, `smogon`) is a separate Qdrant collection
 - **Retrieval**: Hybrid dense + sparse in a single BGE-M3 pass, fused with Qdrant `Prefetch` + `Fusion.RRF` (RRF chosen over weighted sum — no per-collection tuning required)
 - **Reranking**: Optional BGE-M3 reranker (`BAAI/bge-reranker-v2-m3`) applied post-retrieval
 
+**Knowledge refinement** (optional, `REFINER_ENABLED=true`):
+
+- `KnowledgeRefiner` in `src/retrieval/knowledge_refiner.py` implements CRAG-style action triage and strip-level filtering
+- Triage: accepted (score ≥ `upper_threshold=0.0`) / uncertain (`lower_threshold=-3.0` ≤ score < upper, flagged `metadata.uncertain=True`) / dropped (score < lower)
+- Strip-level filtering: accepted chunks split into sentences, BGE reranker scores each, strips below `strip_threshold=-1.0` dropped, survivors recomposed in original order
+- Constraint gaps: gen/tier keywords from query checked against surviving chunks; missing ones returned as `knowledge_gaps`
+
 **Error handling**:
+
 - If retrieval returns no documents, `RAGPipeline.query()` raises `RetrievalError("Retrieval returned no documents for query")`
 - Generator is never called if retrieval fails
 
@@ -142,6 +157,7 @@ All major components implement protocols from `src/retrieval/protocols.py` and `
 - `RetrieverProtocol` — `retrieve(query, top_k, sources, entity_name) -> RetrievalResult`
 - `QueryRouterProtocol` — `route(query: str) -> list[Source]` (returns non-empty sorted list)
 - `QueryTransformerProtocol` — `transform(query: str) -> str` (returns original on failure)
+- `KnowledgeRefinerProtocol` — `refine(query, chunks, constraints?) -> RefinementResult` (`RefinementResult` in `src/retrieval/types.py` contains `chunks: tuple[RetrievedChunk, ...]`, `gaps: tuple[str, ...]`)
 - `GeneratorProtocol` — `generate(query, chunks) -> GenerationResult`
 
 These protocols enable unit testing with mocks instead of loading real models.
@@ -151,14 +167,15 @@ These protocols enable unit testing with mocks instead of loading real models.
 **`build_pipeline()` return type**: `tuple[RAGPipeline, ModelLoader, QdrantClient]`
 
 **RAGPipeline constructor**:
+
 - Requires: `retriever: RetrieverProtocol`, `generator: GeneratorProtocol`
-- Optional: `query_router: QueryRouterProtocol | None = None`
+- Optional: `query_router: QueryRouterProtocol | None = None`, `knowledge_refiner: KnowledgeRefinerProtocol | None = None`
 - If `query_router` is provided and `sources=None` in `query()` call, router classifies the query
 
 **Response types**:
 
-- `PipelineResult` (in `src/pipeline/types.py`): includes `confidence_score: float | None = None` (sigmoid of top chunk score)
-- `QueryResponse` (in `src/api/models.py`): includes `confidence_score: float | None = None`
+- `PipelineResult` (in `src/pipeline/types.py`): includes `confidence_score: float | None = None` (sigmoid of top chunk score), `knowledge_gaps: tuple[str, ...] | None = None` (constraint keywords absent from surviving chunks, populated when refiner enabled)
+- `QueryResponse` (in `src/api/models.py`): includes `confidence_score: float | None = None`, `knowledge_gaps: list[str] | None = None`
 
 **API endpoints**:
 
@@ -175,6 +192,10 @@ These protocols enable unit testing with mocks instead of loading real models.
 - `HYDE_CONFIDENCE_THRESHOLD=F` — Optional threshold (0.0–1.0) to gate weak answers; None if unset
 - `COLBERT_ENABLED=true/false` — Enable ColBERT multi-vector late-interaction reranking (default: false). **Requires index rebuild** with `--colbert --drop-collections` when first enabled.
 - `LORA_ADAPTER_PATH=/path/to/adapter` — Path to LoRA weights (optional, only if fine-tuned on RunPod)
+- `REFINER_ENABLED=true/false` — Enable post-retrieval knowledge refinement (default: false)
+- `REFINER_UPPER_THRESHOLD=F` — Score threshold for accepted chunks (default: 0.0, logit space)
+- `REFINER_LOWER_THRESHOLD=F` — Score threshold below which chunks are dropped (default: -3.0)
+- `REFINER_STRIP_THRESHOLD=F` — Threshold for sentence-level strip filtering (default: -1.0)
 - `qdrant_api_key` — `SecretStr` (Pydantic), masked in logs/repr (optional, only if Qdrant requires auth)
 
 **Security & logging**:
