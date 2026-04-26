@@ -459,8 +459,7 @@ class TestXFFUndeclaredProxyWarning:
             c.get("/health", headers={"X-Forwarded-For": "1.2.3.4"})
 
         assert any(
-            "X-Forwarded-For" in r.message and r.levelno == logging.WARNING
-            for r in caplog.records
+            "X-Forwarded-For" in r.message and r.levelno == logging.WARNING for r in caplog.records
         ), "S4: expected WARNING about XFF present but TRUSTED_PROXY_COUNT=0"
 
     def test_warning_emitted_only_once(
@@ -480,7 +479,8 @@ class TestXFFUndeclaredProxyWarning:
             c.get("/health", headers={"X-Forwarded-For": "5.6.7.8"})
 
         xff_warnings = [
-            r for r in caplog.records
+            r
+            for r in caplog.records
             if "X-Forwarded-For" in r.message and r.levelno == logging.WARNING
         ]
         assert len(xff_warnings) == 1, "S4: warning must be emitted exactly once"
@@ -570,7 +570,8 @@ class TestHSTSStartupWarning:
             pass
 
         hsts_warnings = [
-            r for r in caplog.records
+            r
+            for r in caplog.records
             if ("HSTS" in r.message or "HTTPS_ENABLED" in r.message)
             and r.levelno == logging.WARNING
         ]
@@ -774,9 +775,7 @@ class TestRateLimitMiddlewareLRUEviction:
 
         return importlib.import_module("src.api.app")
 
-    def test_existing_ip_moved_to_tail_on_dispatch(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_existing_ip_moved_to_tail_on_dispatch(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """dispatch() in the existing-IP branch must call move_to_end() so that
         recently-active IPs migrate to the tail and are not the first victims of eviction.
 
@@ -990,9 +989,7 @@ class TestGlobalExceptionHandlerStackTrace:
         finally:
             app_logger.setLevel(original_level)
 
-        exc_info_calls = [
-            call for call in log_calls if call["kwargs"].get("exc_info")
-        ]
+        exc_info_calls = [call for call in log_calls if call["kwargs"].get("exc_info")]
         assert exc_info_calls == [], (
             "S8: exc_info=True must not be logged when logger level is above DEBUG"
         )
@@ -1032,12 +1029,8 @@ class TestGlobalExceptionHandlerStackTrace:
         finally:
             app_logger.setLevel(original_level)
 
-        exc_info_calls = [
-            call for call in log_calls if call["kwargs"].get("exc_info")
-        ]
-        assert exc_info_calls, (
-            "S8: exc_info=True must be logged when logger level is DEBUG"
-        )
+        exc_info_calls = [call for call in log_calls if call["kwargs"].get("exc_info")]
+        assert exc_info_calls, "S8: exc_info=True must be logged when logger level is DEBUG"
 
 
 @pytest.mark.unit
@@ -1087,7 +1080,5 @@ class TestQueryAuditLogging:
             c.post("/query", json={"query": "What type is Bulbasaur?"})
 
         assert any(
-            "query" in r.message.lower()
-            for r in caplog.records
-            if r.levelno == logging.INFO
+            "query" in r.message.lower() for r in caplog.records if r.levelno == logging.INFO
         ), "S11: expected INFO audit log for query without entity_name/sources"

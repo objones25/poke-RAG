@@ -497,7 +497,6 @@ class TestAsyncEnsureCollectionsErrorHandling:
             await store.ensure_collections()
 
 
-
 @pytest.mark.unit
 class TestAsyncConcurrentUpsert:
     @pytest.mark.anyio

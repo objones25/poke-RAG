@@ -135,7 +135,8 @@ class KnowledgeRefiner:
         if not keywords:
             return []
         return [
-            kw for kw in keywords
+            kw
+            for kw in keywords
             if not any(KnowledgeRefiner._covers_keyword(c, kw) for c in chunks)
         ]
 

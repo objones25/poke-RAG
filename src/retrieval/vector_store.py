@@ -326,9 +326,7 @@ class AsyncQdrantVectorStore:
                 collection_name=source,
                 vectors_config=vectors_config,
                 sparse_vectors_config={
-                    _SPARSE_VECTOR_NAME: SparseVectorParams(
-                        index=SparseIndexParams(on_disk=False)
-                    ),
+                    _SPARSE_VECTOR_NAME: SparseVectorParams(index=SparseIndexParams(on_disk=False)),
                 },
             )
             _LOG.debug("Collection '%s' created", source)

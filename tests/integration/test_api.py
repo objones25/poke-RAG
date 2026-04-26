@@ -175,9 +175,7 @@ class TestAsyncPipelineWiring:
 class TestStatsAuth:
     """S1: /stats must require authentication; endpoint must be inaccessible without a key."""
 
-    def test_stats_returns_403_when_no_api_key_configured(
-        self, client, monkeypatch
-    ) -> None:
+    def test_stats_returns_403_when_no_api_key_configured(self, client, monkeypatch) -> None:
         monkeypatch.delenv("STATS_API_KEY", raising=False)
         response = client.get("/stats")
         assert response.status_code == 403
@@ -187,9 +185,7 @@ class TestStatsAuth:
         response = client.get("/stats", headers={"Authorization": "Bearer wrong-key"})
         assert response.status_code == 401
 
-    def test_stats_returns_401_with_missing_auth_header(
-        self, client, monkeypatch
-    ) -> None:
+    def test_stats_returns_401_with_missing_auth_header(self, client, monkeypatch) -> None:
         monkeypatch.setenv("STATS_API_KEY", "correct-secret")
         response = client.get("/stats")
         assert response.status_code == 401
