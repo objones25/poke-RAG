@@ -130,3 +130,33 @@ Steps 1–3 give you a system that is architecturally complete in the sense the 
 - **Knowledge graph approaches** (HopRAG, SubQRAG, GraphRAG). These solve a problem you don't have — your corpus is already structured (Smogon by entity/format/set, PokeAPI by entity/property). The graph is implicit in the metadata. Building an explicit graph is overhead that pays off when entities are densely linked and queries traverse those links; for "what does Garchomp learn at level X" that's not the case.
 - **Web search fallback.** CRAG's `Incorrect → web search` branch. Skip it for now; you don't have a Bulbapedia/Smogon API integration, and adding one is a sourcing problem, not a retrieval problem.
 - **Sources I read but didn't recommend follow-up on:** SEAL-RAG and FAIR-RAG are state-of-the-art for _complex multi-hop_ benchmarks but their full architecture (entity ledgers, structured evidence assessment) is overkill for a domain where most queries are single-hop. Their core insights — gap analysis, fixed-budget assembly, sufficiency gating — show up in steps 2 and 3 above in lighter form.
+
+---
+
+## Post-implementation findings (Pillar 4 — CRAG)
+
+The `KnowledgeRefiner` from step 2 above is now implemented and wired into both the sync and async pipelines. Two limitations were discovered during live testing that are worth fixing before relying on either feature.
+
+### Limitation 1 — Confidence score measures retrieval relevance, not answer quality
+
+**What's implemented.** `confidence_score` is `sigmoid(chunks[0].score)` — the sigmoid of the BGE reranker's raw logit for the top-ranked chunk.
+
+**The problem.** Sigmoid maps all positive logits to > 0.5, and the reranker almost always assigns positive logits to topically related chunks. In practice this means confidence rarely drops below 0.7 regardless of whether the generated answer is actually correct or grounded. A query about gen6 sweepers that returns a hallucinated answer still reports 0.74 confidence. The score is accurate about retrieval match quality but says nothing about generation quality — these are different things and conflating them is misleading.
+
+**Candidate fixes (not yet implemented):**
+
+- **Score gap signal.** `confidence = sigmoid(chunks[0].score - chunks[1].score)`. A large gap between rank-1 and rank-2 indicates a clear best match; a small gap indicates uncertainty. This is query-adaptive without any tuning.
+- **Calibrated threshold.** Run the eval harness with `--include-confidence` and fit a Platt scaling layer on top of the raw logit using `(reranker_score, correct_answer)` pairs. Expensive to build but precise.
+- **Separate retrieval confidence from generation confidence.** Return both: retrieval confidence from the reranker, generation confidence from the model's token-level log-probabilities (already available from `generate()` output). Let callers decide which to surface.
+
+### Limitation 2 — Constraint gap detection does not fire for well-indexed formats
+
+**What's implemented.** `_check_sufficiency` extracts gen/tier keywords from the query (e.g. "gen6", "ou") and checks whether those strings appear anywhere in the surviving chunks' `.text` fields. If all keywords are present, `knowledge_gaps` is `None`.
+
+**The problem.** Smogon chunks are generated from format sections named `gen6ou`, `gen9ou`, etc. The format label is embedded in the chunk text, so "gen6" and "ou" will appear in every gen6ou chunk regardless of the query. This means `knowledge_gaps` is structurally `None` for any query whose generation and tier are present in the index — which is almost every competitive query. The detector only fires when retrieval pulls cross-source chunks (bulbapedia, pokeapi) that carry no format labels, which is not the common case for competitive queries.
+
+**Candidate fixes (not yet implemented):**
+
+- **Check metadata fields, not text.** Replace the substring search with a comparison against `chunk.metadata["generation"]` and `chunk.metadata["tier"]`. These are populated during Smogon ingestion. A gap fires when the requested generation/tier is absent from the metadata of _all_ surviving chunks, independent of what the text happens to say.
+- **Normalise constraint extraction.** The query "gen 6 OU" and the metadata field `generation=6, tier="OU"` need a shared normalisation step (strip whitespace, lowercase, map "gen 6" → 6). This is the same normaliser already used in `_extract_constraint_keywords`; it just needs to compare against structured fields rather than raw text.
+- **Fallback to text search only for sources without metadata.** Bulbapedia and pokeapi chunks don't carry generation/tier metadata; text search is still appropriate for those. The fix is to branch on `chunk.source`: use metadata comparison for smogon, text search for everything else.
