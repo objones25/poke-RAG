@@ -9,6 +9,12 @@ from pydantic import SecretStr
 _LOG = logging.getLogger(__name__)
 
 
+def _parse_string_required(value: str | None, env_var_name: str) -> str:
+    if value is None:
+        raise ValueError(f"{env_var_name} environment variable is required but not set")
+    return value
+
+
 def _parse_bool(value: str | None, env_var_name: str, default: bool) -> bool:
     """Parse a boolean environment variable.
 
@@ -247,7 +253,7 @@ class Settings:
         _LOG.info("Using device: %s", device)
 
         return cls(
-            qdrant_url=os.environ["QDRANT_URL"],
+            qdrant_url=_parse_string_required(os.getenv("QDRANT_URL"), "QDRANT_URL"),
             qdrant_api_key=SecretStr(api_key) if (api_key := os.getenv("QDRANT_API_KEY")) else None,
             embed_model=os.getenv("EMBED_MODEL", "BAAI/bge-m3"),
             rerank_model=os.getenv("RERANK_MODEL", "BAAI/bge-reranker-v2-m3"),

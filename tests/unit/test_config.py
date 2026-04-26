@@ -279,10 +279,11 @@ class TestSettingsFromEnv:
         settings = Settings.from_env()
         assert settings.qdrant_url == "http://localhost:6333"
 
-    def test_raises_keyerror_when_qdrant_url_missing(self) -> None:
+    def test_raises_valueerror_when_qdrant_url_missing(self) -> None:
+        """B6: missing QDRANT_URL must raise ValueError with a descriptive message."""
         from src.config import Settings
 
-        with patch.dict(os.environ, {}, clear=True), pytest.raises(KeyError):
+        with patch.dict(os.environ, {}, clear=True), pytest.raises(ValueError, match="QDRANT_URL"):
             Settings.from_env()
 
     def test_reads_optional_qdrant_api_key(self, monkeypatch) -> None:
@@ -885,10 +886,10 @@ class TestParseBoolUnexpectedValue:
 
 @pytest.mark.unit
 class TestSettingsMissingQdrantUrl:
-    def test_settings_from_env_missing_qdrant_url_raises_key_error(self) -> None:
+    def test_settings_from_env_missing_qdrant_url_raises_value_error(self) -> None:
         from src.config import Settings
 
-        with patch.dict(os.environ, {}, clear=True), pytest.raises(KeyError):
+        with patch.dict(os.environ, {}, clear=True), pytest.raises(ValueError, match="QDRANT_URL"):
             Settings.from_env()
 
 
