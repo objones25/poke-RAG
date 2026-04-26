@@ -94,6 +94,9 @@ def _load_questions(path: Path) -> list[_Question]:
 
 
 def _build_retriever(*, routing: bool, hyde: bool) -> tuple[Any, Any]:
+    from dotenv import load_dotenv
+
+    load_dotenv()
     os.environ.setdefault("ROUTING_ENABLED", "true" if routing else "false")
     os.environ.setdefault("HYDE_ENABLED", "true" if hyde else "false")
 
