@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 Source = Literal["bulbapedia", "pokeapi", "smogon"]
 EntityType = Literal["pokemon", "move", "ability", "item", "format"]
@@ -16,6 +16,7 @@ class RetrievedChunk:
     entity_type: EntityType | None
     chunk_index: int
     original_doc_id: str
+    metadata: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)

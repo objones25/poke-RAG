@@ -6,6 +6,7 @@ import logging
 import re
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from src.retrieval.constants import WORDS_PER_TOKEN as _WORDS_PER_TOKEN
 from src.types import EntityType, RetrievedChunk, Source
@@ -29,6 +30,9 @@ _RE_SD_MOVES_HEADER = re.compile(r"^\s*Moves:\s*$", re.MULTILINE)
 _RE_SD_DESC_HEADER = re.compile(r"^\s*Description:\s*$", re.MULTILINE)
 _RE_SD_ATTR = re.compile(r"^\s*(Tera Type|Item|Ability|Nature|EVs|IVs):\s*(.+)$", re.MULTILINE)
 _RE_SD_MOVE_ITEM = re.compile(r"^\s*-\s*(.+)$", re.MULTILINE)
+_RE_SD_GEN_TIER = re.compile(r"^gen(\d+)(.+)$")
+# Strips trailing _\d+ (or _aug_\d+) from a doc_id to get the stem
+_RE_POKEAPI_STEM = re.compile(r"(?:_aug)?_\d+$")
 
 _SMOGON_TARGET_TOKENS = 400
 _BULBA_TARGET_TOKENS = 400
@@ -128,6 +132,63 @@ def _recursive_split(
     return [stripped]
 
 
+def _extract_smogon_metadata(
+    *,
+    format_name: str | None,
+    chunk_kind: str | None = None,
+    set_name: str | None = None,
+    attrs: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Build metadata dict for a smogon_data chunk."""
+    if format_name is None:
+        return {}
+    meta: dict[str, Any] = {"format_name": format_name}
+    gen_match = _RE_SD_GEN_TIER.match(format_name)
+    if gen_match:
+        meta["generation"] = int(gen_match.group(1))
+        meta["tier"] = gen_match.group(2)
+    if chunk_kind is not None:
+        meta["chunk_kind"] = chunk_kind
+    if chunk_kind == "set" and set_name is not None:
+        meta["set_name"] = set_name
+    if attrs:
+        _ATTR_KEY_MAP = {
+            "Tera Type": "tera_type",
+            "Item": "item",
+            "Ability": "ability",
+            "Nature": "nature",
+        }
+        for src_key, dst_key in _ATTR_KEY_MAP.items():
+            if src_key in attrs:
+                meta[dst_key] = attrs[src_key]
+    return meta
+
+
+def _extract_pokeapi_metadata(*, doc_id: str) -> dict[str, Any]:
+    """Build metadata dict for a pokeapi chunk from its doc_id."""
+    stem_match = _RE_POKEAPI_STEM.search(doc_id)
+    if not stem_match:
+        return {}
+    stem = doc_id[: stem_match.start()]
+    _STEM_TO_SUBTYPE: dict[str, str] = {
+        "pokemon_species": "species",
+        "pokemon_moves": "moves",
+        "pokemon_encounters": "encounters",
+        "ability": "ability",
+        "item": "item",
+        "move": "move",
+    }
+    subtype = _STEM_TO_SUBTYPE.get(stem)
+    if subtype is None:
+        return {}
+    return {"entity_subtype": subtype}
+
+
+def _extract_bulbapedia_metadata() -> dict[str, Any]:
+    """Return an empty metadata stub; topics are populated offline by the Gemini utility."""
+    return {}
+
+
 def _extract_smogon_name(line: str) -> str | None:
     """Extract entity name from 'Name (tier): ...' format."""
     match = _RE_SMOGON_NAME.match(line)
@@ -167,6 +228,7 @@ def chunk_pokeapi_line(
             entity_type=entity_type,
             chunk_index=0,
             original_doc_id=doc_id,
+            metadata=_extract_pokeapi_metadata(doc_id=doc_id),
         )
     ]
 
@@ -193,6 +255,7 @@ def chunk_smogon_line(
         return []
 
     prefix = f"{entity_name}: " if entity_name else ""
+    smogon_meta = _extract_smogon_metadata(format_name=None)
     return [
         RetrievedChunk(
             text=f"{prefix}{chunk_text}",
@@ -202,6 +265,7 @@ def chunk_smogon_line(
             entity_type=entity_type,
             chunk_index=i,
             original_doc_id=doc_id,
+            metadata=smogon_meta,
         )
         for i, chunk_text in enumerate(raw_chunks)
     ]
@@ -229,6 +293,7 @@ def chunk_bulbapedia_doc(
     else:
         body = stripped
 
+    bulba_meta = _extract_bulbapedia_metadata()
     if not body:
         return [
             RetrievedChunk(
@@ -239,6 +304,7 @@ def chunk_bulbapedia_doc(
                 entity_type=entity_type,
                 chunk_index=0,
                 original_doc_id=doc_id,
+                metadata=bulba_meta,
             )
         ]
 
@@ -255,6 +321,7 @@ def chunk_bulbapedia_doc(
             entity_type=entity_type,
             chunk_index=i,
             original_doc_id=doc_id,
+            metadata=bulba_meta,
         )
         for i, chunk_text in enumerate(raw_chunks)
     ]
@@ -365,6 +432,9 @@ def chunk_smogon_data_file(
                     header = f"{entity_name} in {format_name} — Overview"
                     doc_id = f"smogon_data_{entity_slug}_{format_name}_overview"
                     full_text = f"{header}\n{overview_text}"
+                    overview_meta = _extract_smogon_metadata(
+                        format_name=format_name, chunk_kind="overview"
+                    )
                     if _approx_tokens(full_text, tokenize_fn=tokenize_fn) <= _SMOGON_TARGET_TOKENS:
                         chunks.append(
                             RetrievedChunk(
@@ -375,6 +445,7 @@ def chunk_smogon_data_file(
                                 entity_type="pokemon",
                                 chunk_index=0,
                                 original_doc_id=doc_id,
+                                metadata=overview_meta,
                             )
                         )
                     else:
@@ -394,6 +465,7 @@ def chunk_smogon_data_file(
                                     entity_type="pokemon",
                                     chunk_index=ci,
                                     original_doc_id=doc_id,
+                                    metadata=overview_meta,
                                 )
                             )
 
@@ -405,6 +477,12 @@ def chunk_smogon_data_file(
                     full_text = (
                         f"{set_header}\n{description}".strip() if description else set_header
                     )
+                    set_meta = _extract_smogon_metadata(
+                        format_name=format_name,
+                        chunk_kind="set",
+                        set_name=set_name,
+                        attrs=attrs,
+                    )
                     if _approx_tokens(full_text, tokenize_fn=tokenize_fn) <= _SMOGON_TARGET_TOKENS:
                         chunks.append(
                             RetrievedChunk(
@@ -415,6 +493,7 @@ def chunk_smogon_data_file(
                                 entity_type="pokemon",
                                 chunk_index=0,
                                 original_doc_id=doc_id,
+                                metadata=set_meta,
                             )
                         )
                     else:
@@ -434,6 +513,7 @@ def chunk_smogon_data_file(
                                     entity_type="pokemon",
                                     chunk_index=ci,
                                     original_doc_id=doc_id,
+                                    metadata=set_meta,
                                 )
                             )
 
