@@ -1,339 +1,664 @@
-# Retrieval evaluation questions
-# Format:
-#   query: the natural-language question
-#   expected_keywords: strings that must appear in at least one top-k chunk (case-insensitive)
-#   source_hint: expected primary source (pokeapi / smogon / bulbapedia)
+# Retrieval evaluation questions  (v3)
+# =====================================================================
 #
-# 20 pokeapi (stats, types, evolutions)
-# 20 smogon  (competitive, tiers, movesets)
-# 20 bulbapedia (lore, game mechanics, move descriptions)
+# Schema:
+#   id:                       stable identifier
+#   query:                    the natural-language question
+#   category:                 question type (taxonomy below)
+#   difficulty:               easy | medium | hard
+#   source_hint:              pokeapi | smogon | bulbapedia
+#   gold:                     [<file_prefix>:<entity_lower>, ...]
+#                             file_prefix matches `original_doc_id` minus the
+#                             trailing _<n> (e.g. "pokemon_moves_1252" → "pokemon_moves")
+#                             entity name is lowercased to match payload.entity_name
+#   match:                    any | all   (default: any)
+#   min_recall:               float in (0,1] (only used for match=all; default 1.0)
+#   hard_negatives:           [<file>:<entity>, ...]   (optional)
+#   requires_decomposition:   bool. True => question needs query decomposition / HyDE /
+#                             iterative retrieval to succeed; vanilla single-pass
+#                             retrieval is expected to fail. The harness buckets these
+#                             out of headline numbers by default.
+#   notes:                    free-text annotation explaining why the question is hard
+#
+# Taxonomy:
+#   easy_lexical    — entity name in query, single chunk; baseline ceiling
+#   anonymized      — entity described by a property; vanilla retrieval CAN solve
+#                     if the property phrase is in the gold chunk
+#   paraphrase      — query and gold share little vocabulary; tests semantic match
+#   confusable      — multiple plausible candidates; reranker discrimination test
+#   aggregation     — answer = several gold chunks; tests ranking diversity & top-k depth
+#   comparative     — names two entities; both gold chunks must rank well
+#   long_tail       — less-famous entity; embedder confidence test
+#   variant         — form / regional / Mega disambiguation
+#   multi_source    — single named entity, info spread across files (species + smogon
+#                     for the SAME entity); single-pass should handle it
+#   multi_hop       — answer requires composing facts across passages; needs query
+#                     decomposition. Tagged requires_decomposition: true.
+#
+# Notes on multi-hop (literature-grounded):
+#   Multi-hop QA benchmarks (HotpotQA, MuSiQue, 2WikiMultiHopQA) consistently find
+#   that bridge questions ("the X that has property Y") cannot be solved by a single
+#   dense-retrieval pass when the property and the answer live in different chunks
+#   without shared vocabulary. The standard remedy is query decomposition
+#   (Self-RAG, Self-Ask, HyDE). We tag those questions accordingly so vanilla
+#   retrieval results aren't unfairly dragged down.
+#
+# 60 questions. All gold IDs use lowercased entity names matching payload.entity_name.
+# =====================================================================
 
-# --- pokeapi (20) ---
+# ---------------------------------------------------------------------
+# easy_lexical  (5)  — baseline ceiling
+# ---------------------------------------------------------------------
 
-- query: "What is Pikachu's base speed stat?"
-  expected_keywords: ["90", "speed", "Speed"]
+- id: el001
+  query: "What is Pikachu's base Speed stat?"
+  category: easy_lexical
+  difficulty: easy
   source_hint: pokeapi
+  gold: [pokemon_species:pikachu]
 
-- query: "What type is Bulbasaur?"
-  expected_keywords: ["Grass", "Poison"]
-  source_hint: pokeapi
-
-- query: "What is Charizard's base special attack?"
-  expected_keywords: ["109", "special", "Charizard"]
-  source_hint: pokeapi
-
-- query: "What are Gengar's base stats?"
-  expected_keywords: ["Gengar", "speed", "special"]
-  source_hint: pokeapi
-
-- query: "What level does Charmander evolve into Charmeleon?"
-  expected_keywords: ["16", "Charmeleon", "evolve"]
-  source_hint: pokeapi
-
-- query: "What is Snorlax's base HP?"
-  expected_keywords: ["160", "HP", "Snorlax"]
-  source_hint: pokeapi
-
-- query: "What ability does Garchomp have?"
-  expected_keywords: ["Sand Veil", "Rough Skin", "Garchomp"]
-  source_hint: pokeapi
-
-- query: "What is Eevee's base experience?"
-  expected_keywords: ["Eevee"]
-  source_hint: pokeapi
-
-- query: "What type is Scizor?"
-  expected_keywords: ["Bug", "Steel", "Scizor"]
-  source_hint: pokeapi
-
-- query: "What is Blastoise's base defense?"
-  expected_keywords: ["100", "defense", "Blastoise"]
-  source_hint: pokeapi
-
-- query: "What level does Magikarp evolve into Gyarados?"
-  expected_keywords: ["20", "Gyarados", "evolve"]
-  source_hint: pokeapi
-
-- query: "How much does Mewtwo weigh?"
-  expected_keywords: ["Mewtwo", "122", "kg"]
-  source_hint: pokeapi
-
-- query: "What is Alakazam's base special attack?"
-  expected_keywords: ["135", "special", "Alakazam"]
-  source_hint: pokeapi
-
-- query: "What is Jolteon's typing?"
-  expected_keywords: ["Electric", "Jolteon"]
-  source_hint: pokeapi
-
-- query: "What is Dragonite's base attack stat?"
-  expected_keywords: ["134", "attack", "Dragonite"]
-  source_hint: pokeapi
-
-- query: "What is Tyranitar's base special defense?"
-  expected_keywords: ["100", "special", "Tyranitar"]
-  source_hint: pokeapi
-
-- query: "What types is Lucario?"
-  expected_keywords: ["Fighting", "Steel", "Lucario"]
-  source_hint: pokeapi
-
-- query: "What is Togekiss's base special attack?"
-  expected_keywords: ["120", "special", "Togekiss"]
-  source_hint: pokeapi
-
-- query: "What is Rotom-Wash's typing?"
-  expected_keywords: ["Electric", "Water", "Rotom"]
-  source_hint: pokeapi
-
-- query: "What is Ferrothorn's base defense?"
-  expected_keywords: ["131", "defense", "Ferrothorn"]
-  source_hint: pokeapi
-
-# --- smogon (20) ---
-
-- query: "What tier is Garchomp in?"
-  expected_keywords: ["OU", "Garchomp"]
-  source_hint: smogon
-
-- query: "What moves does Garchomp use competitively?"
-  expected_keywords: ["Earthquake", "Garchomp"]
-  source_hint: smogon
-
-- query: "What makes Corviknight a good defensive Pokemon in OU?"
-  expected_keywords: ["Corviknight", "Defog", "Steel"]
-  source_hint: smogon
-
-- query: "What is Weavile's role in competitive play?"
-  expected_keywords: ["Weavile", "Ice", "speed"]
-  source_hint: smogon
-
-- query: "How do you use Toxapex in competitive battles?"
-  expected_keywords: ["Toxapex", "Scald", "Regenerator"]
-  source_hint: smogon
-
-- query: "What tier is Breloom in?"
-  expected_keywords: ["Breloom", "UU", "OU", "tier"]
-  source_hint: smogon
-
-- query: "What are common sets for Choice Scarf Landorus-Therian?"
-  expected_keywords: ["Landorus", "Scarf", "Earthquake"]
-  source_hint: smogon
-
-- query: "Why is Ferrothorn used on rain teams?"
-  expected_keywords: ["Ferrothorn", "rain", "Leech Seed"]
-  source_hint: smogon
-
-- query: "What checks Heatran in OU?"
-  expected_keywords: ["Heatran", "Ground", "check"]
-  source_hint: smogon
-
-- query: "What is the recommended EV spread for Clefable?"
-  expected_keywords: ["Clefable", "HP", "Defense"]
-  source_hint: smogon
-
-- query: "How does Volcarona work in OU?"
-  expected_keywords: ["Volcarona", "Quiver Dance", "Bug"]
-  source_hint: smogon
-
-- query: "What makes Dragapult a top threat in OU?"
-  expected_keywords: ["Dragapult", "Dragon", "speed"]
-  source_hint: smogon
-
-- query: "What is Urshifu-Single's common moveset?"
-  expected_keywords: ["Urshifu", "Wicked Blow", "Close Combat"]
-  source_hint: smogon
-
-- query: "What tier is Blissey in and what does it do?"
-  expected_keywords: ["Blissey", "OU", "special", "wall"]
-  source_hint: smogon
-
-- query: "How is Cloyster used offensively?"
-  expected_keywords: ["Cloyster", "Shell Smash", "Icicle Spear"]
-  source_hint: smogon
-
-- query: "What is Kyurem-Black's role in competitive play?"
-  expected_keywords: ["Kyurem", "Dragon", "Fusion Bolt"]
-  source_hint: smogon
-
-- query: "What hazard setters are good in OU?"
-  expected_keywords: ["Stealth Rock", "Spikes", "entry hazard"]
-  source_hint: smogon
-
-- query: "What is a good Scizor set in OU?"
-  expected_keywords: ["Scizor", "Bullet Punch", "Technician"]
-  source_hint: smogon
-
-- query: "What tier is Excadrill in?"
-  expected_keywords: ["Excadrill", "OU", "UU", "tier"]
-  source_hint: smogon
-
-- query: "What makes Tapu Lele dangerous in OU?"
-  expected_keywords: ["Tapu Lele", "Psychic", "Surge"]
-  source_hint: smogon
-
-# --- bulbapedia (20) ---
-
-- query: "What is the lore behind Gengar?"
-  expected_keywords: ["Gengar", "shadow", "ghost"]
+- id: el002
+  query: "What does the Leftovers item do?"
+  category: easy_lexical
+  difficulty: easy
   source_hint: bulbapedia
+  gold: [item:leftovers]
 
-- query: "How does the move Earthquake work?"
-  expected_keywords: ["Earthquake", "Ground", "damage"]
+- id: el003
+  query: "How does the move Earthquake work?"
+  category: easy_lexical
+  difficulty: easy
   source_hint: bulbapedia
+  gold: [move:earthquake]
 
-- query: "What is the story behind Mewtwo's creation?"
-  expected_keywords: ["Mewtwo", "Mew", "created", "genetic"]
+- id: el004
+  query: "What does the ability Levitate do?"
+  category: easy_lexical
+  difficulty: easy
   source_hint: bulbapedia
+  gold: [ability:levitate]
 
-- query: "What are the effects of the move Recover?"
-  expected_keywords: ["Recover", "HP", "restore"]
+- id: el005
+  query: "Where can I catch Magikarp in the wild?"
+  category: easy_lexical
+  difficulty: easy
+  source_hint: pokeapi
+  gold: [pokemon_encounters:magikarp]
+
+# ---------------------------------------------------------------------
+# anonymized  (10)  — describe the entity by a property
+# ---------------------------------------------------------------------
+
+- id: an001
+  query: "Which Pokémon was created through years of gene splicing and DNA engineering experiments?"
+  category: anonymized
+  difficulty: medium
   source_hint: bulbapedia
+  gold: [pokemon_species:mewtwo]
+  hard_negatives: [pokemon_species:mew]
 
-- query: "What is the Sinnoh region?"
-  expected_keywords: ["Sinnoh", "region", "Diamond", "Pearl"]
+- id: an002
+  query: "Which ability leaves a Pokémon at 1 HP instead of fainting if it would be knocked out at full HP?"
+  category: anonymized
+  difficulty: medium
   source_hint: bulbapedia
+  gold: [ability:sturdy]
 
-- query: "What is the competitive history of Stealth Rock?"
-  expected_keywords: ["Stealth Rock", "entry hazard", "Rock"]
+- id: an003
+  query: "Which held item raises Defense and Special Defense by 50% but only works on Pokémon that can still evolve?"
+  category: anonymized
+  difficulty: medium
   source_hint: bulbapedia
+  gold: [item:eviolite]
 
-- query: "What is the description of the ability Levitate?"
-  expected_keywords: ["Levitate", "Ground", "immune"]
+- id: an004
+  query: "Which Pokémon creates throwing stars from compressed water that can split metal?"
+  category: anonymized
+  difficulty: hard
   source_hint: bulbapedia
+  gold: [pokemon_species:greninja]
 
-- query: "What is the lore of Eevee?"
-  expected_keywords: ["Eevee", "evolution", "unstable"]
+- id: an005
+  query: "Which ability turns the holder's Normal-type moves into Fairy-type moves and gives them a 1.3× power boost?"
+  category: anonymized
+  difficulty: medium
   source_hint: bulbapedia
+  gold: [ability:pixilate]
+  hard_negatives: [ability:aerilate, ability:refrigerate, ability:galvanize]
 
-- query: "How does the move Will-O-Wisp work?"
-  expected_keywords: ["Will-O-Wisp", "burn", "Fire"]
+- id: an006
+  query: "Which Pokémon's intelligence quotient is said to be 5,000?"
+  category: anonymized
+  difficulty: medium
   source_hint: bulbapedia
+  gold: [pokemon_species:alakazam]
 
-- query: "What game did Togekiss first appear in?"
-  expected_keywords: ["Togekiss", "Generation", "Platinum", "HeartGold"]
+- id: an007
+  query: "Which ability gives all of a Pokémon's non-damaging moves +1 priority?"
+  category: anonymized
+  difficulty: medium
   source_hint: bulbapedia
+  gold: [ability:prankster]
 
-- query: "What is the description of the move Thunderbolt?"
-  expected_keywords: ["Thunderbolt", "Electric", "paralysis"]
+- id: an008
+  query: "Which signature ability protects Mimikyu from one attack per battle by switching to a Busted Form?"
+  category: anonymized
+  difficulty: medium
   source_hint: bulbapedia
+  gold: [ability:disguise]
+  hard_negatives: [pokemon_species:mimikyu]
 
-- query: "What is the lore behind Ditto?"
-  expected_keywords: ["Ditto", "transform", "DNA"]
+- id: an009
+  query: "Which item catches any wild Pokémon without fail?"
+  category: anonymized
+  difficulty: easy
   source_hint: bulbapedia
+  gold: [item:master ball]
 
-- query: "What is the effect of the ability Intimidate?"
-  expected_keywords: ["Intimidate", "Attack", "lower"]
+- id: an010
+  query: "Which ability halves damage taken from Fire-type and Ice-type attacks?"
+  category: anonymized
+  difficulty: medium
   source_hint: bulbapedia
+  gold: [ability:thick fat]
+  hard_negatives: [ability:heatproof]
 
-- query: "What is the Trick Room mechanic?"
-  expected_keywords: ["Trick Room", "speed", "slower"]
+# ---------------------------------------------------------------------
+# paraphrase  (8)  — query and gold share little vocabulary
+# ---------------------------------------------------------------------
+
+- id: pa001
+  query: "What ability stops other Pokémon from stealing your held item?"
+  category: paraphrase
+  difficulty: hard
   source_hint: bulbapedia
+  gold: [ability:sticky hold]
+  hard_negatives: [ability:klutz]
 
-- query: "What is the Johto region?"
-  expected_keywords: ["Johto", "Gold", "Silver", "region"]
+- id: pa002
+  query: "What move clears entry hazards from your own side of the field?"
+  category: paraphrase
+  difficulty: medium
   source_hint: bulbapedia
+  gold: [move:rapid spin, move:defog]
+  match: any
+  hard_negatives: [move:spikes, move:stealth rock]
 
-- query: "What does the move Substitute do?"
-  expected_keywords: ["Substitute", "HP", "decoy", "barrier"]
+- id: pa003
+  query: "Which ability stops you from getting hit by Ground attacks without being a Flying-type?"
+  category: paraphrase
+  difficulty: medium
   source_hint: bulbapedia
+  gold: [ability:levitate]
 
-- query: "What is the lore behind Lucario?"
-  expected_keywords: ["Lucario", "aura", "Fighting", "Steel"]
+- id: pa004
+  query: "What item makes attacks 30% stronger but eats your HP every time you attack?"
+  category: paraphrase
+  difficulty: medium
   source_hint: bulbapedia
+  gold: [item:life orb]
 
-- query: "What is the mechanic for Mega Evolution?"
-  expected_keywords: ["Mega Evolution", "Mega Stone", "Key Stone"]
+- id: pa005
+  query: "Which move erases a target's ability for the rest of the battle by stripping its item?"
+  category: paraphrase
+  difficulty: hard
   source_hint: bulbapedia
+  gold: [move:knock off]
 
-- query: "What game introduced the Physical/Special split?"
-  expected_keywords: ["Diamond", "Pearl", "Physical", "Special", "split"]
+- id: pa006
+  query: "Which ability heals a third of your max HP every time you swap out?"
+  category: paraphrase
+  difficulty: medium
   source_hint: bulbapedia
+  gold: [ability:regenerator]
 
-- query: "What does the Leftovers item do?"
-  expected_keywords: ["Leftovers", "HP", "restore", "held item"]
+- id: pa007
+  query: "Which item gives 50% extra Sp. Def but locks you out of using stat-changing moves?"
+  category: paraphrase
+  difficulty: medium
   source_hint: bulbapedia
+  gold: [item:assault vest]
 
-# --- pokeapi moves (10) ---
+- id: pa008
+  query: "What ability doubles the chance that a damaging move's secondary effect will trigger?"
+  # Reworded — the v2 phrasing was trapping the retriever toward Quick Draw.
+  # "Secondary effect" / "doubles the chance" is the canonical Serene Grace vocab.
+  category: paraphrase
+  difficulty: hard
+  source_hint: bulbapedia
+  gold: [ability:serene grace]
+  hard_negatives: [ability:quick draw]
 
-- query: "What moves does Gengar learn by leveling up?"
-  expected_keywords: ["Gengar", "leveling up"]
+# ---------------------------------------------------------------------
+# confusable  (8)  — multiple plausible candidates
+# ---------------------------------------------------------------------
+
+- id: cf001
+  query: "Which ability prevents the holder from being burned?"
+  category: confusable
+  difficulty: medium
+  source_hint: bulbapedia
+  gold: [ability:water veil]
+  hard_negatives: [ability:magma armor, ability:flash fire, ability:heatproof]
+
+- id: cf002
+  query: "Which ability prevents the holder from being frozen?"
+  category: confusable
+  difficulty: medium
+  source_hint: bulbapedia
+  gold: [ability:magma armor]
+  hard_negatives: [ability:water veil, ability:ice body, ability:snow cloak]
+
+- id: cf003
+  query: "Which ability prevents the holder from being paralyzed?"
+  category: confusable
+  difficulty: medium
+  source_hint: bulbapedia
+  gold: [ability:limber]
+  hard_negatives:
+    [ability:volt absorb, ability:lightning rod, ability:motor drive]
+
+- id: cf004
+  query: "Which weather-summoning ability creates hail when its bearer enters battle?"
+  category: confusable
+  difficulty: medium
+  source_hint: bulbapedia
+  gold: [ability:snow warning]
+  hard_negatives: [ability:drizzle, ability:drought, ability:sand stream]
+
+- id: cf005
+  query: "Which ability damages an attacker for 1/8 of its max HP whenever it makes contact?"
+  category: confusable
+  difficulty: hard
+  source_hint: bulbapedia
+  gold: [ability:rough skin, ability:iron barbs]
+  match: any
+  hard_negatives: [item:rocky helmet] # close mechanic, but 1/6 not 1/8
+
+- id: cf006
+  query: "Which Choice item boosts Special Attack and locks the holder into one move?"
+  category: confusable
+  difficulty: medium
+  source_hint: bulbapedia
+  gold: [item:choice specs]
+  hard_negatives: [item:choice band, item:choice scarf]
+
+- id: cf007
+  query: "Which Pokéball is most effective for catching wild Pokémon underwater or while surfing?"
+  category: confusable
+  difficulty: medium
+  source_hint: bulbapedia
+  gold: [item:dive ball]
+  hard_negatives: [item:net ball, item:lure ball]
+
+- id: cf008
+  query: "Which move always lands a critical hit and is signature to a Dark-style fighter?"
+  category: confusable
+  difficulty: hard
+  source_hint: bulbapedia
+  gold: [move:wicked blow]
+  hard_negatives: [move:storm throw, move:frost breath, move:surging strikes]
+
+# ---------------------------------------------------------------------
+# aggregation  (8)  — multi-chunk recall
+# ---------------------------------------------------------------------
+
+- id: ag001
+  query: "List the dual Bug/Steel-type Pokémon."
+  category: aggregation
+  difficulty: hard
   source_hint: pokeapi
+  gold:
+    - pokemon_species:forretress
+    - pokemon_species:scizor
+    - pokemon_species:escavalier
+    - pokemon_species:durant
+    - pokemon_species:genesect
+  match: all
+  min_recall: 0.6
 
-- query: "What TM moves can Pikachu learn?"
-  expected_keywords: ["Pikachu", "TM and HM"]
+- id: ag002
+  query: "Name Pokémon that can have Regenerator as their ability or hidden ability."
+  category: aggregation
+  difficulty: hard
   source_hint: pokeapi
+  gold:
+    - pokemon_species:slowbro
+    - pokemon_species:tangrowth
+    - pokemon_species:reuniclus
+    - pokemon_species:amoonguss
+    - pokemon_species:alomomola
+    - pokemon_species:toxapex
+    - pokemon_species:mienshao
+  match: all
+  min_recall: 0.4
 
-- query: "What level does Charizard learn Flamethrower?"
-  expected_keywords: ["Charizard", "Flamethrower", "level"]
+- id: ag003
+  query: "Which Pokémon evolve from Eevee?"
+  category: aggregation
+  difficulty: medium
   source_hint: pokeapi
+  gold:
+    - pokemon_species:vaporeon
+    - pokemon_species:jolteon
+    - pokemon_species:flareon
+    - pokemon_species:espeon
+    - pokemon_species:umbreon
+    - pokemon_species:leafeon
+    - pokemon_species:glaceon
+    - pokemon_species:sylveon
+  match: all
+  min_recall: 0.5
 
-- query: "What egg moves does Bulbasaur have?"
-  expected_keywords: ["Bulbasaur", "egg moves"]
+- id: ag004
+  query: "What Pokéballs increase the catch rate based on the wild Pokémon's type or environment?"
+  category: aggregation
+  difficulty: hard
+  source_hint: bulbapedia
+  gold:
+    - item:net ball
+    - item:dive ball
+    - item:dusk ball
+    - item:nest ball
+  match: all
+  min_recall: 0.5
+
+- id: ag005
+  query: "List moves that perform a stat-boosting dance."
+  category: aggregation
+  difficulty: medium
+  source_hint: bulbapedia
+  gold:
+    - move:swords dance
+    - move:dragon dance
+    - move:quiver dance
+  match: all
+  min_recall: 0.66
+
+- id: ag006
+  query: "Which abilities power up moves of a specific type when the user's HP is low?"
+  category: aggregation
+  difficulty: medium
+  source_hint: bulbapedia
+  gold:
+    - ability:overgrow
+    - ability:blaze
+    - ability:torrent
+    - ability:swarm
+  match: all
+  min_recall: 0.75
+
+- id: ag007
+  query: "Which evolution-stone items evolve Eevee?"
+  category: aggregation
+  difficulty: medium
+  source_hint: bulbapedia
+  gold:
+    - item:water stone
+    - item:thunder stone
+    - item:fire stone
+  match: all
+  min_recall: 0.66
+
+- id: ag008
+  query: "Which entry-hazard moves damage Pokémon that switch in?"
+  category: aggregation
+  difficulty: medium
+  source_hint: bulbapedia
+  gold:
+    - move:stealth rock
+    - move:spikes
+    - move:toxic spikes
+  match: all
+  min_recall: 0.66
+
+# ---------------------------------------------------------------------
+# multi_source  (4)  — named entity, info across multiple files; SHOULD be
+# tractable for single-pass retrieval (no decomposition needed)
+# ---------------------------------------------------------------------
+
+- id: ms001
+  query: "What are Toxapex's base stats and what is its competitive role?"
+  category: multi_source
+  difficulty: medium
   source_hint: pokeapi
+  gold:
+    - pokemon_species:toxapex
+    - pokemon:toxapex
+  match: all
+  min_recall: 1.0
+  notes: |
+    Names Toxapex directly; both species and smogon chunks should rank in top-10.
+    Tests whether the retriever returns multi-source coverage for a named entity.
 
-- query: "What moves can Dragonite learn from a move tutor?"
-  expected_keywords: ["Dragonite", "move tutor"]
+- id: ms002
+  query: "What level-up moves does Charizard learn, and how is it used competitively?"
+  category: multi_source
+  difficulty: medium
   source_hint: pokeapi
+  gold:
+    - pokemon_moves:charizard
+    - pokemon:charizard
+  match: any
+  notes: |
+    Charizard isn't in pokemon.txt as a direct entry — Smogon may not have a
+    standalone Charizard analysis in this corpus. match=any so it passes if
+    moves chunk shows up. Useful as a 'partial-corpus' coverage test.
 
-- query: "What level does Alakazam learn Psychic?"
-  expected_keywords: ["Alakazam", "Psychic", "level"]
+- id: ms003
+  query: "What are Volcarona's base stats and what makes it a sweeper in OU?"
+  category: multi_source
+  difficulty: medium
   source_hint: pokeapi
+  gold:
+    - pokemon_species:volcarona
+    - pokemon:volcarona
+  match: all
+  min_recall: 1.0
 
-- query: "What TM moves can Garchomp learn?"
-  expected_keywords: ["Garchomp", "TM and HM"]
+- id: ms004
+  query: "What are Gengar's base stats and where can it be encountered?"
+  category: multi_source
+  difficulty: medium
   source_hint: pokeapi
+  gold:
+    - pokemon_species:gengar
+    - pokemon_encounters:gengar
+  match: all
+  min_recall: 1.0
 
-- query: "What moves does Mewtwo learn by leveling up?"
-  expected_keywords: ["Mewtwo", "leveling up"]
+# ---------------------------------------------------------------------
+# multi_hop  (5)  — REQUIRES query decomposition
+#   Vanilla retrieval is expected to fail. These run if you've enabled
+#   HyDE / query rewriting and want to measure the lift.
+# ---------------------------------------------------------------------
+
+- id: mh001
+  query: "Where can I catch the Pokémon that evolves into Gyarados?"
+  category: multi_hop
+  difficulty: hard
   source_hint: pokeapi
+  gold: [pokemon_encounters:magikarp]
+  requires_decomposition: true
+  notes: |
+    Magikarp's encounter chunk doesn't mention Gyarados — those facts live
+    in the species chunk. A single embedding pass cannot bridge from the
+    query's "evolves into Gyarados" to the encounters chunk.
+    Standard fix: decompose into "what evolves into Gyarados?" → "Magikarp"
+    → "Magikarp encounter locations".
 
-- query: "What are Gyarados's level-up moves?"
-  expected_keywords: ["Gyarados", "leveling up"]
+- id: mh002
+  query: "What is the competitive role of the Pokémon that evolves from Mienfoo?"
+  category: multi_hop
+  difficulty: hard
+  source_hint: smogon
+  gold: [pokemon:mienshao]
+  requires_decomposition: true
+  notes: |
+    Smogon analysis for Mienshao does not mention Mienfoo. Bridge entity
+    Mienshao must be inferred from the species file first.
+
+- id: mh003
+  query: "What level-up moves does the final evolution of Fuecoco learn?"
+  category: multi_hop
+  difficulty: hard
   source_hint: pokeapi
+  gold: [pokemon_moves:skeledirge]
+  requires_decomposition: true
 
-- query: "What egg moves can Pichu learn?"
-  expected_keywords: ["Pichu", "egg moves"]
+- id: mh004
+  query: "What encounter locations does the Pokémon known as the Brutal Star Pokémon have?"
+  category: multi_hop
+  difficulty: hard
   source_hint: pokeapi
+  gold: [pokemon_encounters:toxapex]
+  requires_decomposition: true
+  notes: |
+    Toxapex's encounters chunk doesn't mention "Brutal Star" — that's only
+    in the species chunk. Two-step hop.
 
-# --- pokeapi encounters (10) ---
-
-- query: "Where can I find Gengar in the wild?"
-  expected_keywords: ["Gengar", "wild"]
+- id: mh005
+  query: "Where can I catch the final evolution of Dratini?"
+  category: multi_hop
+  difficulty: hard
   source_hint: pokeapi
+  gold: [pokemon_encounters:dragonite]
+  requires_decomposition: true
 
-- query: "Where can I catch Magikarp in the wild?"
-  expected_keywords: ["Magikarp", "wild"]
-  source_hint: pokeapi
+# ---------------------------------------------------------------------
+# comparative  (5)  — both entities must rank
+# ---------------------------------------------------------------------
 
-- query: "Where can I find Gastly in the wild?"
-  expected_keywords: ["Gastly", "wild"]
+- id: co001
+  query: "Which has higher base Special Attack: Alakazam or Gengar?"
+  category: comparative
+  difficulty: medium
   source_hint: pokeapi
+  gold: [pokemon_species:alakazam, pokemon_species:gengar]
+  match: all
+  min_recall: 1.0
 
-- query: "What games can you find Machop in the wild?"
-  expected_keywords: ["Machop", "wild"]
+- id: co002
+  query: "Compare Snorlax's HP stat to Blissey's HP stat."
+  category: comparative
+  difficulty: medium
   source_hint: pokeapi
+  gold: [pokemon_species:snorlax, pokemon_species:blissey]
+  match: all
+  min_recall: 1.0
 
-- query: "Where is Ralts found in the wild?"
-  expected_keywords: ["Ralts", "wild"]
+- id: co003
+  query: "Is Garchomp or Dragonite faster?"
+  category: comparative
+  difficulty: medium
   source_hint: pokeapi
+  gold: [pokemon_species:garchomp, pokemon_species:dragonite]
+  match: all
+  min_recall: 1.0
 
-- query: "Where can I catch Dratini in the wild?"
-  expected_keywords: ["Dratini", "wild"]
-  source_hint: pokeapi
+- id: co004
+  query: "How does Choice Band's Attack boost compare to Choice Specs' Sp. Atk boost?"
+  category: comparative
+  difficulty: medium
+  source_hint: bulbapedia
+  gold: [item:choice band, item:choice specs]
+  match: all
+  min_recall: 1.0
 
-- query: "What wild encounter locations does Geodude have?"
-  expected_keywords: ["Geodude", "wild"]
+- id: co005
+  query: "Compare the level Charmander evolves at to the level Magikarp evolves at."
+  category: comparative
+  difficulty: medium
   source_hint: pokeapi
+  gold: [pokemon_species:charmander, pokemon_species:magikarp]
+  match: all
+  min_recall: 1.0
 
-- query: "Where can I find Zubat in the wild?"
-  expected_keywords: ["Zubat", "wild"]
-  source_hint: pokeapi
+# ---------------------------------------------------------------------
+# long_tail  (5)
+# ---------------------------------------------------------------------
 
-- query: "What locations can you encounter Chansey in the wild?"
-  expected_keywords: ["Chansey", "wild"]
-  source_hint: pokeapi
+- id: lt001
+  query: "What is Pyukumuku's role in competitive battles?"
+  category: long_tail
+  difficulty: medium
+  source_hint: smogon
+  gold: [pokemon:pyukumuku]
 
-- query: "Where is Tentacool found in the wild?"
-  expected_keywords: ["Tentacool", "wild"]
+- id: lt002
+  query: "What is Eelektross's typing and signature ability?"
+  category: long_tail
+  difficulty: medium
   source_hint: pokeapi
+  gold: [pokemon_species:eelektross]
+
+- id: lt003
+  query: "Where can I encounter wild Komala?"
+  category: long_tail
+  difficulty: medium
+  source_hint: pokeapi
+  gold: [pokemon_encounters:komala]
+
+- id: lt004
+  query: "How is Cramorant used competitively?"
+  category: long_tail
+  difficulty: medium
+  source_hint: smogon
+  gold: [pokemon:cramorant]
+
+- id: lt005
+  query: "What level-up moves does Vikavolt learn?"
+  category: long_tail
+  difficulty: medium
+  source_hint: pokeapi
+  gold: [pokemon_moves:vikavolt]
+
+# ---------------------------------------------------------------------
+# variant  (5)  — form / Mega / regional disambiguation
+# ---------------------------------------------------------------------
+# NOTE: assumes the chunker preserves the form name in entity_name
+# (e.g. "charizard mega x"). If your indexer collapses Megas into base form,
+# these will fail by construction; pasting one variant chunk will let me confirm.
+
+- id: vr001
+  query: "What level-up moves does Mega Charizard X learn?"
+  category: variant
+  difficulty: hard
+  source_hint: pokeapi
+  gold: [pokemon_moves:charizard mega x]
+  hard_negatives: [pokemon_moves:charizard, pokemon_moves:charizard mega y]
+
+- id: vr002
+  query: "What moves does Galarian Darmanitan learn in Zen Mode?"
+  category: variant
+  difficulty: hard
+  source_hint: pokeapi
+  gold: [pokemon_moves:darmanitan galar zen]
+  hard_negatives:
+    - pokemon_moves:darmanitan standard
+    - pokemon_moves:darmanitan galar standard
+    - pokemon_moves:darmanitan zen
+
+- id: vr003
+  query: "What is Hisuian Decidueye's level-up moveset?"
+  category: variant
+  difficulty: hard
+  source_hint: pokeapi
+  gold: [pokemon_moves:decidueye hisui]
+  hard_negatives: [pokemon_moves:decidueye]
+
+- id: vr004
+  query: "What moves does Mega Alakazam learn through TMs?"
+  category: variant
+  difficulty: hard
+  source_hint: pokeapi
+  gold: [pokemon_moves:alakazam mega]
+  hard_negatives: [pokemon_moves:alakazam]
+
+- id: vr005
+  query: "What is Origin Forme Dialga's level-up moveset?"
+  category: variant
+  difficulty: hard
+  source_hint: pokeapi
+  gold: [pokemon_moves:dialga origin]
+  hard_negatives: [pokemon_moves:dialga]
