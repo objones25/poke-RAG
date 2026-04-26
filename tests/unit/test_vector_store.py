@@ -426,6 +426,32 @@ class TestSearch:
         with pytest.raises(VectorIndexError):
             store.search("pokeapi", [0.1] * 1024, {1: 0.5}, top_k=5)
 
+    def test_none_payload_skipped_when_other_valid_results_exist(self) -> None:
+        """C3: sync _query() must handle p.payload is None without crashing."""
+        client = _make_client()
+        none_payload_point = MagicMock()
+        none_payload_point.score = 0.8
+        none_payload_point.id = "none_payload_id"
+        none_payload_point.payload = None
+        good_point = self._make_scored_point("Valid text", 0.9)
+        client.query_points.return_value.points = [none_payload_point, good_point]
+        store = QdrantVectorStore(client)
+        results = store.search("pokeapi", [0.1] * 1024, {}, top_k=2)
+        assert len(results) == 1
+        assert results[0].text == "Valid text"
+
+    def test_none_payload_raises_when_all_invalid(self) -> None:
+        """C3: sync _query() raises VectorIndexError when all points have None payload."""
+        client = _make_client()
+        none_payload_point = MagicMock()
+        none_payload_point.score = 0.8
+        none_payload_point.id = "none_payload_id"
+        none_payload_point.payload = None
+        client.query_points.return_value.points = [none_payload_point]
+        store = QdrantVectorStore(client)
+        with pytest.raises(VectorIndexError):
+            store.search("pokeapi", [0.1] * 1024, {}, top_k=1)
+
 
 @pytest.mark.unit
 class TestUpsertBatchBoundaries:

@@ -212,6 +212,8 @@ class QdrantVectorStore:
         skipped_count = 0
         for p in response.points:
             try:
+                if p.payload is None:
+                    raise ValueError("Payload is None")
                 chunks.append(
                     RetrievedChunk(
                         text=p.payload["text"],

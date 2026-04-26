@@ -80,7 +80,7 @@ class RAGPipeline:
 
         gen_result = self._generator.generate(query, chunks)
 
-        raw_score = chunks[0].score
+        raw_score = max(c.score for c in chunks)
         confidence_score: float | None = _sigmoid(raw_score) if math.isfinite(raw_score) else None
 
         return PipelineResult(
@@ -148,7 +148,7 @@ class AsyncRAGPipeline:
 
         gen_result = await asyncio.to_thread(self._generator.generate, query, chunks)
 
-        raw_score = chunks[0].score
+        raw_score = max(c.score for c in chunks)
         confidence_score: float | None = _sigmoid(raw_score) if math.isfinite(raw_score) else None
 
         return PipelineResult(
