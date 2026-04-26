@@ -13,6 +13,7 @@ from src.generation.models import GenerationConfig
 from src.generation.prompt_builder import build_prompt
 from src.pipeline.rag_pipeline import AsyncRAGPipeline, RAGPipeline
 from src.retrieval.embedder import BGEEmbedder
+from src.retrieval.knowledge_refiner import KnowledgeRefiner
 from src.retrieval.query_router import QueryRouter
 from src.retrieval.query_transformer import HyDETransformer, MultiDraftHyDETransformer
 from src.retrieval.reranker import BGEReranker
@@ -118,7 +119,29 @@ def build_pipeline() -> tuple[RAGPipeline, ModelLoader, QdrantClient]:
         query_router = None
         _LOG.info("Query routing disabled: all sources searched for every query")
 
-    pipeline = RAGPipeline(retriever=retriever, generator=generator, query_router=query_router)
+    if settings.refiner_enabled:
+        knowledge_refiner: KnowledgeRefiner | None = KnowledgeRefiner(
+            reranker,
+            upper_threshold=settings.refiner_upper_threshold,
+            lower_threshold=settings.refiner_lower_threshold,
+            strip_threshold=settings.refiner_strip_threshold,
+        )
+        _LOG.info(
+            "KnowledgeRefiner enabled: upper=%.1f lower=%.1f strip=%.1f",
+            settings.refiner_upper_threshold,
+            settings.refiner_lower_threshold,
+            settings.refiner_strip_threshold,
+        )
+    else:
+        knowledge_refiner = None
+        _LOG.info("KnowledgeRefiner disabled")
+
+    pipeline = RAGPipeline(
+        retriever=retriever,
+        generator=generator,
+        query_router=query_router,
+        knowledge_refiner=knowledge_refiner,
+    )
     return pipeline, loader, client
 
 
@@ -206,7 +229,27 @@ def build_async_pipeline() -> tuple[AsyncRAGPipeline, ModelLoader, AsyncQdrantCl
         query_router = None
         _LOG.info("Query routing disabled: all sources searched for every query")
 
+    if settings.refiner_enabled:
+        knowledge_refiner: KnowledgeRefiner | None = KnowledgeRefiner(
+            reranker,
+            upper_threshold=settings.refiner_upper_threshold,
+            lower_threshold=settings.refiner_lower_threshold,
+            strip_threshold=settings.refiner_strip_threshold,
+        )
+        _LOG.info(
+            "KnowledgeRefiner enabled: upper=%.1f lower=%.1f strip=%.1f",
+            settings.refiner_upper_threshold,
+            settings.refiner_lower_threshold,
+            settings.refiner_strip_threshold,
+        )
+    else:
+        knowledge_refiner = None
+        _LOG.info("KnowledgeRefiner disabled")
+
     async_pipeline = AsyncRAGPipeline(
-        retriever=async_retriever, generator=generator, query_router=query_router
+        retriever=async_retriever,
+        generator=generator,
+        query_router=query_router,
+        knowledge_refiner=knowledge_refiner,
     )
     return async_pipeline, loader, async_client

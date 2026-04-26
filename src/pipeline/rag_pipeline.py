@@ -189,6 +189,12 @@ class AsyncRAGPipeline:
         if not chunks:
             raise RetrievalError("Retrieval returned no documents for query")
 
+        if self._knowledge_refiner is not None:
+            refinement = self._knowledge_refiner.refine(query, list(chunks))
+            if not refinement.chunks:
+                raise RetrievalError("KnowledgeRefiner dropped all chunks for query")
+            chunks = refinement.chunks
+
         loop = asyncio.get_running_loop()
         queue: asyncio.Queue[Any] = asyncio.Queue()
 
