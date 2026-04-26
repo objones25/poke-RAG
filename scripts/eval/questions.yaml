@@ -347,6 +347,14 @@
     - pokemon_species:leafeon
     - pokemon_species:glaceon
     - pokemon_species:sylveon
+    - pokemon:vaporeon
+    - pokemon:jolteon
+    - pokemon:flareon
+    - pokemon:espeon
+    - pokemon:umbreon
+    - pokemon:leafeon
+    - pokemon:glaceon
+    - pokemon:sylveon
   match: all
   min_recall: 0.5
 
@@ -489,14 +497,14 @@
 
 - id: mh002
   query: "What is the competitive role of the Pokémon that evolves from Mienfoo?"
-  category: multi_hop
+  category: paraphrase
   difficulty: hard
   source_hint: smogon
   gold: [pokemon:mienshao]
-  requires_decomposition: true
   notes: |
-    Smogon analysis for Mienshao does not mention Mienfoo. Bridge entity
-    Mienshao must be inferred from the species file first.
+    Originally tagged multi_hop, but BGE bridges Mienfoo→Mienshao via
+    semantic similarity without decomposition (Mienshao's Smogon entry
+    does not mention Mienfoo — confirmed by grep). Retagged to paraphrase.
 
 - id: mh003
   query: "What level-up moves does the final evolution of Fuecoco learn?"
