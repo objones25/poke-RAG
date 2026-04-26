@@ -216,6 +216,27 @@ class TestBGERerankerProtocolCompliance:
 
 
 @pytest.mark.unit
+class TestBGERerankerScoreLengthMismatch:
+    def test_fewer_scores_than_documents_raises_retrieval_error(self) -> None:
+        """B7: model returning fewer scores than docs must raise RetrievalError, not ValueError."""
+        from src.types import RetrievalError
+
+        reranker = BGEReranker(_make_mock_reranker([0.9]))  # 1 score for 3 docs
+        docs = [make_chunk(text=f"text {i}", chunk_index=i) for i in range(3)]
+        with pytest.raises(RetrievalError, match="score"):
+            reranker.rerank("query", docs, top_k=3)
+
+    def test_more_scores_than_documents_raises_retrieval_error(self) -> None:
+        """B7: model returning more scores than docs must also raise RetrievalError."""
+        from src.types import RetrievalError
+
+        reranker = BGEReranker(_make_mock_reranker([0.9, 0.5, 0.2]))  # 3 scores for 1 doc
+        docs = [make_chunk(text="only doc", chunk_index=0)]
+        with pytest.raises(RetrievalError, match="score"):
+            reranker.rerank("query", docs, top_k=1)
+
+
+@pytest.mark.unit
 class TestBGERerankerEdgeCases:
     def test_identical_scores_maintains_stable_sort(self) -> None:
         reranker = BGEReranker(_make_mock_reranker([0.5, 0.5, 0.5]))

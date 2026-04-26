@@ -48,7 +48,7 @@ Items marked **DONE** have been fixed. Remaining items are ordered by priority.
 
 | #   | Source   | Issue                                                                                                                           | Location                   | Status |
 | --- | -------- | ------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | ------ |
-| B7  | Bug      | Reranker `strict=True` zip will raise `ValueError` if model returns fewer scores than input documents                           | `reranker.py:55`           | [ ]    |
+| B7  | Bug      | Reranker `strict=True` zip will raise `ValueError` if model returns fewer scores than input documents                           | `reranker.py:55`           | [x]    |
 | B8  | Bug      | `RateLimitMiddleware` `OrderedDict` FIFO eviction enables IP-cycling bypass (overlap with S3)                                   | `app.py:112`               | [ ]    |
 | B9  | Bug      | No `strip_threshold` ordering validation in `Settings.from_env()`; invalid values surface only at `KnowledgeRefiner.__init__()` | `config.py:181`            | [ ]    |
 | C5  | Quality  | Single-character helper names `_w()`, `_p()`, `_prefix()` in `query_router.py` used across 500+ lines                           | `query_router.py:10-23`    | [ ]    |

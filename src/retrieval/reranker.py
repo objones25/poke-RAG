@@ -8,7 +8,7 @@ from dataclasses import replace
 from typing import Any
 
 import src.retrieval._compat  # noqa: F401
-from src.types import RetrievedChunk
+from src.types import RetrievalError, RetrievedChunk
 
 _LOG = logging.getLogger(__name__)
 
@@ -51,6 +51,10 @@ class BGEReranker:
         if any(not math.isfinite(float(s)) for s in raw_scores):
             _LOG.warning("Reranker returned non-finite score(s); replaced with 0.0")
 
+        if len(scores) != len(documents):
+            raise RetrievalError(
+                f"Reranker returned {len(scores)} score(s) for {len(documents)} document(s)"
+            )
         ranked = sorted(
             (replace(doc, score=score) for doc, score in zip(documents, scores, strict=True)),
             key=lambda c: c.score,
