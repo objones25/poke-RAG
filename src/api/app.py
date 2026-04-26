@@ -168,18 +168,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     async_qdrant_client: AsyncQdrantClient | None = None
     try:
         settings = Settings.from_env()
+        client: AsyncQdrantClient | QdrantClient
         if settings.async_pipeline_enabled:
             async_pipeline, loader, async_qdrant_client = build_async_pipeline()
             app.state.async_pipeline = async_pipeline
-            api_key_str = (
-                None
-                if settings.qdrant_api_key is None
-                else settings.qdrant_api_key.get_secret_value()
-            )
-            client: QdrantClient = QdrantClient(url=settings.qdrant_url, api_key=api_key_str)
+            client = async_qdrant_client
+            app.state.qdrant_client_is_async = True
         else:
-            pipeline, loader, client = build_pipeline()
-            app.state.pipeline = pipeline
+            sync_pipeline, loader, sync_client = build_pipeline()
+            app.state.pipeline = sync_pipeline
+            client = sync_client
+            app.state.qdrant_client_is_async = False
         app.state.qdrant_client = client
         app.state.settings = settings
     except Exception as exc:
@@ -267,10 +266,13 @@ async def stats(request: Request) -> dict[str, bool]:
         expected = f"Bearer {stats_api_key}"
         if not hmac.compare_digest(auth.encode(), expected.encode()):
             raise HTTPException(status_code=401, detail="Unauthorized")
-    client: QdrantClient | None = getattr(request.app.state, "qdrant_client", None)
+    client = getattr(request.app.state, "qdrant_client", None)
     if client is None:
         raise RuntimeError("Qdrant client not initialized")
-    collections = await asyncio.to_thread(client.get_collections)
+    if getattr(request.app.state, "qdrant_client_is_async", False):
+        collections = await client.get_collections()
+    else:
+        collections = await asyncio.to_thread(client.get_collections)
     return {col.name: True for col in collections.collections}
 
 
@@ -321,6 +323,12 @@ async def query_stream(
     import json as _json
 
     parsed = parse_query(body.query)
+    settings: Settings = request.app.state.settings
+    if not settings.async_pipeline_enabled:
+        raise HTTPException(
+            status_code=501,
+            detail="Streaming requires the async pipeline. Set ASYNC_PIPELINE_ENABLED=true.",
+        )
     async_pipeline: AsyncRAGPipeline = get_async_pipeline(request)
 
     async def _event_generator() -> AsyncGenerator[str, None]:
