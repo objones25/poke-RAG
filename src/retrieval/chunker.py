@@ -14,7 +14,9 @@ _LOG = logging.getLogger(__name__)
 
 _RE_SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
 _RE_SMOGON_NAME = re.compile(r"^([\w\s\-'.]+?)\s*\(")
-_RE_POKEAPI_NAME = re.compile(r"^(.*?)\s+is\s+(?:a|an|the)\s+")
+_RE_POKEAPI_NAME = re.compile(
+    r"^(.*?)\s+(?:is\s+(?:a|an|the)|(?:learns|can\s+learn|can\s+hatch)\s+)\s*"
+)
 _RE_BULBA_DOC_SPLIT = re.compile(r"\n(?=Title:)")
 
 _SMOGON_TARGET_TOKENS = 400
@@ -28,6 +30,8 @@ _STEM_TO_ENTITY_TYPE: dict[str, EntityType] = {
     "move": "move",
     "pokemon": "pokemon",
     "pokemon_species": "pokemon",
+    "pokemon_moves": "pokemon",
+    "pokemon_encounters": "pokemon",
     "format": "format",
     "formats": "format",
 }

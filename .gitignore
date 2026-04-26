@@ -96,7 +96,8 @@ wandb/
 mlruns/
 output/
 
-# Data outputs (processed/ is read-only source — never write there)
+# Data outputs
+data/raw/
 data/embeddings/
 data/indexed/
 
