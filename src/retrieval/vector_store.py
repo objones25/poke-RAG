@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import logging
 import time
 import uuid
@@ -272,7 +273,15 @@ class QdrantVectorStore:
                 entity_name,
                 collection,
             )
-            chunks = self._query(collection, query_dense, query_sparse, top_k, None, query_colbert)
+            fallback = self._query(
+                collection, query_dense, query_sparse, top_k, None, query_colbert
+            )
+            chunks = [
+                dataclasses.replace(
+                    c, metadata={**(c.metadata or {}), "entity_filter_fallback": True}
+                )
+                for c in fallback
+            ]
 
         _LOG.debug("Search '%s' → %d result(s)", collection, len(chunks))
         return chunks
@@ -504,9 +513,15 @@ class AsyncQdrantVectorStore:
                 entity_name,
                 collection,
             )
-            chunks = await self._query(
+            fallback = await self._query(
                 collection, query_dense, query_sparse, top_k, None, query_colbert
             )
+            chunks = [
+                dataclasses.replace(
+                    c, metadata={**(c.metadata or {}), "entity_filter_fallback": True}
+                )
+                for c in fallback
+            ]
 
         _LOG.debug("Search '%s' → %d result(s)", collection, len(chunks))
         return chunks

@@ -259,6 +259,23 @@ class TestAsyncSearch:
         assert len(results) == 1
 
     @pytest.mark.anyio
+    async def test_entity_filter_fallback_marks_chunks_in_metadata(self) -> None:
+        """B5: async path — fallback chunks must carry entity_filter_fallback=True in metadata."""
+        client = _make_async_client()
+        empty_response = MagicMock()
+        empty_response.points = []
+        result_response = MagicMock()
+        result_response.points = [self._make_scored_point("Pikachu is electric", 0.9, "Pikachu")]
+        client.query_points.side_effect = [empty_response, result_response]
+        store = AsyncQdrantVectorStore(client)
+        results = await store.search(
+            "pokeapi", [0.1] * 1024, {1: 0.5}, top_k=5, entity_name="Pikachu"
+        )
+        assert len(results) == 1
+        assert results[0].metadata is not None
+        assert results[0].metadata.get("entity_filter_fallback") is True
+
+    @pytest.mark.anyio
     async def test_search_normalizes_entity_name_to_lowercase_in_filter(self) -> None:
         client = _make_async_client()
         client.query_points.return_value.points = [
