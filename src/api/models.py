@@ -55,3 +55,7 @@ class QueryResponse(BaseModel):
         default=None,
         description="Sigmoid of the top-ranked chunk's reranker score; None if score is non-finite",
     )
+    knowledge_gaps: list[str] | None = Field(
+        default=None,
+        description="Constraint keywords absent in retrieved chunks; None if refiner disabled",
+    )

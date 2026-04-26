@@ -264,7 +264,7 @@ class TestRun:
 
         embedder, vector_store = self._make_deps()
 
-        def chunk_side_effect(path: Path, *, source: Source) -> list[RetrievedChunk]:
+        def chunk_side_effect(path: Path, *, source: Source, **_: object) -> list[RetrievedChunk]:
             return [_make_chunk(source=source)]
 
         with patch("scripts.build_index.chunk_file", side_effect=chunk_side_effect):

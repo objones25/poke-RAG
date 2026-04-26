@@ -1,7 +1,7 @@
 # Retrieval Subsystem Codemap
 
-**Last Updated:** 2026-04-23  
-**Entry Points:** `src/retrieval/__init__.py` → `BGEEmbedder`, `Retriever`, `BGEReranker`, `ContextAssembler`
+**Last Updated:** 2026-04-26  
+**Entry Points:** `src/retrieval/__init__.py` → `BGEEmbedder`, `Retriever`, `BGEReranker`, `ContextAssembler`, `KnowledgeRefiner`
 
 ## Overview
 
@@ -91,6 +91,7 @@ class RetrievedChunk:
     entity_type: EntityType | None  # Type of entity
     chunk_index: int             # 0 for atomic facts (pokeapi), >0 if split
     original_doc_id: str         # Traces back to source file + line/doc number
+    metadata: dict[str, Any] | None = None  # Source-specific enriched metadata (e.g., tier, generation, topics)
 
 @dataclass(frozen=True)
 class RetrievalResult:
@@ -185,6 +186,21 @@ def retrieve(
     """
 ```
 
+**`KnowledgeRefinerProtocol`**
+
+```python
+def refine(
+    query: str,
+    chunks: list[RetrievedChunk],
+    *,
+    constraints: list[str] | None = None,
+) -> RefinementResult:
+    """Post-retrieval refinement: triage, strip-filter, sufficiency check.
+
+    Returns a RefinementResult with surviving chunks and detected constraint gaps.
+    """
+```
+
 ### Concrete Implementations
 
 **`BGEEmbedder`**
@@ -242,7 +258,7 @@ def __init__(
     query_transformer: QueryTransformerProtocol | None = None,
 ) -> None:
     """Inject dependencies (enables mocking in tests).
-    
+
     Args:
         query_transformer: Optional transformer (e.g., HyDETransformer) to pre-process query
                           before embedding. If provided, transforms query and embeds result
@@ -311,14 +327,55 @@ def assemble(chunks: list[RetrievedChunk]) -> str:
 class QueryRouter:
     def route(self, query: str) -> list[Source]:
         """Classify query into one or more retrieval sources via keyword pattern matching.
-        
+
         Returns sorted list of Source names. If query is empty, returns all sources.
         If no patterns match, returns all sources (fallback to full search).
-        
+
         Pattern categories:
         - pokeapi: base stats, types, moves, abilities, evolution, forms, breeding, game mechanics
         - smogon: tiers, competitive meta, EV/IV spreads, movesets, strategy
         - bulbapedia: lore, design, anime, history, flavor text, pokedex entries
+        """
+```
+
+**`KnowledgeRefiner` (CRAG-style post-retrieval refinement)**
+
+```python
+class KnowledgeRefiner:
+    def __init__(
+        self,
+        reranker: RerankerProtocol,
+        *,
+        upper_threshold: float = 0.0,
+        lower_threshold: float = -3.0,
+        strip_threshold: float = -1.0,
+    ) -> None:
+        """Initialize refiner with score thresholds.
+
+        Args:
+            reranker: Reranker for scoring chunks and sentence strips.
+            upper_threshold: Chunks with score >= this are accepted unconditionally.
+            lower_threshold: Chunks with score < this are dropped.
+            strip_threshold: Sentence strips with score >= this are retained during filtering.
+        """
+
+    def refine(
+        self,
+        query: str,
+        chunks: list[RetrievedChunk],
+        *,
+        constraints: list[str] | None = None,
+    ) -> RefinementResult:
+        """Post-retrieval refinement: action triage, strip-level filtering, gap detection.
+
+        Workflow:
+        1. Triage chunks by score: accepted (score >= upper), uncertain (between), dropped (score < lower)
+        2. For each accepted chunk: split into sentences, rerank, drop low-scoring strips
+        3. Merge accepted + uncertain (with uncertainty marker in metadata)
+        4. Check constraint keywords (gen1–gen9, tiers like "OU", "UU"): detect gaps
+
+        Returns RefinementResult with surviving chunks and knowledge_gaps (constraint keywords
+        found in query but missing from all surviving chunks).
         """
 ```
 
@@ -333,15 +390,15 @@ class HyDETransformer:
         max_new_tokens: int = 150
     ) -> None:
         """Initialize with an inferencer for generating hypothetical documents."""
-    
+
     def transform(self, query: str) -> str:
         """Transform a query via Hypothetical Document Embedding.
-        
+
         Uses the LLM to generate a pseudo-answer to the query, then returns
         that synthetic document for embedding instead of the raw query.
         This shifts retrieval to answer-to-answer similarity, improving recall
         on FAQ-style lookups.
-        
+
         Falls back to original query on any inference failure or empty output.
         """
 ```
@@ -357,6 +414,7 @@ def chunk_pokeapi_line(
 ) -> list[RetrievedChunk]:
     """No splitting: one line = one atomic fact (pokeapi format).
     Returns single-element list. Extracts entity_name via _extract_pokeapi_name().
+    Calls _extract_pokeapi_metadata(doc_id=doc_id) to populate metadata.
     """
 
 def chunk_smogon_line(
@@ -364,6 +422,7 @@ def chunk_smogon_line(
     *,
     doc_id: str,
     entity_type: EntityType | None = None,
+    tokenize_fn: Callable[[str], int] | None = None,
 ) -> list[RetrievedChunk]:
     """Split 'Name (tier): body...' by sentences/paragraphs to target 400 tokens.
     Extracts entity_name from 'Name (tier)' prefix.
@@ -375,36 +434,71 @@ def chunk_bulbapedia_doc(
     *,
     doc_id: str,
     entity_type: EntityType | None = None,
+    tokenize_fn: Callable[[str], int] | None = None,
+    topic_lookup: dict[str, dict[str, Any]] | None = None,
 ) -> list[RetrievedChunk]:
     """Split 'Title: ...\nbody...' to target 512 tokens.
     Extracts entity_name from title, ignoring parentheses.
     Returns list of RetrievedChunk with chunk_index 0..N.
+    Uses topic_lookup to populate metadata with topics and entity_type_hint if provided.
     """
 
-def chunk_file(path: Path, *, source: Source) -> list[RetrievedChunk]:
+def chunk_smogon_data_file(
+    text: str,
+    *,
+    tokenize_fn: Callable[[str], int] | None = None,
+) -> list[RetrievedChunk]:
+    """Parse the three-level hierarchical smogon_data.txt format into RetrievedChunks.
+
+    File structure:
+      ={80} line  ← Pokémon block separator
+      header (with "Smogon form: <name>" line)
+      ={80} line
+      body: format sections delimited by -{40} lines
+        Format header: " Format: <name>"
+        [ Overview ]  and/or  [ Set: <name> ]  sections
+
+    Returns ~17,336 chunks total:
+      - ~3,094 overview chunks (one per Pokémon × format × overview section)
+      - ~14,242 set chunks (one per Pokémon × format × set)
+
+    Metadata enrichment: extracts generation/tier from format name, chunk_kind,
+    set_name, and battle attributes (Item, Ability, Nature, Tera Type).
+    """
+
+def chunk_file(
+    path: Path,
+    *,
+    source: Source,
+    tokenize_fn: Callable[[str], int] | None = None,
+    topic_lookup: dict[str, dict[str, Any]] | None = None,
+) -> list[RetrievedChunk]:
     """Dispatch to source-specific chunker for an entire file.
     Infers entity_type from path.stem (e.g., 'pokemon.txt' → 'pokemon').
     For bulbapedia, splits on 'Title:' boundaries first, then chunks each doc.
+    For smogon, detects 'smogon_data.txt' and calls chunk_smogon_data_file().
     Logs total chunks created.
+    Passes topic_lookup to bulbapedia chunker if provided.
     """
 ```
 
 ## Configuration & Constants
 
-| Constant                                 | Value                               | Meaning                                 |
-| ---------------------------------------- | ----------------------------------- | --------------------------------------- |
-| `_DENSE_DIM`                             | 1024                                | BGE-M3 dense vector dimension           |
-| `_DENSE_VECTOR_NAME`                     | "dense"                             | Qdrant vector field name                |
-| `_SPARSE_VECTOR_NAME`                    | "sparse"                            | Qdrant sparse vector field name         |
-| `_SOURCES`                               | ("bulbapedia", "pokeapi", "smogon") | All source collection names             |
-| `_UPSERT_BATCH_SIZE`                     | 100                                 | Points per Qdrant upsert call           |
-| `_SMOGON_TARGET_TOKENS`                  | 400                                 | Smogon chunk target (approx)            |
-| `_BULBA_TARGET_TOKENS`                   | 512                                 | Bulbapedia chunk target (approx)        |
-| `_OVERLAP_RATIO`                         | 0.1                                 | Chunk overlap as fraction of target     |
-| `_WORDS_PER_TOKEN`                       | 0.75                                | Heuristic: 1 token ≈ 0.75 words         |
-| `_DEFAULT_CANDIDATES_PER_SOURCE`         | 25                                  | Pre-reranking candidates per collection |
-| `_DEFAULT_MAX_TOKENS` (ContextAssembler) | 4096                                | Max context token budget                |
-| `_DEFAULT_SEPARATOR` (ContextAssembler)  | "\n\n---\n\n"                       | Chunk separator in context string       |
+| Constant                                 | Value                               | Meaning                                    |
+| ---------------------------------------- | ----------------------------------- | ------------------------------------------ |
+| `_DENSE_DIM`                             | 1024                                | BGE-M3 dense vector dimension              |
+| `_DENSE_VECTOR_NAME`                     | "dense"                             | Qdrant vector field name                   |
+| `_SPARSE_VECTOR_NAME`                    | "sparse"                            | Qdrant sparse vector field name            |
+| `_SOURCES`                               | ("bulbapedia", "pokeapi", "smogon") | All source collection names                |
+| `_UPSERT_BATCH_SIZE`                     | 100                                 | Points per Qdrant upsert call              |
+| `_SMOGON_TARGET_TOKENS`                  | 400                                 | Smogon chunk target (approx)               |
+| `_BULBA_TARGET_TOKENS`                   | 512                                 | Bulbapedia chunk target (approx)           |
+| `_OVERLAP_RATIO`                         | 0.1                                 | Chunk overlap as fraction of target        |
+| `_WORDS_PER_TOKEN`                       | 0.75                                | Heuristic: 1 token ≈ 0.75 words            |
+| `_DEFAULT_CANDIDATES_PER_SOURCE`         | 25                                  | Pre-reranking candidates per collection    |
+| `_DEFAULT_MAX_TOKENS` (ContextAssembler) | 4096                                | Max context token budget                   |
+| `_DEFAULT_SEPARATOR` (ContextAssembler)  | "\n\n---\n\n"                       | Chunk separator in context string          |
+| `_MIN_SENTENCES_FOR_STRIP_FILTER`        | 2                                   | Minimum sentence count for strip filtering |
 
 ## Data Flow: Detailed Steps
 

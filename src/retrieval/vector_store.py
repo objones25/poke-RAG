@@ -142,6 +142,7 @@ class QdrantVectorStore:
                         "entity_type": doc.entity_type,
                         "chunk_index": doc.chunk_index,
                         "original_doc_id": doc.original_doc_id,
+                        "metadata": doc.metadata,
                     },
                 )
             )
@@ -220,6 +221,7 @@ class QdrantVectorStore:
                         entity_type=p.payload.get("entity_type"),
                         chunk_index=int(p.payload["chunk_index"]),
                         original_doc_id=p.payload["original_doc_id"],
+                        metadata=p.payload.get("metadata"),
                     )
                 )
             except (KeyError, TypeError, ValueError) as exc:
@@ -370,6 +372,7 @@ class AsyncQdrantVectorStore:
                         "entity_type": doc.entity_type,
                         "chunk_index": doc.chunk_index,
                         "original_doc_id": doc.original_doc_id,
+                        "metadata": doc.metadata,
                     },
                 )
             )
@@ -450,6 +453,7 @@ class AsyncQdrantVectorStore:
                         entity_type=p.payload.get("entity_type"),
                         chunk_index=int(p.payload["chunk_index"]),
                         original_doc_id=p.payload["original_doc_id"],
+                        metadata=p.payload.get("metadata"),
                     )
                 )
             except (KeyError, TypeError, ValueError) as exc:

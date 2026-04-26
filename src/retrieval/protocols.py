@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable
 
-from src.retrieval.types import EmbeddingOutput
+from src.retrieval.types import EmbeddingOutput, RefinementResult
 from src.types import RetrievalResult, RetrievedChunk, Source
 
 
@@ -105,6 +105,22 @@ class RetrieverProtocol(Protocol):
 class QueryRouterProtocol(Protocol):
     def route(self, query: str) -> list[Source]:
         """Classify query into one or more sources. Returns sorted list; never empty."""
+        ...
+
+
+@runtime_checkable
+class KnowledgeRefinerProtocol(Protocol):
+    def refine(
+        self,
+        query: str,
+        chunks: list[RetrievedChunk],
+        *,
+        constraints: list[str] | None = None,
+    ) -> RefinementResult:
+        """Post-retrieval refinement: triage, strip-filter, sufficiency check.
+
+        Returns a RefinementResult with surviving chunks and detected constraint gaps.
+        """
         ...
 
 

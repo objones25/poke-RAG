@@ -1,6 +1,6 @@
 # Pipeline, API & Scripts Codemap
 
-**Last Updated:** 2026-04-23
+**Last Updated:** 2026-04-26
 
 **Entry Points:**
 
@@ -121,6 +121,7 @@ class PipelineResult:
     model_name: str                  # Name of the generation model used
     query: str                        # Original query string
     confidence_score: float | None = None  # Sigmoid of top-ranked chunk's score; None if unavailable
+    knowledge_gaps: tuple[str, ...] | None = None  # Constraint keywords from query not found in chunks (e.g., "gen1", "ou"); None if refiner disabled
 ```
 
 ---
@@ -312,6 +313,7 @@ class QueryResponse(BaseModel):
     model_name: str                  # Model identifier
     query: str                        # Parsed query that was processed
     confidence_score: float | None = None  # Sigmoid of top chunk's reranker score; None if unavailable
+    knowledge_gaps: list[str] | None = None  # Constraint keywords (gen1–gen9, tier names) found in query but missing from chunks; None if refiner disabled
 ```
 
 **Behavior:**
@@ -370,7 +372,7 @@ def build_pipeline() -> tuple[RAGPipeline, ModelLoader, QdrantClient]:
    client = QdrantClient(url=settings.qdrant_url, api_key=settings.qdrant_api_key)
    vector_store = QdrantVectorStore(client)
    vector_store.ensure_collections()
-   
+
    # Optional query transformation (HyDE)
    if settings.hyde_enabled:
        query_transformer = HyDETransformer(
@@ -379,7 +381,7 @@ def build_pipeline() -> tuple[RAGPipeline, ModelLoader, QdrantClient]:
        )
    else:
        query_transformer = None
-   
+
    retriever = Retriever(
        embedder=embedder,
        vector_store=vector_store,
@@ -479,11 +481,29 @@ Called once at app startup by the lifespan handler.
 
 ---
 
-## Build Index Script
+## Preprocessing and Indexing Scripts
+
+### Bulbapedia Topic Extractor
+
+**Location:** `scripts/retrieval/bulbapedia_topic_extractor.py`
+
+Pre-compute a topic cache dictionary for bulbapedia entries. Topics are extracted by analyzing the document content and are used during chunking to enrich metadata.
+
+```bash
+uv run python scripts/retrieval/bulbapedia_topic_extractor.py \
+  --bulbapedia-file processed/bulbapedia/pokemon.txt \
+  --output-file data/bulbapedia_topics.json
+```
+
+The output cache is passed to `build_index.py` via the `--topic-cache` flag (see below). This enables the bulbapedia chunker to populate `metadata["topics"]` and `metadata["entity_type_hint"]` fields.
+
+---
+
+### Build Index Script
 
 **Location:** `scripts/build_index.py`
 
-Embeds Pokémon data from `processed/` and upserts into Qdrant vector index. Supports checkpointing for resumable indexing.
+Embeds Pokémon data from `processed/` and upserts into Qdrant vector index. Supports checkpointing for resumable indexing and optional topic cache for bulbapedia enrichment.
 
 ### CLI Interface
 
@@ -493,7 +513,8 @@ uv run python scripts/build_index.py \
   [--batch-size 32] \
   [--dry-run] \
   [--checkpoint PATH] \
-  [--no-checkpoint]
+  [--no-checkpoint] \
+  [--topic-cache PATH]
 ```
 
 **Arguments:**
@@ -503,6 +524,7 @@ uv run python scripts/build_index.py \
 - `--dry-run` (flag): Log what would be indexed without writing to Qdrant
 - `--checkpoint PATH`: Path to checkpoint JSON file. Default: `.build_index_checkpoint.json`
 - `--no-checkpoint` (flag): Disable checkpointing; re-index everything
+- `--topic-cache PATH` (optional): Path to topic cache JSON file (from bulbapedia_topic_extractor.py). Passed to bulbapedia chunker to enrich metadata.
 
 ### Main Workflow (main())
 
@@ -551,9 +573,14 @@ def run(
 2. Filters to remaining files not in checkpoint: `[(src, p) for src, p in files if f"{src}/{p.name}" not in completed]`
 3. Logs progress: files discovered, already indexed, to process
 
+**Topic Cache Loading (if provided):**
+
+- If `--topic-cache` flag is set: load JSON file into `topic_lookup: dict[str, dict[str, Any]]`
+- Pass to `chunk_file()` so bulbapedia chunker can enrich metadata
+
 **Embedding & Upsert (per file):**
 
-1. `chunk_file(path, source=source)` → list of RetrievedChunk
+1. `chunk_file(path, source=source, topic_lookup=topic_lookup)` → list of RetrievedChunk
 2. For each batch in chunks (stride = batch_size):
    - Extract texts: `[c.text for c in batch]`
    - Call `embedder.encode(texts)` → EmbeddingOutput(dense, sparse)
@@ -757,6 +784,15 @@ class Settings:
 
     # Optional: Query routing
     routing_enabled: bool          # ROUTING_ENABLED (default: false)
+
+    # Optional: Post-retrieval refinement (CRAG-style)
+    refiner_enabled: bool          # REFINER_ENABLED (default: false)
+    refiner_upper_threshold: float  # REFINER_UPPER_THRESHOLD (default: 0.0)
+    refiner_lower_threshold: float  # REFINER_LOWER_THRESHOLD (default: -3.0)
+    refiner_strip_threshold: float  # REFINER_STRIP_THRESHOLD (default: -1.0)
+
+    # Optional: ColBERT multi-vector reranking
+    colbert_enabled: bool          # COLBERT_ENABLED (default: false)
 ```
 
 **from_env()** classmethod:
@@ -813,18 +849,19 @@ Implemented by: `src/retrieval/query_router.py:QueryRouter`
 
 ## File Organization Summary
 
-| File                           | Purpose                                                                     |
-| ------------------------------ | --------------------------------------------------------------------------- |
-| `src/pipeline/rag_pipeline.py` | RAGPipeline orchestrator class                                              |
-| `src/pipeline/types.py`        | PipelineResult dataclass                                                    |
-| `src/types.py`                 | Shared types: RetrievedChunk, RetrievalResult, GenerationResult, exceptions |
-| `src/api/app.py`               | FastAPI app, lifespan, exception handlers, endpoints                        |
-| `src/api/dependencies.py`      | get_pipeline(), build_pipeline() factory                                    |
-| `src/api/models.py`            | QueryRequest, QueryResponse Pydantic models                                 |
-| `src/api/query_parser.py`      | parse_query() validator                                                     |
-| `src/utils/logging.py`         | setup_logging() configuration                                               |
-| `src/config.py`                | Settings dataclass, from_env()                                              |
-| `scripts/build_index.py`       | Index builder: discover, chunk, embed, upsert; checkpointing                |
+| File                                              | Purpose                                                                     |
+| ------------------------------------------------- | --------------------------------------------------------------------------- |
+| `src/pipeline/rag_pipeline.py`                    | RAGPipeline orchestrator class                                              |
+| `src/pipeline/types.py`                           | PipelineResult dataclass                                                    |
+| `src/types.py`                                    | Shared types: RetrievedChunk, RetrievalResult, GenerationResult, exceptions |
+| `src/api/app.py`                                  | FastAPI app, lifespan, exception handlers, endpoints                        |
+| `src/api/dependencies.py`                         | get_pipeline(), build_pipeline() factory                                    |
+| `src/api/models.py`                               | QueryRequest, QueryResponse Pydantic models                                 |
+| `src/api/query_parser.py`                         | parse_query() validator                                                     |
+| `src/utils/logging.py`                            | setup_logging() configuration                                               |
+| `src/config.py`                                   | Settings dataclass, from_env()                                              |
+| `scripts/build_index.py`                          | Index builder: discover, chunk, embed, upsert; checkpointing, topic cache   |
+| `scripts/retrieval/bulbapedia_topic_extractor.py` | Pre-compute topic cache for bulbapedia                                      |
 
 ---
 

@@ -15,3 +15,4 @@ class PipelineResult:
     model_name: str
     query: str
     confidence_score: float | None = None
+    knowledge_gaps: tuple[str, ...] | None = None
