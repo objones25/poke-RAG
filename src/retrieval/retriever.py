@@ -373,7 +373,10 @@ class AsyncRetriever:
                         )
                     )
         except* RetrievalError as eg:
-            raise eg.exceptions[0] from None
+            msgs = "; ".join(str(e) for e in eg.exceptions)
+            raise RetrievalError(
+                f"Retrieval failed for {len(eg.exceptions)} source(s): {msgs}"
+            ) from eg
 
         candidates: list[RetrievedChunk] = []
         for task in tasks:
