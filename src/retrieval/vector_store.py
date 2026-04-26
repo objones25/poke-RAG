@@ -315,25 +315,19 @@ class AsyncQdrantVectorStore:
                 multivector_config=MultiVectorConfig(comparator=MultiVectorComparator.MAX_SIM),
             )
         for source in _SOURCES:
-            try:
-                exists = await self._client.collection_exists(collection_name=source)
-            except Exception as exc:
-                raise exc
+            exists = await self._client.collection_exists(collection_name=source)
             if exists:
                 _LOG.debug("Collection '%s' already exists", source)
                 continue
-            try:
-                await self._client.create_collection(
-                    collection_name=source,
-                    vectors_config=vectors_config,
-                    sparse_vectors_config={
-                        _SPARSE_VECTOR_NAME: SparseVectorParams(
-                            index=SparseIndexParams(on_disk=False)
-                        ),
-                    },
-                )
-            except Exception as exc:
-                raise exc
+            await self._client.create_collection(
+                collection_name=source,
+                vectors_config=vectors_config,
+                sparse_vectors_config={
+                    _SPARSE_VECTOR_NAME: SparseVectorParams(
+                        index=SparseIndexParams(on_disk=False)
+                    ),
+                },
+            )
             _LOG.debug("Collection '%s' created", source)
 
     async def upsert(
