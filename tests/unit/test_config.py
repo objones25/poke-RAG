@@ -929,6 +929,39 @@ class TestHydeConfidenceThresholdBoundary:
 
 
 @pytest.mark.unit
+class TestRefinerThresholdOrdering:
+    """B9: Settings.from_env() must validate threshold ordering eagerly."""
+
+    def test_lower_equal_to_upper_raises_value_error(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("REFINER_LOWER_THRESHOLD", "0.0")
+        monkeypatch.setenv("REFINER_UPPER_THRESHOLD", "0.0")
+        with pytest.raises(ValueError, match="(?i)(lower.*upper|upper.*lower)"):
+            Settings.from_env()
+
+    def test_lower_greater_than_upper_raises_value_error(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("REFINER_LOWER_THRESHOLD", "2.0")
+        monkeypatch.setenv("REFINER_UPPER_THRESHOLD", "1.0")
+        with pytest.raises(ValueError, match="(?i)(lower.*upper|upper.*lower)"):
+            Settings.from_env()
+
+    def test_valid_ordering_is_accepted(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("REFINER_LOWER_THRESHOLD", "-3.0")
+        monkeypatch.setenv("REFINER_UPPER_THRESHOLD", "0.0")
+        settings = Settings.from_env()
+        assert settings.refiner_lower_threshold == -3.0
+        assert settings.refiner_upper_threshold == 0.0
+
+
+@pytest.mark.unit
 class TestColbertEnabledSetting:
     def test_colbert_enabled_default_false(self, monkeypatch) -> None:
         from src.config import Settings
