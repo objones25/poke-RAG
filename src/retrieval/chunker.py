@@ -31,6 +31,7 @@ _STEM_TO_ENTITY_TYPE: dict[str, EntityType] = {
     "pokemon": "pokemon",
     "pokemon_species": "pokemon",
     "pokemon_moves": "pokemon",
+    "pokemon_encounters": "pokemon",
     "format": "format",
     "formats": "format",
 }
