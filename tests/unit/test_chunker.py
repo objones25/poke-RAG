@@ -301,3 +301,191 @@ class TestChunkerConstants:
         from src.retrieval.chunker import _BULBA_TARGET_TOKENS
 
         assert _BULBA_TARGET_TOKENS == 400
+
+
+_EQ_SEP = "=" * 80
+_DASH_SEP = "-" * 40
+
+_SMOGON_DATA_SAMPLE = (
+    _EQ_SEP + "\n"
+    "VENUSAUR  (Grass/Poison)  —  introduced Gen 1\n"
+    "Smogon form: Venusaur\n"
+    + _EQ_SEP + "\n"
+    "\n"
+    + _DASH_SEP + "\n"
+    " Format: gen1ou\n"
+    + _DASH_SEP + "\n"
+    "\n"
+    "[ Overview ]\n"
+    "Venusaur is a strong sleeper in gen1ou. It can threaten Water-types.\n"
+    "\n"
+    "[ Set: Swords Dance ]\n"
+    "  Moves:\n"
+    "    - Sleep Powder\n"
+    "    - Razor Leaf\n"
+    "    - Swords Dance\n"
+    "    - Hyper Beam\n"
+    "\n"
+    "  Description:\n"
+    "  Sleep Powder lets Venusaur incapacitate foes.\n"
+    "\n"
+    + _DASH_SEP + "\n"
+    " Format: gen1pu\n"
+    + _DASH_SEP + "\n"
+    "\n"
+    "[ Set: Sleeper ]\n"
+    "  Moves:\n"
+    "    - Sleep Powder\n"
+    "    - Razor Leaf\n"
+    "    - Body Slam\n"
+    "    - Hyper Beam\n"
+    "\n"
+    + _DASH_SEP + "\n"
+    " Format: gen9uu\n"
+    + _DASH_SEP + "\n"
+    "\n"
+    "[ Set: Sun Sweeper ]\n"
+    "  Tera Type: Fire\n"
+    "  Item:      Life Orb\n"
+    "  Ability:   Chlorophyll\n"
+    "  Nature:    Timid\n"
+    "  EVs:       252 SpA / 4 SpD / 252 Spe\n"
+    "  IVs:       0 Atk\n"
+    "  Moves:\n"
+    "    - Growth\n"
+    "    - Weather Ball\n"
+    "    - Giga Drain\n"
+    "    - Sludge Bomb\n"
+    "\n"
+    "  Description:\n"
+    "  Venusaur uses Chlorophyll to sweep in sun.\n"
+    "\n"
+    + _EQ_SEP + "\n"
+    "CHARIZARD  (Fire/Flying)  —  introduced Gen 1\n"
+    "Smogon form: Charizard\n"
+    + _EQ_SEP + "\n"
+    "\n"
+    + _DASH_SEP + "\n"
+    " Format: gen1ou\n"
+    + _DASH_SEP + "\n"
+    "\n"
+    "[ Overview ]\n"
+    "Charizard is unviable in RBY OU.\n"
+)
+
+
+@pytest.mark.unit
+class TestChunkSmogonDataFile:
+    """Tests for the smogon_data.txt multi-block structured parser."""
+
+    def _chunks(self) -> list:
+        from src.retrieval.chunker import chunk_smogon_data_file
+
+        return chunk_smogon_data_file(_SMOGON_DATA_SAMPLE)
+
+    def test_returns_correct_chunk_count(self) -> None:
+        # Overview(gen1ou) + Set:SwordsD(gen1ou) + Set:Sleeper(gen1pu) +
+        # Set:SunSweeper(gen9uu) + Overview:Charizard(gen1ou) = 5
+        chunks = self._chunks()
+        assert len(chunks) == 5
+
+    def test_source_is_smogon(self) -> None:
+        chunks = self._chunks()
+        assert all(c.source == "smogon" for c in chunks)
+
+    def test_entity_type_is_pokemon(self) -> None:
+        chunks = self._chunks()
+        assert all(c.entity_type == "pokemon" for c in chunks)
+
+    def test_score_is_zero(self) -> None:
+        chunks = self._chunks()
+        assert all(c.score == 0.0 for c in chunks)
+
+    def test_venusaur_entity_name_on_all_venusaur_chunks(self) -> None:
+        chunks = self._chunks()
+        venusaur = [c for c in chunks if c.entity_name == "Venusaur"]
+        assert len(venusaur) == 4
+
+    def test_charizard_entity_name_on_charizard_chunk(self) -> None:
+        chunks = self._chunks()
+        charizard = [c for c in chunks if c.entity_name == "Charizard"]
+        assert len(charizard) == 1
+
+    def test_overview_chunk_text_format(self) -> None:
+        chunks = self._chunks()
+        overview = next(
+            c for c in chunks if c.entity_name == "Venusaur" and "Overview" in c.text
+        )
+        assert overview.text.startswith("Venusaur in gen1ou — Overview")
+        assert "strong sleeper" in overview.text
+
+    def test_set_chunk_with_description_text_format(self) -> None:
+        chunks = self._chunks()
+        swords_dance = next(
+            c for c in chunks if c.entity_name == "Venusaur" and "Swords Dance" in c.text
+        )
+        assert "Venusaur in gen1ou — Set: Swords Dance" in swords_dance.text
+        assert "Sleep Powder" in swords_dance.text
+        assert "incapacitate" in swords_dance.text
+
+    def test_set_chunk_without_description_is_produced(self) -> None:
+        chunks = self._chunks()
+        sleeper = next(
+            c for c in chunks if c.entity_name == "Venusaur" and "Sleeper" in c.text
+        )
+        assert "Venusaur in gen1pu — Set: Sleeper" in sleeper.text
+        assert "Sleep Powder" in sleeper.text
+
+    def test_set_chunk_with_optional_attributes(self) -> None:
+        chunks = self._chunks()
+        sun = next(c for c in chunks if "Sun Sweeper" in c.text)
+        # At least one optional attribute must appear
+        assert any(kw in sun.text for kw in ("Tera Type", "Life Orb", "Chlorophyll"))
+        assert "Growth" in sun.text
+
+    def test_moves_included_in_set_chunk(self) -> None:
+        chunks = self._chunks()
+        swords_dance = next(
+            c for c in chunks if c.entity_name == "Venusaur" and "Swords Dance" in c.text
+        )
+        assert "Razor Leaf" in swords_dance.text
+        assert "Hyper Beam" in swords_dance.text
+
+    def test_charizard_overview_text(self) -> None:
+        chunks = self._chunks()
+        char_overview = next(c for c in chunks if c.entity_name == "Charizard")
+        assert "Charizard in gen1ou — Overview" in char_overview.text
+        assert "unviable" in char_overview.text
+
+    def test_doc_id_contains_pokemon_slug(self) -> None:
+        chunks = self._chunks()
+        venusaur_chunks = [c for c in chunks if c.entity_name == "Venusaur"]
+        assert all("venusaur" in c.original_doc_id for c in venusaur_chunks)
+
+    def test_doc_id_contains_format_name(self) -> None:
+        chunks = self._chunks()
+        gen9uu = [c for c in chunks if "gen9uu" in (c.original_doc_id or "")]
+        assert len(gen9uu) >= 1
+
+    def test_chunk_index_zero_for_short_chunks(self) -> None:
+        chunks = self._chunks()
+        assert all(c.chunk_index == 0 for c in chunks)
+
+    def test_chunk_file_dispatches_smogon_data_stem(self, tmp_path) -> None:
+        p = tmp_path / "smogon_data.txt"
+        p.write_text(_SMOGON_DATA_SAMPLE, encoding="utf-8")
+        chunks = chunk_file(p, source="smogon")
+        assert len(chunks) == 5
+        entity_names = {c.entity_name for c in chunks}
+        assert "Venusaur" in entity_names
+        assert "Charizard" in entity_names
+
+    def test_chunk_file_old_smogon_format_unaffected(self, tmp_path) -> None:
+        p = tmp_path / "formats.txt"
+        p.write_text(
+            "Ubers (tier): The highest tier.\nOU (tier): Standard play tier.\n",
+            encoding="utf-8",
+        )
+        chunks = chunk_file(p, source="smogon")
+        assert len(chunks) >= 2
+        assert all(c.source == "smogon" for c in chunks)
