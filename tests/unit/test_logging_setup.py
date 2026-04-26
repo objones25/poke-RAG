@@ -70,3 +70,9 @@ class TestSetupLogging:
 
         setup_logging()
         assert logging.getLogger("httpx").level >= logging.WARNING
+
+    def test_qdrant_client_logger_suppressed(self) -> None:
+        from src.utils.logging import setup_logging
+
+        setup_logging()
+        assert logging.getLogger("qdrant_client").level >= logging.WARNING

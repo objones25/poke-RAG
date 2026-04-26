@@ -529,3 +529,27 @@ class TestAsyncVectorStoreProtocolCompliance:
         client = _make_async_client()
         store = AsyncQdrantVectorStore(client)
         assert isinstance(store, AsyncVectorStoreProtocol)
+
+
+@pytest.mark.unit
+class TestAsyncSearchTopKValidation:
+    @pytest.mark.anyio
+    async def test_search_raises_on_zero_top_k(self) -> None:
+        client = _make_async_client()
+        store = AsyncQdrantVectorStore(client)
+        with pytest.raises(ValueError, match="top_k"):
+            await store.search("pokeapi", [0.1] * 1024, {1: 0.5}, top_k=0)
+
+    @pytest.mark.anyio
+    async def test_search_raises_on_negative_top_k(self) -> None:
+        client = _make_async_client()
+        store = AsyncQdrantVectorStore(client)
+        with pytest.raises(ValueError, match="top_k"):
+            await store.search("pokeapi", [0.1] * 1024, {1: 0.5}, top_k=-1)
+
+    @pytest.mark.anyio
+    async def test_search_raises_on_excessive_top_k(self) -> None:
+        client = _make_async_client()
+        store = AsyncQdrantVectorStore(client)
+        with pytest.raises(ValueError, match="top_k"):
+            await store.search("pokeapi", [0.1] * 1024, {1: 0.5}, top_k=1001)

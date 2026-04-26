@@ -431,3 +431,39 @@ class TestRefine:
         result = RefinementResult(chunks=(), gaps=())
         with pytest.raises(FrozenInstanceError):
             result.chunks = ()  # type: ignore[misc]
+
+
+@pytest.mark.unit
+class TestDroppedChunksAuditTrail:
+    @staticmethod
+    def _refiner(scores: list[float], **kwargs):  # type: ignore[no-untyped-def]
+        from src.retrieval.knowledge_refiner import KnowledgeRefiner
+
+        return KnowledgeRefiner(_make_reranker(scores), **kwargs)
+
+    def test_dropped_chunks_appear_in_result(self) -> None:
+        dropped = make_chunk(text="Dropped.", score=-5.0)
+        r = self._refiner([])
+        result = r.refine("query", [dropped])
+        assert len(result.chunks) == 0
+        assert len(result.dropped_chunks) == 1
+        assert result.dropped_chunks[0].text == "Dropped."
+
+    def test_accepted_chunks_not_in_dropped(self) -> None:
+        kept = make_chunk(text="Pikachu is electric.", score=1.0)
+        r = self._refiner([])
+        result = r.refine("query", [kept])
+        assert len(result.chunks) == 1
+        assert len(result.dropped_chunks) == 0
+
+    def test_dropped_chunks_empty_for_empty_input(self) -> None:
+        r = self._refiner([])
+        result = r.refine("query", [])
+        assert result.dropped_chunks == ()
+
+    def test_dropped_chunks_field_defaults_to_empty(self) -> None:
+        from src.retrieval.types import RefinementResult
+
+        # Backward-compatible: old call sites that only pass chunks/gaps still work
+        result = RefinementResult(chunks=(), gaps=())
+        assert result.dropped_chunks == ()

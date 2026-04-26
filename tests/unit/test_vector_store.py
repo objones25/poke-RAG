@@ -531,20 +531,17 @@ class TestSearchEdgeCases:
         }
         return p
 
-    def test_search_with_top_k_zero_returns_empty(self) -> None:
+    def test_search_with_top_k_zero_raises(self) -> None:
         client = _make_client()
-        client.query_points.return_value.points = []
         store = QdrantVectorStore(client)
-        results = store.search("pokeapi", [0.1] * 1024, {}, top_k=0)
-        assert results == []
+        with pytest.raises(ValueError, match="top_k"):
+            store.search("pokeapi", [0.1] * 1024, {}, top_k=0)
 
-    def test_search_with_negative_top_k(self) -> None:
+    def test_search_with_negative_top_k_raises(self) -> None:
         client = _make_client()
-        client.query_points.return_value.points = []
         store = QdrantVectorStore(client)
-        store.search("pokeapi", [0.1] * 1024, {}, top_k=-1)
-        call_kwargs = client.query_points.call_args[1]
-        assert call_kwargs.get("limit") == -1
+        with pytest.raises(ValueError, match="top_k"):
+            store.search("pokeapi", [0.1] * 1024, {}, top_k=-1)
 
     def test_search_with_whitespace_entity_name_creates_filter(self) -> None:
         client = _make_client()
@@ -752,3 +749,24 @@ class TestSearchColBERT:
         call_kwargs = client.query_points.call_args[1]
         prefetch = call_kwargs["prefetch"]
         assert len(prefetch) == 2
+
+
+@pytest.mark.unit
+class TestSearchTopKValidation:
+    def test_search_raises_on_zero_top_k(self) -> None:
+        client = _make_client()
+        store = QdrantVectorStore(client)
+        with pytest.raises(ValueError, match="top_k"):
+            store.search("pokeapi", [0.1] * 1024, {1: 0.5}, top_k=0)
+
+    def test_search_raises_on_negative_top_k(self) -> None:
+        client = _make_client()
+        store = QdrantVectorStore(client)
+        with pytest.raises(ValueError, match="top_k"):
+            store.search("pokeapi", [0.1] * 1024, {1: 0.5}, top_k=-1)
+
+    def test_search_raises_on_excessive_top_k(self) -> None:
+        client = _make_client()
+        store = QdrantVectorStore(client)
+        with pytest.raises(ValueError, match="top_k"):
+            store.search("pokeapi", [0.1] * 1024, {1: 0.5}, top_k=1001)

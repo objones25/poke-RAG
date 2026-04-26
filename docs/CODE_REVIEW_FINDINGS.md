@@ -38,9 +38,9 @@ Items marked **DONE** have been fixed. Remaining items are ordered by priority.
 | C3  | Quality  | Sync `_query()` missing the `if p.payload is None` guard present in the async version                                                          | `vector_store.py:213`                | [x]    |
 | C4  | Quality  | `async_qdrant_client.close()` is only called on the exception path of lifespan teardown; normal teardown leaves it open                        | `app.py:191-200`                     | [x]    |
 | S3  | Security | Rate limiter uses FIFO eviction — attacker can cycle IPs to bypass per-IP limits                                                               | `app.py:38`                          | [x]    |
-| S4  | Security | `X-Forwarded-For` not validated when behind an undeclared proxy; warns only if `TRUSTED_PROXY_COUNT` is explicitly set                         | `app.py:42`                          | [ ]    |
-| S5  | Security | HSTS disabled by default (`HTTPS_ENABLED=false`) — must be enabled explicitly in production                                                    | `app.py:136`                         | [ ]    |
-| S6  | Security | Query `max_length=2000` chars is too permissive for a RAG API; leaves more surface for prompt injection and increases tokenisation cost        | `models.py:15`                       | [ ]    |
+| S4  | Security | `X-Forwarded-For` not validated when behind an undeclared proxy; warns only if `TRUSTED_PROXY_COUNT` is explicitly set                         | `app.py:42`                          | [x]    |
+| S5  | Security | HSTS disabled by default (`HTTPS_ENABLED=false`) — must be enabled explicitly in production                                                    | `app.py:136`                         | [x]    |
+| S6  | Security | Query `max_length=2000` chars is too permissive for a RAG API; leaves more surface for prompt injection and increases tokenisation cost        | `models.py:15`                       | [x]    |
 
 ---
 
@@ -52,11 +52,11 @@ Items marked **DONE** have been fixed. Remaining items are ordered by priority.
 | B8  | Bug      | `RateLimitMiddleware` `OrderedDict` FIFO eviction enables IP-cycling bypass (overlap with S3)                                   | `app.py:112`               | [x]    |
 | B9  | Bug      | No `strip_threshold` ordering validation in `Settings.from_env()`; invalid values surface only at `KnowledgeRefiner.__init__()` | `config.py:181`            | [x]    |
 | C5  | Quality  | Single-character helper names `_w()`, `_p()`, `_prefix()` in `query_router.py` used across 500+ lines                           | `query_router.py:10-23`    | [x]    |
-| C6  | Quality  | `top_k` not validated (positive, reasonable range) at the vector store boundary                                                 | `vector_store.py:243`      | [ ]    |
-| C7  | Quality  | Dropped chunks discarded silently — no audit trail in `RefinementResult`                                                        | `knowledge_refiner.py:156` | [ ]    |
-| S7  | Security | Entity name validated before NFKC normalisation — Unicode homograph characters can bypass the regex                             | `models.py:8,31`           | [ ]    |
-| S8  | Security | Global exception handler logs full stack traces unconditionally; should gate on `DEBUG` level                                   | `app.py:251`               | [ ]    |
-| S9  | Security | `qdrant_client` logger not suppressed — auth failures can leak Qdrant URL or credentials                                        | `logging.py:31`            | [ ]    |
+| C6  | Quality  | `top_k` not validated (positive, reasonable range) at the vector store boundary                                                 | `vector_store.py:243`      | [x]    |
+| C7  | Quality  | Dropped chunks discarded silently — no audit trail in `RefinementResult`                                                        | `knowledge_refiner.py:156` | [x]    |
+| S7  | Security | Entity name validated before NFKC normalisation — Unicode homograph characters can bypass the regex                             | `models.py:8,31`           | [x]    |
+| S8  | Security | Global exception handler logs full stack traces unconditionally; should gate on `DEBUG` level                                   | `app.py:251`               | [x]    |
+| S9  | Security | `qdrant_client` logger not suppressed — auth failures can leak Qdrant URL or credentials                                        | `logging.py:31`            | [x]    |
 
 ---
 
@@ -64,11 +64,11 @@ Items marked **DONE** have been fixed. Remaining items are ordered by priority.
 
 | #   | Source   | Issue                                                                                                                           | Location             | Status |
 | --- | -------- | ------------------------------------------------------------------------------------------------------------------------------- | -------------------- | ------ |
-| B10 | Bug      | `make_chunk` default `original_doc_id=f"doc_{chunk_index}"` never matches production ID format; can mask format-validation bugs | `conftest.py:48`     | [ ]    |
-| C8  | Quality  | `_RERANKER_MAX_LENGTH = 512` has no comment explaining its origin                                                               | `reranker.py:15`     | [ ]    |
+| B10 | Bug      | `make_chunk` default `original_doc_id=f"doc_{chunk_index}"` never matches production ID format; can mask format-validation bugs | `conftest.py:48`     | [x]    |
+| C8  | Quality  | `_RERANKER_MAX_LENGTH = 512` has no comment explaining its origin                                                               | `reranker.py:15`     | [x]    |
 | C9  | Quality  | `import builtins` only used to qualify `builtins.TimeoutError`; built-in is already in scope                                    | `retriever.py:6`     | [x]    |
-| S10 | Security | Qdrant connectivity not verified at startup — first request fails if Qdrant is down                                             | `dependencies.py:40` | [ ]    |
-| S11 | Security | No audit logging of `entity_name` / `sources` per query — no access trail                                                       | `app.py:277`         | [ ]    |
+| S10 | Security | Qdrant connectivity not verified at startup — first request fails if Qdrant is down                                             | `dependencies.py:40` | [x]    |
+| S11 | Security | No audit logging of `entity_name` / `sources` per query — no access trail                                                       | `app.py:277`         | [x]    |
 
 ---
 

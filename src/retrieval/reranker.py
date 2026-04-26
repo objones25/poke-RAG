@@ -12,6 +12,7 @@ from src.types import RetrievalError, RetrievedChunk
 
 _LOG = logging.getLogger(__name__)
 
+# 512 is the maximum sequence length supported by bge-reranker-v2-m3 per the model card.
 _RERANKER_MAX_LENGTH = 512
 
 

@@ -151,17 +151,19 @@ class KnowledgeRefiner:
         constraints: list[str] | None = None,
     ) -> RefinementResult:
         if not chunks:
-            return RefinementResult(chunks=(), gaps=())
+            return RefinementResult(chunks=(), gaps=(), dropped_chunks=())
 
-        accepted, uncertain, _ = self._triage(chunks)
+        accepted, uncertain, dropped = self._triage(chunks)
 
         refined: list[RetrievedChunk] = []
         for chunk in accepted:
             filtered = self._filter_strips(query, chunk)
             if filtered is not None:
                 refined.append(filtered)
+            else:
+                dropped.append(chunk)
 
         refined.extend(uncertain)
 
         gaps = tuple(self._check_sufficiency(query, refined))
-        return RefinementResult(chunks=tuple(refined), gaps=gaps)
+        return RefinementResult(chunks=tuple(refined), gaps=gaps, dropped_chunks=tuple(dropped))

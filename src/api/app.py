@@ -67,6 +67,8 @@ class LatencyTrackingMiddleware(BaseHTTPMiddleware):
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """Rate limiter for /query endpoint: 20 requests per minute per IP."""
 
+    _xff_warning_issued: bool = False
+
     def __init__(
         self,
         app: ASGIApp,
@@ -95,6 +97,20 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     async def dispatch(
         self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
+        # Warn once if XFF header is present but no trusted proxy is declared — rate limiting
+        # will apply to the proxy's socket IP rather than the real client.
+        if (
+            self.trusted_proxy_count == 0
+            and not RateLimitMiddleware._xff_warning_issued
+            and request.headers.get("X-Forwarded-For")
+        ):
+            _LOG.warning(
+                "X-Forwarded-For header is present but TRUSTED_PROXY_COUNT=0. "
+                "Rate limiting applies to the socket IP, not the real client. "
+                "Set TRUSTED_PROXY_COUNT if this app is behind a reverse proxy."
+            )
+            RateLimitMiddleware._xff_warning_issued = True
+
         if not self.enabled or request.url.path == "/health":
             return await call_next(request)
 
@@ -166,6 +182,11 @@ class BodySizeLimitMiddleware(BaseHTTPMiddleware):
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     setup_logging()
+    if not _parse_bool(os.getenv("HTTPS_ENABLED"), "HTTPS_ENABLED", False):
+        _LOG.warning(
+            "HTTPS_ENABLED is not set to true — HSTS header is disabled. "
+            "Set HTTPS_ENABLED=true in production to enable Strict-Transport-Security."
+        )
     loader = None
     async_qdrant_client: AsyncQdrantClient | None = None
     try:
@@ -173,6 +194,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         client: AsyncQdrantClient | QdrantClient
         if settings.async_pipeline_enabled:
             async_pipeline, loader, async_qdrant_client = build_async_pipeline()
+            await async_qdrant_client.get_collections()
             app.state.async_pipeline = async_pipeline
             client = async_qdrant_client
             app.state.qdrant_client_is_async = True
@@ -264,7 +286,7 @@ async def timeout_error_handler(request: Request, exc: TimeoutError) -> JSONResp
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    _LOG.error("Unhandled exception: %s", exc, exc_info=True)
+    _LOG.error("Unhandled exception: %s", exc, exc_info=_LOG.isEnabledFor(logging.DEBUG))
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 
@@ -297,6 +319,11 @@ async def query(
     body: QueryRequest,
     request: Request,
 ) -> QueryResponse:
+    _LOG.info(
+        "query received: entity_name=%r sources=%r",
+        body.entity_name,
+        body.sources,
+    )
     parsed = parse_query(body.query)
     settings: Settings = request.app.state.settings
     if settings.async_pipeline_enabled:

@@ -22,3 +22,4 @@ class RefinementResult:
 
     chunks: tuple[RetrievedChunk, ...]
     gaps: tuple[str, ...]
+    dropped_chunks: tuple[RetrievedChunk, ...] = ()

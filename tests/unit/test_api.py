@@ -439,6 +439,54 @@ class TestGetClientIpXFFSpoofing:
 
 
 @pytest.mark.unit
+class TestXFFUndeclaredProxyWarning:
+    """S4: Warn once when XFF header is present but TRUSTED_PROXY_COUNT=0."""
+
+    def test_warning_emitted_when_xff_present_and_no_proxy_declared(
+        self, mock_pipeline, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        import logging
+
+        from src.api.app import RateLimitMiddleware
+
+        # Reset the one-time flag so this test is hermetic
+        RateLimitMiddleware._xff_warning_issued = False
+
+        with (
+            caplog.at_level(logging.WARNING, logger="src.api.app"),
+            TestClient(app, raise_server_exceptions=False) as c,
+        ):
+            c.get("/health", headers={"X-Forwarded-For": "1.2.3.4"})
+
+        assert any(
+            "X-Forwarded-For" in r.message and r.levelno == logging.WARNING
+            for r in caplog.records
+        ), "S4: expected WARNING about XFF present but TRUSTED_PROXY_COUNT=0"
+
+    def test_warning_emitted_only_once(
+        self, mock_pipeline, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        import logging
+
+        from src.api.app import RateLimitMiddleware
+
+        RateLimitMiddleware._xff_warning_issued = False
+
+        with (
+            caplog.at_level(logging.WARNING, logger="src.api.app"),
+            TestClient(app, raise_server_exceptions=False) as c,
+        ):
+            c.get("/health", headers={"X-Forwarded-For": "1.2.3.4"})
+            c.get("/health", headers={"X-Forwarded-For": "5.6.7.8"})
+
+        xff_warnings = [
+            r for r in caplog.records
+            if "X-Forwarded-For" in r.message and r.levelno == logging.WARNING
+        ]
+        assert len(xff_warnings) == 1, "S4: warning must be emitted exactly once"
+
+
+@pytest.mark.unit
 class TestQueryEndpointTimeout:
     def test_query_timeout_returns_504(self, client, mock_pipeline) -> None:
         mock_pipeline.query.side_effect = TimeoutError()
@@ -483,6 +531,50 @@ class TestSecurityHeadersHSTS:
         with TestClient(test_app) as c:
             response = c.get("/health")
             assert "Strict-Transport-Security" not in response.headers
+
+
+@pytest.mark.unit
+class TestHSTSStartupWarning:
+    """S5: Warn at startup when HSTS is disabled (HTTPS_ENABLED not true)."""
+
+    def test_warning_emitted_when_https_not_enabled(
+        self, mock_pipeline, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        import logging
+
+        monkeypatch.delenv("HTTPS_ENABLED", raising=False)
+
+        with (
+            caplog.at_level(logging.WARNING, logger="src.api.app"),
+            TestClient(app, raise_server_exceptions=False),
+        ):
+            pass
+
+        assert any(
+            "HSTS" in r.message or "HTTPS_ENABLED" in r.message
+            for r in caplog.records
+            if r.levelno == logging.WARNING
+        ), "S5: expected startup WARNING about HSTS being disabled"
+
+    def test_no_warning_when_https_enabled(
+        self, mock_pipeline, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        import logging
+
+        monkeypatch.setenv("HTTPS_ENABLED", "true")
+
+        with (
+            caplog.at_level(logging.WARNING, logger="src.api.app"),
+            TestClient(app, raise_server_exceptions=False),
+        ):
+            pass
+
+        hsts_warnings = [
+            r for r in caplog.records
+            if ("HSTS" in r.message or "HTTPS_ENABLED" in r.message)
+            and r.levelno == logging.WARNING
+        ]
+        assert hsts_warnings == [], "S5: no HSTS warning expected when HTTPS_ENABLED=true"
 
 
 @pytest.mark.unit
@@ -857,3 +949,145 @@ class TestBodySizeLimitMiddlewareEdgeCases:
         with TestClient(test_app) as c:
             response = c.post("/upload", headers={"Content-Length": "-1"})
             assert response.status_code == 413
+
+
+@pytest.mark.unit
+class TestGlobalExceptionHandlerStackTrace:
+    """S8: global exception handler must only log full stack traces at DEBUG level."""
+
+    def test_exc_info_not_logged_at_error_level(self, monkeypatch) -> None:
+        import logging
+        from unittest.mock import patch
+
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from src.api.app import global_exception_handler
+
+        test_app = FastAPI()
+        test_app.add_exception_handler(Exception, global_exception_handler)
+
+        @test_app.get("/boom")
+        async def _boom() -> None:
+            raise RuntimeError("intentional test error")
+
+        log_calls: list[dict] = []
+        original_error = logging.Logger.error
+
+        def capture_error(self, msg, *args, **kwargs):  # type: ignore[no-untyped-def]
+            log_calls.append({"msg": msg, "kwargs": kwargs})
+            original_error(self, msg, *args, **kwargs)
+
+        app_logger = logging.getLogger("src.api.app")
+        original_level = app_logger.level
+        try:
+            app_logger.setLevel(logging.WARNING)
+            with (
+                patch.object(logging.Logger, "error", capture_error),
+                TestClient(test_app, raise_server_exceptions=False) as c,
+            ):
+                c.get("/boom")
+        finally:
+            app_logger.setLevel(original_level)
+
+        exc_info_calls = [
+            call for call in log_calls if call["kwargs"].get("exc_info")
+        ]
+        assert exc_info_calls == [], (
+            "S8: exc_info=True must not be logged when logger level is above DEBUG"
+        )
+
+    def test_exc_info_logged_at_debug_level(self, monkeypatch) -> None:
+        import logging
+        from unittest.mock import patch
+
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from src.api.app import global_exception_handler
+
+        test_app = FastAPI()
+        test_app.add_exception_handler(Exception, global_exception_handler)
+
+        @test_app.get("/boom")
+        async def _boom() -> None:
+            raise RuntimeError("intentional test error")
+
+        log_calls: list[dict] = []
+        original_error = logging.Logger.error
+
+        def capture_error(self, msg, *args, **kwargs):  # type: ignore[no-untyped-def]
+            log_calls.append({"msg": msg, "kwargs": kwargs})
+            original_error(self, msg, *args, **kwargs)
+
+        app_logger = logging.getLogger("src.api.app")
+        original_level = app_logger.level
+        try:
+            app_logger.setLevel(logging.DEBUG)
+            with (
+                patch.object(logging.Logger, "error", capture_error),
+                TestClient(test_app, raise_server_exceptions=False) as c,
+            ):
+                c.get("/boom")
+        finally:
+            app_logger.setLevel(original_level)
+
+        exc_info_calls = [
+            call for call in log_calls if call["kwargs"].get("exc_info")
+        ]
+        assert exc_info_calls, (
+            "S8: exc_info=True must be logged when logger level is DEBUG"
+        )
+
+
+@pytest.mark.unit
+class TestQueryAuditLogging:
+    """S11: /query must emit an INFO-level audit log with entity_name and sources."""
+
+    def test_audit_log_emitted_with_entity_name_and_sources(
+        self, mock_pipeline, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        import logging
+
+        mock_pipeline.query.return_value = _make_result(
+            query="What moves does Pikachu learn?",
+            sources_used=("pokeapi",),
+        )
+        with (
+            caplog.at_level(logging.INFO, logger="src.api.app"),
+            TestClient(app, raise_server_exceptions=False) as c,
+        ):
+            c.post(
+                "/query",
+                json={
+                    "query": "What moves does Pikachu learn?",
+                    "entity_name": "Pikachu",
+                    "sources": ["pokeapi"],
+                },
+            )
+
+        assert any(
+            "Pikachu" in r.message and "pokeapi" in r.message
+            for r in caplog.records
+            if r.levelno == logging.INFO
+        ), "S11: expected INFO audit log containing entity_name and sources"
+
+    def test_audit_log_emitted_without_optional_fields(
+        self, mock_pipeline, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        import logging
+
+        mock_pipeline.query.return_value = _make_result(
+            query="What type is Bulbasaur?",
+        )
+        with (
+            caplog.at_level(logging.INFO, logger="src.api.app"),
+            TestClient(app, raise_server_exceptions=False) as c,
+        ):
+            c.post("/query", json={"query": "What type is Bulbasaur?"})
+
+        assert any(
+            "query" in r.message.lower()
+            for r in caplog.records
+            if r.levelno == logging.INFO
+        ), "S11: expected INFO audit log for query without entity_name/sources"

@@ -44,6 +44,7 @@ _COLBERT_UPSERT_BATCH_SIZE = 2  # ColBERT token matrices are large; keep HTTP pa
 _TRANSIENT_STATUS_CODES = {429, 500, 502, 503, 504}
 _MAX_RETRIES = 4
 _RETRY_BASE_DELAY = 2.0
+_MAX_TOP_K = 1000
 
 
 def _is_transient(exc: Exception) -> bool:
@@ -252,6 +253,8 @@ class QdrantVectorStore:
         entity_name: str | None = None,
         query_colbert: list[list[float]] | None = None,
     ) -> list[RetrievedChunk]:
+        if not (1 <= top_k <= _MAX_TOP_K):
+            raise ValueError(f"top_k must be between 1 and {_MAX_TOP_K}, got {top_k}")
         _LOG.debug("Searching '%s': top_k=%d, entity_name=%s", collection, top_k, entity_name)
 
         normalized_name = entity_name.lower().strip() if entity_name is not None else None
@@ -486,6 +489,8 @@ class AsyncQdrantVectorStore:
         entity_name: str | None = None,
         query_colbert: list[list[float]] | None = None,
     ) -> list[RetrievedChunk]:
+        if not (1 <= top_k <= _MAX_TOP_K):
+            raise ValueError(f"top_k must be between 1 and {_MAX_TOP_K}, got {top_k}")
         _LOG.debug("Searching '%s': top_k=%d, entity_name=%s", collection, top_k, entity_name)
 
         normalized_name = entity_name.lower().strip() if entity_name is not None else None
