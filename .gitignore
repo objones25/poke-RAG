@@ -113,3 +113,6 @@ secrets/
 tmp/
 temp/
 .build_index_checkpoint.json
+
+# Generated caches
+cache/
