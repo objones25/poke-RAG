@@ -20,8 +20,8 @@ Items marked **DONE** have been fixed. Remaining items are ordered by priority.
 | --- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ------ |
 | B1  | Bug      | `/query/stream` calls `get_async_pipeline()` unconditionally — always crashes when `ASYNC_PIPELINE_ENABLED=false` (the default)                                                                    | `app.py:324` | [x]    |
 | B2  | Bug      | Lifespan creates a redundant sync `QdrantClient` in async mode instead of reusing `async_qdrant_client` from `build_async_pipeline()`; `/stats` then wraps it in `asyncio.to_thread` unnecessarily | `app.py:179` | [x]    |
-| S1  | Security | `/stats` endpoint completely unauthenticated when `STATS_API_KEY` env var is unset — exposes full collection schema                                                                                | `app.py:264` | [ ]    |
-| S2  | Security | CORS defaults to `allow_origins=["*"]` — should require explicit configuration in production                                                                                                       | `app.py:205` | [ ]    |
+| S1  | Security | `/stats` endpoint completely unauthenticated when `STATS_API_KEY` env var is unset — exposes full collection schema                                                                                | `app.py:264` | [x]    |
+| S2  | Security | CORS defaults to `allow_origins=["*"]` — should require explicit configuration in production                                                                                                       | `app.py:205` | [x]    |
 
 ---
 

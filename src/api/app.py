@@ -201,17 +201,30 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 app = FastAPI(title="poke-RAG", lifespan=lifespan)
 
-allowed_origins = os.getenv("ALLOWED_ORIGINS", "*")
-if allowed_origins == "*":
-    origins = ["*"]
-    _allow_credentials = False
-else:
-    origins = [origin.strip() for origin in allowed_origins.split(",")]
-    _allow_credentials = True
+
+def _compute_cors_origins(env_value: str | None) -> tuple[list[str], bool]:
+    """Return (origins, allow_credentials) for CORSMiddleware.
+
+    Empty/unset → no CORS (deny by default). Explicit '*' → wildcard (no credentials).
+    Comma-separated list → specific origins with credentials allowed.
+    """
+    if not env_value:
+        return [], False
+    if env_value == "*":
+        _LOG.warning(
+            "ALLOWED_ORIGINS=* permits all cross-origin requests; "
+            "set an explicit origin list for production"
+        )
+        return ["*"], False
+    origins = [o.strip() for o in env_value.split(",") if o.strip()]
+    return origins, True
+
+
+_cors_origins, _allow_credentials = _compute_cors_origins(os.getenv("ALLOWED_ORIGINS"))
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=_cors_origins,
     allow_credentials=_allow_credentials,
     allow_methods=["GET", "POST"],
     allow_headers=["Content-Type", "Authorization"],
@@ -261,11 +274,12 @@ def health() -> dict[str, str]:
 @app.get("/stats")
 async def stats(request: Request) -> dict[str, bool]:
     stats_api_key = os.getenv("STATS_API_KEY")
-    if stats_api_key:
-        auth = request.headers.get("Authorization", "")
-        expected = f"Bearer {stats_api_key}"
-        if not hmac.compare_digest(auth.encode(), expected.encode()):
-            raise HTTPException(status_code=401, detail="Unauthorized")
+    if not stats_api_key:
+        raise HTTPException(status_code=403, detail="Stats endpoint requires STATS_API_KEY")
+    auth = request.headers.get("Authorization", "")
+    expected = f"Bearer {stats_api_key}"
+    if not hmac.compare_digest(auth.encode(), expected.encode()):
+        raise HTTPException(status_code=401, detail="Unauthorized")
     client = getattr(request.app.state, "qdrant_client", None)
     if client is None:
         raise RuntimeError("Qdrant client not initialized")

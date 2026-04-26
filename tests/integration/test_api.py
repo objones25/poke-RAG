@@ -169,3 +169,68 @@ class TestAsyncPipelineWiring:
         mock_async_pipeline_dep.query.side_effect = RetrievalError("no docs")
         response = async_client.post("/query", json={"query": "test"})
         assert response.status_code == 503
+
+
+@pytest.mark.integration
+class TestStatsAuth:
+    """S1: /stats must require authentication; endpoint must be inaccessible without a key."""
+
+    def test_stats_returns_403_when_no_api_key_configured(
+        self, client, monkeypatch
+    ) -> None:
+        monkeypatch.delenv("STATS_API_KEY", raising=False)
+        response = client.get("/stats")
+        assert response.status_code == 403
+
+    def test_stats_returns_401_with_wrong_key(self, client, monkeypatch) -> None:
+        monkeypatch.setenv("STATS_API_KEY", "correct-secret")
+        response = client.get("/stats", headers={"Authorization": "Bearer wrong-key"})
+        assert response.status_code == 401
+
+    def test_stats_returns_401_with_missing_auth_header(
+        self, client, monkeypatch
+    ) -> None:
+        monkeypatch.setenv("STATS_API_KEY", "correct-secret")
+        response = client.get("/stats")
+        assert response.status_code == 401
+
+
+@pytest.mark.unit
+class TestCORSOriginsHelper:
+    """S2: _compute_cors_origins must not default to wildcard when env var is unset."""
+
+    def test_returns_empty_list_when_env_var_is_none(self) -> None:
+        from src.api.app import _compute_cors_origins
+
+        origins, allow_credentials = _compute_cors_origins(None)
+        assert origins == []
+        assert allow_credentials is False
+
+    def test_returns_empty_list_when_env_var_is_empty_string(self) -> None:
+        from src.api.app import _compute_cors_origins
+
+        origins, allow_credentials = _compute_cors_origins("")
+        assert origins == []
+        assert allow_credentials is False
+
+    def test_returns_wildcard_list_when_explicitly_star(self) -> None:
+        from src.api.app import _compute_cors_origins
+
+        origins, allow_credentials = _compute_cors_origins("*")
+        assert origins == ["*"]
+        assert allow_credentials is False
+
+    def test_returns_specific_origins_when_configured(self) -> None:
+        from src.api.app import _compute_cors_origins
+
+        origins, allow_credentials = _compute_cors_origins(
+            "https://example.com,https://api.example.com"
+        )
+        assert origins == ["https://example.com", "https://api.example.com"]
+        assert allow_credentials is True
+
+    def test_strips_whitespace_from_origins(self) -> None:
+        from src.api.app import _compute_cors_origins
+
+        origins, _ = _compute_cors_origins("  https://a.com , https://b.com  ")
+        assert origins == ["https://a.com", "https://b.com"]

@@ -154,7 +154,7 @@ class TestAsyncLifespan:
         monkeypatch.setenv("ASYNC_PIPELINE_ENABLED", "true")
         monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
         monkeypatch.setenv("RATE_LIMIT_ENABLED", "false")
-        monkeypatch.delenv("STATS_API_KEY", raising=False)
+        monkeypatch.setenv("STATS_API_KEY", "test-key")
 
         mock_pipeline = MagicMock()
         mock_loader = MagicMock()
@@ -167,7 +167,7 @@ class TestAsyncLifespan:
             patch("src.api.app.QdrantClient"),
             TestClient(app) as c,
         ):
-            response = c.get("/stats")
+            response = c.get("/stats", headers={"Authorization": "Bearer test-key"})
 
         assert response.status_code == 200
         # get_collections must be called directly on the async client (awaited), not via to_thread
