@@ -184,9 +184,18 @@ def _extract_pokeapi_metadata(*, doc_id: str) -> dict[str, Any]:
     return {"entity_subtype": subtype}
 
 
-def _extract_bulbapedia_metadata() -> dict[str, Any]:
-    """Return an empty metadata stub; topics are populated offline by the Gemini utility."""
-    return {}
+def _extract_bulbapedia_metadata(
+    *,
+    topic_entry: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build metadata dict for a bulbapedia chunk from a pre-computed topic cache entry."""
+    if topic_entry is None:
+        return {}
+    meta: dict[str, Any] = {"topics": topic_entry.get("topics", [])}
+    hint = topic_entry.get("entity_type_hint")
+    if hint is not None:
+        meta["entity_type_hint"] = hint
+    return meta
 
 
 def _extract_smogon_name(line: str) -> str | None:
@@ -277,6 +286,7 @@ def chunk_bulbapedia_doc(
     doc_id: str,
     entity_type: EntityType | None = None,
     tokenize_fn: Callable[[str], int] | None = None,
+    topic_lookup: dict[str, dict[str, Any]] | None = None,
 ) -> list[RetrievedChunk]:
     """Split one bulbapedia document (Title: header + body) into chunks."""
     stripped = doc.strip()
@@ -293,7 +303,8 @@ def chunk_bulbapedia_doc(
     else:
         body = stripped
 
-    bulba_meta = _extract_bulbapedia_metadata()
+    topic_entry = topic_lookup.get(doc_id) if topic_lookup is not None else None
+    bulba_meta = _extract_bulbapedia_metadata(topic_entry=topic_entry)
     if not body:
         return [
             RetrievedChunk(
@@ -525,6 +536,7 @@ def chunk_file(
     *,
     source: Source,
     tokenize_fn: Callable[[str], int] | None = None,
+    topic_lookup: dict[str, dict[str, Any]] | None = None,
 ) -> list[RetrievedChunk]:
     """Chunk an entire file according to its source format."""
     text = path.read_text(encoding="utf-8")
@@ -562,6 +574,7 @@ def chunk_file(
                         doc_id=f"{path.stem}_{i}",
                         entity_type=entity_type,
                         tokenize_fn=tokenize_fn,
+                        topic_lookup=topic_lookup,
                     )
                 )
 

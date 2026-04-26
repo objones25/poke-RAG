@@ -7,7 +7,7 @@ import json
 import logging
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from src.retrieval.chunker import chunk_file
 from src.retrieval.types import EmbeddingOutput
@@ -114,6 +114,7 @@ def run(
     checkpoint_path: Path | None = None,
     drop_collections: bool = False,
     colbert_enabled: bool = False,
+    topic_lookup: dict[str, dict] | None = None,
 ) -> None:
     files = discover_files(processed_dir, sources)
     if not files:
@@ -143,7 +144,7 @@ def run(
     for source, path in remaining:
         file_key = f"{source}/{path.name}"
         try:
-            chunks = chunk_file(path, source=source)
+            chunks = chunk_file(path, source=source, topic_lookup=topic_lookup)
             _LOG.info("Processing '%s' → %d chunk(s)", file_key, len(chunks))
 
             for i in range(0, len(chunks), batch_size):
@@ -219,11 +220,25 @@ def main() -> None:
         action="store_true",
         help="Drop existing Qdrant collections before indexing (required when changing schema).",
     )
+    parser.add_argument(
+        "--topic-cache",
+        type=Path,
+        default=None,
+        help="Path to JSON topic cache from scripts/retrieval/bulbapedia_topic_extractor.py.",
+    )
     args = parser.parse_args()
 
     sources: tuple[Source, ...] = tuple(args.sources) if args.sources else _ALL_SOURCES
     checkpoint_path: Path | None = None if args.no_checkpoint else args.checkpoint
     colbert_enabled: bool = args.colbert
+
+    topic_lookup: dict[str, dict[str, Any]] | None = None
+    if args.topic_cache is not None:
+        if not args.topic_cache.exists():
+            _LOG.error("--topic-cache file not found: %s", args.topic_cache)
+            sys.exit(1)
+        topic_lookup = json.loads(args.topic_cache.read_text())
+        _LOG.info("Loaded %d topic cache entries from %s", len(topic_lookup), args.topic_cache)
 
     try:
         from src.config import Settings
@@ -260,6 +275,7 @@ def main() -> None:
         checkpoint_path=checkpoint_path,
         drop_collections=args.drop_collections,
         colbert_enabled=colbert_enabled,
+        topic_lookup=topic_lookup,
     )
 
 
