@@ -357,6 +357,7 @@ async def query(
         query=result.query,
         confidence_score=result.confidence_score,
         knowledge_gaps=list(result.knowledge_gaps) if result.knowledge_gaps else None,
+        context=result.context,
     )
 
 

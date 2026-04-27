@@ -1,0 +1,298 @@
+# Generation eval question bank — 30 questions
+
+# --- easy_lexical (5) ---
+- id: el001
+  query: "What is Pikachu's base Speed stat?"
+  category: easy_lexical
+  source_trust: pokeapi
+  reference_answer: "Pikachu has a base Speed stat of 90."
+  required_claims:
+    - "Speed: 90"
+  adversarial: false
+
+- id: el002
+  query: "What type is Charizard?"
+  category: easy_lexical
+  source_trust: pokeapi
+  reference_answer: "Charizard is a Fire/Flying type Pokémon."
+  required_claims:
+    - "Fire"
+    - "Flying"
+  adversarial: false
+
+- id: el003
+  query: "What is Gengar's base HP?"
+  category: easy_lexical
+  source_trust: pokeapi
+  reference_answer: "Gengar has a base HP stat of 60."
+  required_claims:
+    - "HP: 60"
+  adversarial: false
+
+- id: el004
+  query: "How many base forms does Eevee have evolutions for?"
+  category: easy_lexical
+  source_trust: bulbapedia
+  reference_answer: "Eevee can evolve into eight different Pokémon."
+  required_claims:
+    - "eight"
+  adversarial: false
+
+- id: el005
+  query: "What is Snorlax's base Attack stat?"
+  category: easy_lexical
+  source_trust: pokeapi
+  reference_answer: "Snorlax has a base Attack stat of 110."
+  required_claims:
+    - "Attack: 110"
+  adversarial: false
+
+# --- aggregation (6) ---
+- id: ag001
+  query: "What are all of Dragonite's base stats?"
+  category: aggregation
+  source_trust: pokeapi
+  reference_answer: "Dragonite has base stats of HP 91, Attack 134, Defense 95, Special Attack 100, Special Defense 100, and Speed 80."
+  required_claims:
+    - "HP: 91"
+    - "Attack: 134"
+    - "Speed: 80"
+  adversarial: false
+
+- id: ag002
+  query: "List all abilities Garchomp can have."
+  category: aggregation
+  source_trust: pokeapi
+  reference_answer: "Garchomp can have the abilities Sand Veil and its hidden ability Rough Skin."
+  required_claims:
+    - "Sand Veil"
+    - "Rough Skin"
+  adversarial: false
+
+- id: ag003
+  query: "What moves can Mewtwo learn via level-up in Generation I?"
+  category: aggregation
+  source_trust: bulbapedia
+  reference_answer: "In Generation I, Mewtwo learns Confusion at level 1, Disable at level 63, Psychic at level 100, and Swift at level 72 among others."
+  required_claims:
+    - "Confusion"
+    - "Psychic"
+  adversarial: false
+
+- id: ag004
+  query: "What are Blissey's base stats and what role does that make it suited for?"
+  category: aggregation
+  source_trust: pokeapi
+  reference_answer: "Blissey has 255 base HP and 135 base Special Defense, making it an exceptional special wall."
+  required_claims:
+    - "HP: 255"
+    - "Special Defense: 135"
+  adversarial: false
+
+- id: ag005
+  query: "Summarize Toxapex's competitive usage according to Smogon."
+  category: aggregation
+  source_trust: smogon
+  reference_answer: "Toxapex is a premier defensive wall in competitive play, known for its Regenerator ability and access to Haze and Toxic Spikes."
+  required_claims:
+    - "Regenerator"
+    - "Haze"
+  adversarial: false
+
+- id: ag006
+  query: "What held items does Smogon recommend for Landorus-Therian?"
+  category: aggregation
+  source_trust: smogon
+  reference_answer: "Smogon recommends Choice Scarf or Rocky Helmet for Landorus-Therian depending on the set."
+  required_claims:
+    - "Choice Scarf"
+  adversarial: false
+
+# --- comparative (5) ---
+- id: co001
+  query: "Which is faster, Jolteon or Electrode?"
+  category: comparative
+  source_trust: pokeapi
+  reference_answer: "Electrode has a base Speed of 150 while Jolteon has 130, making Electrode faster."
+  required_claims:
+    - "Electrode"
+    - "150"
+    - "130"
+  adversarial: false
+
+- id: co002
+  query: "Compare the base Special Attack of Alakazam and Espeon."
+  category: comparative
+  source_trust: pokeapi
+  reference_answer: "Alakazam has 135 base Special Attack and Espeon has 130, so Alakazam is slightly higher."
+  required_claims:
+    - "Alakazam"
+    - "135"
+    - "130"
+  adversarial: false
+
+- id: co003
+  query: "Is Scizor bulkier than Skarmory defensively?"
+  category: comparative
+  source_trust: pokeapi
+  reference_answer: "Skarmory has higher base Defense (140) than Scizor (100) but lower HP, so Skarmory is the better physical wall."
+  required_claims:
+    - "Skarmory"
+    - "140"
+  adversarial: false
+
+- id: co004
+  query: "Which has a higher base Attack: Machamp or Conkeldurr?"
+  category: comparative
+  source_trust: pokeapi
+  reference_answer: "Conkeldurr has 140 base Attack compared to Machamp's 130, so Conkeldurr is stronger."
+  required_claims:
+    - "Conkeldurr"
+    - "140"
+  adversarial: false
+
+- id: co005
+  query: "Compare Smogon's recommended sets for Clefable versus Togekiss."
+  category: comparative
+  source_trust: smogon
+  reference_answer: "Clefable typically runs a Calm Mind or support set with Magic Guard while Togekiss leans on Serene Grace paraflinch or Nasty Plot sweeper sets."
+  required_claims:
+    - "Clefable"
+    - "Togekiss"
+  adversarial: false
+
+# --- multi_source (4) ---
+- id: ms001
+  query: "What is Garchomp's Smogon tier and what are its base stats?"
+  category: multi_source
+  source_trust: smogon
+  reference_answer: "Garchomp is Uber or OU depending on the generation; its base stats include 108 Attack and 102 Speed."
+  required_claims:
+    - "108"
+    - "102"
+  adversarial: false
+
+- id: ms002
+  query: "What ability does Ferrothorn have and how is it used competitively?"
+  category: multi_source
+  source_trust: smogon
+  reference_answer: "Ferrothorn has Iron Barbs, which damages contact attackers. Competitively it runs Spikes and Stealth Rock as a hazard setter."
+  required_claims:
+    - "Iron Barbs"
+    - "Spikes"
+  adversarial: false
+
+- id: ms003
+  query: "What is Rotom-Wash's typing and what does Smogon say about its role?"
+  category: multi_source
+  source_trust: smogon
+  reference_answer: "Rotom-Wash is Electric/Water type. Smogon describes it as a reliable defensive pivot with Volt Switch and Will-O-Wisp."
+  required_claims:
+    - "Electric"
+    - "Water"
+    - "Volt Switch"
+  adversarial: false
+
+- id: ms004
+  query: "What is Corviknight's Hidden Ability and is it used in competitive play?"
+  category: multi_source
+  source_trust: smogon
+  reference_answer: "Corviknight's Hidden Ability is Mirror Armor. Smogon notes it can be useful for reflecting stat drops from moves like Intimidate."
+  required_claims:
+    - "Mirror Armor"
+  adversarial: false
+
+# --- confusable (5) ---
+- id: cf001
+  query: "What is the base Speed of Nidoking (not Nidoqueen)?"
+  category: confusable
+  source_trust: pokeapi
+  reference_answer: "Nidoking has a base Speed stat of 85."
+  required_claims:
+    - "Nidoking"
+    - "85"
+  adversarial: false
+
+- id: cf002
+  query: "What are Latios's base Special Attack and Special Defense (not Latias)?"
+  category: confusable
+  source_trust: pokeapi
+  reference_answer: "Latios has 130 base Special Attack and 110 base Special Defense."
+  required_claims:
+    - "130"
+    - "110"
+  adversarial: false
+
+- id: cf003
+  query: "What typing does Wormadam-Sandy (Ground cloak) have?"
+  category: confusable
+  source_trust: pokeapi
+  reference_answer: "Wormadam-Sandy is Bug/Ground type."
+  required_claims:
+    - "Bug"
+    - "Ground"
+  adversarial: false
+
+- id: cf004
+  query: "What is Meowstic-Male's signature move, not Meowstic-Female?"
+  category: confusable
+  source_trust: bulbapedia
+  reference_answer: "Meowstic-Male learns Miracle Eye as its signature level-up move while Meowstic-Female learns Mean Look."
+  required_claims:
+    - "Miracle Eye"
+  adversarial: false
+
+- id: cf005
+  query: "Does Lycanroc-Midnight or Lycanroc-Midday have higher Attack?"
+  category: confusable
+  source_trust: pokeapi
+  reference_answer: "Lycanroc-Midnight has 115 base Attack versus Lycanroc-Midday's 115 as well — they are equal."
+  required_claims:
+    - "115"
+  adversarial: false
+
+# --- adversarial (5) ---
+- id: adv001
+  query: "What is the boiling point of water in Celsius?"
+  category: adversarial
+  source_trust: none
+  reference_answer: "The context does not cover this topic."
+  required_claims:
+    - "context does not cover"
+  adversarial: true
+
+- id: adv002
+  query: "Who wrote the Iliad?"
+  category: adversarial
+  source_trust: none
+  reference_answer: "The context does not cover this topic."
+  required_claims:
+    - "context does not cover"
+  adversarial: true
+
+- id: adv003
+  query: "What is the capital of France?"
+  category: adversarial
+  source_trust: none
+  reference_answer: "The context does not cover this topic."
+  required_claims:
+    - "context does not cover"
+  adversarial: true
+
+- id: adv004
+  query: "How many planets are in the solar system?"
+  category: adversarial
+  source_trust: none
+  reference_answer: "The context does not cover this topic."
+  required_claims:
+    - "context does not cover"
+  adversarial: true
+
+- id: adv005
+  query: "What is the chemical formula for table salt?"
+  category: adversarial
+  source_trust: none
+  reference_answer: "The context does not cover this topic."
+  required_claims:
+    - "context does not cover"
+  adversarial: true

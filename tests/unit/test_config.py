@@ -1076,3 +1076,38 @@ class TestTrustedProxyCountAsFloat:
         test_app = FastAPI()
         with pytest.raises(ValueError, match="TRUSTED_PROXY_COUNT"):
             RateLimitMiddleware(app=test_app)
+
+
+@pytest.mark.unit
+class TestRetrievalHardFloor:
+    def test_default_is_minus_two(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.delenv("RETRIEVAL_HARD_FLOOR", raising=False)
+        s = Settings.from_env()
+        assert s.retrieval_hard_floor == -2.0
+
+    def test_env_var_sets_floor(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("RETRIEVAL_HARD_FLOOR", "-5.5")
+        s = Settings.from_env()
+        assert s.retrieval_hard_floor == pytest.approx(-5.5)
+
+    def test_very_negative_value_is_accepted(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("RETRIEVAL_HARD_FLOOR", "-99.0")
+        s = Settings.from_env()
+        assert s.retrieval_hard_floor == pytest.approx(-99.0)
+
+    def test_positive_value_is_accepted(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("RETRIEVAL_HARD_FLOOR", "0.5")
+        s = Settings.from_env()
+        assert s.retrieval_hard_floor == pytest.approx(0.5)

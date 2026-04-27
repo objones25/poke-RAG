@@ -481,3 +481,32 @@ class TestBuildSharedComponents:
             shared = _build_shared_components(settings)
 
             assert isinstance(shared.query_router, QueryRouter)
+
+
+@pytest.mark.unit
+class TestBuildPipelineSettingsWiring:
+    def test_rag_pipeline_receives_settings(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from src.api.dependencies import build_pipeline
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("ROUTING_ENABLED", "false")
+        monkeypatch.setenv("HYDE_ENABLED", "false")
+        monkeypatch.setenv("RETRIEVAL_HARD_FLOOR", "-1.5")
+
+        with _mock_build_context(_COMMON_PATCHES)[0]:
+            pipeline, _, _ = build_pipeline()
+
+        assert pipeline._retrieval_hard_floor == -1.5
+
+    def test_async_rag_pipeline_receives_settings(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from src.api.dependencies import build_async_pipeline
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("ROUTING_ENABLED", "false")
+        monkeypatch.setenv("HYDE_ENABLED", "false")
+        monkeypatch.setenv("RETRIEVAL_HARD_FLOOR", "-1.5")
+
+        with _mock_build_context(_ASYNC_PATCHES)[0]:
+            async_pipeline, _, _ = build_async_pipeline()
+
+        assert async_pipeline._retrieval_hard_floor == -1.5

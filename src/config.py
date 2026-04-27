@@ -201,6 +201,7 @@ class Settings:
     refiner_lower_threshold: float = -3.0
     refiner_strip_threshold: float = -1.0
     retrieval_top_k: int = 5
+    retrieval_hard_floor: float = -2.0
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -289,6 +290,10 @@ class Settings:
             1000,
         )
 
+        retrieval_hard_floor = _parse_float_unbounded(
+            os.getenv("RETRIEVAL_HARD_FLOOR"), "RETRIEVAL_HARD_FLOOR", -2.0
+        )
+
         if refiner_lower_threshold >= refiner_upper_threshold:
             raise ValueError(
                 f"REFINER_LOWER_THRESHOLD ({refiner_lower_threshold}) must be less than "
@@ -333,4 +338,5 @@ class Settings:
             refiner_lower_threshold=refiner_lower_threshold,
             refiner_strip_threshold=refiner_strip_threshold,
             retrieval_top_k=retrieval_top_k,
+            retrieval_hard_floor=retrieval_hard_floor,
         )

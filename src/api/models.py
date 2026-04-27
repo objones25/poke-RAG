@@ -68,3 +68,6 @@ class QueryResponse(BaseModel):
         default=None,
         description="Constraint keywords absent in retrieved chunks; None if refiner disabled",
     )
+    context: str | None = Field(
+        default=None, description="Concatenated retrieved chunk text used to ground this answer"
+    )
