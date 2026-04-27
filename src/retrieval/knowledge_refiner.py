@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import replace
 from typing import TYPE_CHECKING
@@ -11,6 +12,8 @@ from src.types import RetrievedChunk
 
 if TYPE_CHECKING:
     from src.retrieval.protocols import RerankerProtocol
+
+_LOG = logging.getLogger(__name__)
 
 _SENTENCE_RE = re.compile(r"(?<=[.!?])\s+")
 _GEN_RE = re.compile(r"\bgen\s*([0-9]+)", re.IGNORECASE)
@@ -155,16 +158,38 @@ class KnowledgeRefiner:
             return RefinementResult(chunks=(), gaps=(), dropped_chunks=())
 
         accepted, uncertain, dropped = self._triage(chunks)
+        _LOG.info(
+            "refiner_triage: accepted=%d uncertain=%d dropped=%d",
+            len(accepted),
+            len(uncertain),
+            len(dropped),
+        )
 
         refined: list[RetrievedChunk] = []
+        strip_survived = 0
+        fallback_kept = 0
         for chunk in accepted:
             filtered = self._filter_strips(query, chunk)
             if filtered is not None:
                 refined.append(filtered)
+                strip_survived += 1
             else:
-                dropped.append(chunk)
+                refined.append(chunk)
+                fallback_kept += 1
 
+        _LOG.info(
+            "refiner_strips: pre_strip=%d survived=%d strip_dropped=%d fallback_kept=%d",
+            len(accepted),
+            strip_survived,
+            len(accepted) - len(refined),
+            fallback_kept,
+        )
         refined.extend(uncertain)
 
         gaps = tuple(self._check_sufficiency(query, refined))
+        _LOG.info(
+            "refiner_output: chunks=%d gaps=%d",
+            len(refined),
+            len(gaps),
+        )
         return RefinementResult(chunks=tuple(refined), gaps=gaps, dropped_chunks=tuple(dropped))

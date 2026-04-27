@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,28 @@ from src.retrieval.chunker import (
     chunk_pokeapi_line,
     chunk_smogon_line,
 )
+
+
+@pytest.mark.unit
+class TestRecursiveSplitLogging:
+    def test_oversized_chunk_warning(self, caplog) -> None:
+        """oversized_chunk: warning emitted when terminal chunk exceeds target_tokens."""
+        from src.retrieval.chunker import _recursive_split
+
+        long_text = " ".join(["Bulbasaur"] * 100)
+        with caplog.at_level(logging.WARNING, logger="src.retrieval.chunker"):
+            _recursive_split(long_text, target_tokens=5)
+
+        assert any("oversized_chunk:" in r.message for r in caplog.records)
+
+    def test_no_oversized_warning_when_fits(self, caplog) -> None:
+        """No warning emitted when the single chunk fits within target_tokens."""
+        from src.retrieval.chunker import _recursive_split
+
+        with caplog.at_level(logging.WARNING, logger="src.retrieval.chunker"):
+            _recursive_split("Hi", target_tokens=400)
+
+        assert not any("oversized_chunk:" in r.message for r in caplog.records)
 
 
 @pytest.mark.unit
