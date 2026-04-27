@@ -75,7 +75,7 @@ class RAGPipeline:
             try:
                 cached = _sync_await(self._cache.get(cache_key))
                 if cached is not None:
-                    return from_cache_dict(cached)
+                    return cast(PipelineResult, from_cache_dict(cached))
             except Exception:
                 _LOG.warning("Cache get failed; proceeding without cache", exc_info=True)
 
@@ -165,7 +165,7 @@ class AsyncRAGPipeline:
             try:
                 cached = await self._cache.get(cache_key)
                 if cached is not None:
-                    return from_cache_dict(cached)
+                    return cast(PipelineResult, from_cache_dict(cached))
             except Exception:
                 _LOG.warning("Cache get failed; proceeding without cache", exc_info=True)
 

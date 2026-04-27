@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from collections.abc import Sequence
 from typing import Any
 from urllib.parse import urlparse
 
@@ -156,7 +157,7 @@ class CacheKey:
     @staticmethod
     def make_rag_key(
         query: str,
-        sources: list[str] | None,
+        sources: Sequence[str] | None,
         entity_name: str | None,
         top_k: int,
     ) -> str:
