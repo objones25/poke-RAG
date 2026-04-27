@@ -105,6 +105,8 @@ class RAGPipeline:
         raw_score = max(c.score for c in chunks)
         confidence_score: float | None = _sigmoid(raw_score) if math.isfinite(raw_score) else None
 
+        context = "\n\n".join(c.text for c in chunks)
+
         result = PipelineResult(
             answer=gen_result.answer,
             sources_used=gen_result.sources_used,
@@ -113,6 +115,7 @@ class RAGPipeline:
             query=query,
             confidence_score=confidence_score,
             knowledge_gaps=knowledge_gaps,
+            context=context,
         )
 
         if self._cache is not None:
@@ -201,6 +204,8 @@ class AsyncRAGPipeline:
         raw_score = max(c.score for c in chunks)
         confidence_score: float | None = _sigmoid(raw_score) if math.isfinite(raw_score) else None
 
+        context = "\n\n".join(c.text for c in chunks)
+
         result = PipelineResult(
             answer=gen_result.answer,
             sources_used=gen_result.sources_used,
@@ -209,6 +214,7 @@ class AsyncRAGPipeline:
             query=query,
             confidence_score=confidence_score,
             knowledge_gaps=knowledge_gaps,
+            context=context,
         )
 
         if self._cache is not None and cache_key is not None:

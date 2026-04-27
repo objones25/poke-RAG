@@ -18,3 +18,4 @@ class PipelineResult:
     # quality. On-topic queries routinely exceed 0.5; None when the score is non-finite.
     confidence_score: float | None = None
     knowledge_gaps: tuple[str, ...] | None = None
+    context: str | None = None
