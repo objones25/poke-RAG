@@ -5,11 +5,11 @@ from __future__ import annotations
 import asyncio
 import logging
 from concurrent.futures import ThreadPoolExecutor, TimeoutError, as_completed
-from typing import cast
 
 from src.retrieval.protocols import (
     AsyncVectorStoreProtocol,
     EmbedderProtocol,
+    FusedEmbeddingTransformerProtocol,
     QueryTransformerProtocol,
     RerankerProtocol,
     VectorStoreProtocol,
@@ -86,11 +86,8 @@ class Retriever:
         back to transform() + embedder.encode().
         """
         if use_transformer and self._query_transformer is not None:
-            if hasattr(self._query_transformer, "transform_to_embedding"):
-                embedding = cast(
-                    EmbeddingOutput,
-                    self._query_transformer.transform_to_embedding(query),
-                )
+            if isinstance(self._query_transformer, FusedEmbeddingTransformerProtocol):
+                embedding = self._query_transformer.transform_to_embedding(query)
             else:
                 embed_text = self._query_transformer.transform(query)
                 _LOG.debug(
@@ -281,10 +278,9 @@ class AsyncRetriever:
 
     async def _embed_for_search(self, query: str, *, use_transformer: bool) -> EmbeddingOutput:
         if use_transformer and self._query_transformer is not None:
-            if hasattr(self._query_transformer, "transform_to_embedding"):
-                embedding = cast(
-                    EmbeddingOutput,
-                    await asyncio.to_thread(self._query_transformer.transform_to_embedding, query),
+            if isinstance(self._query_transformer, FusedEmbeddingTransformerProtocol):
+                embedding = await asyncio.to_thread(
+                    self._query_transformer.transform_to_embedding, query
                 )
             else:
                 embed_text: str = await asyncio.to_thread(self._query_transformer.transform, query)
