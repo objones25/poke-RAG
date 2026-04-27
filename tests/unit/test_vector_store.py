@@ -777,8 +777,8 @@ class TestVectorStoreModuleHelpers:
     """Tests for module-level helper functions extracted from QdrantVectorStore."""
 
     def test_build_points_returns_correct_count(self) -> None:
-        from src.retrieval.vector_store import _build_points
         from src.retrieval.types import EmbeddingOutput
+        from src.retrieval.vector_store import _build_points
         docs = [
             RetrievedChunk(
                 text="doc1", score=1.0, source="bulbapedia",
@@ -799,8 +799,8 @@ class TestVectorStoreModuleHelpers:
         assert len(points) == 2
 
     def test_build_points_payload_fields(self) -> None:
-        from src.retrieval.vector_store import _build_points
         from src.retrieval.types import EmbeddingOutput
+        from src.retrieval.vector_store import _build_points
         doc = RetrievedChunk(
             text="hello", score=0.9, source="smogon",
             entity_name="Pikachu", entity_type="pokemon",
@@ -818,6 +818,7 @@ class TestVectorStoreModuleHelpers:
 
     def test_parse_response_points_returns_chunks(self) -> None:
         from unittest.mock import MagicMock
+
         from src.retrieval.vector_store import _parse_response_points
         point = MagicMock()
         point.id = "abc"
@@ -833,6 +834,7 @@ class TestVectorStoreModuleHelpers:
 
     def test_parse_response_points_skips_malformed(self) -> None:
         from unittest.mock import MagicMock
+
         from src.retrieval.vector_store import _parse_response_points
         bad_point = MagicMock()
         bad_point.id = "bad"
@@ -846,8 +848,9 @@ class TestVectorStoreModuleHelpers:
         assert _build_entity_filter(None) is None
 
     def test_build_entity_filter_normalises_name(self) -> None:
-        from src.retrieval.vector_store import _build_entity_filter
         from qdrant_client.models import Filter
+
+        from src.retrieval.vector_store import _build_entity_filter
         f = _build_entity_filter("  Pikachu  ")
         assert isinstance(f, Filter)
         cond = f.must[0]

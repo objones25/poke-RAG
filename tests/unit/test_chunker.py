@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from src.retrieval.chunker import (
@@ -487,7 +489,7 @@ class TestChunkFileRegistry:
         for chunker in _CHUNKERS.values():
             assert callable(chunker)
 
-    def test_chunk_file_uses_registry_for_pokeapi(self, tmp_path: "Path") -> None:
+    def test_chunk_file_uses_registry_for_pokeapi(self, tmp_path: Path) -> None:
         from src.retrieval.chunker import chunk_file
         f = tmp_path / "ability.txt"
         f.write_text("Static ability for Pikachu\n")
@@ -495,7 +497,7 @@ class TestChunkFileRegistry:
         assert len(chunks) >= 1
         assert all(c.source == "pokeapi" for c in chunks)
 
-    def test_chunk_file_uses_registry_for_bulbapedia(self, tmp_path: "Path") -> None:
+    def test_chunk_file_uses_registry_for_bulbapedia(self, tmp_path: Path) -> None:
         from src.retrieval.chunker import chunk_file
         f = tmp_path / "bulbapedia.txt"
         f.write_text("Title: Pikachu\nPikachu is an electric-type Pokémon.\n")

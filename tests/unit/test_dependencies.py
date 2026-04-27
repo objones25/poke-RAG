@@ -414,7 +414,8 @@ class TestBuildSharedComponents:
     def test_function_exists_and_returns_embedder(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock, patch
+
         from src.api.dependencies import _build_shared_components  # ImportError until implemented
         from src.config import Settings
 
@@ -452,7 +453,8 @@ class TestBuildSharedComponents:
     def test_shared_components_routing_enabled(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock, patch
+
         from src.api.dependencies import _build_shared_components
         from src.config import Settings
         from src.retrieval.query_router import QueryRouter
