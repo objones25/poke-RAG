@@ -5,6 +5,7 @@ Usage:
     uv run python scripts/eval/run_gen_eval.py --save-baseline
     uv run python scripts/eval/run_gen_eval.py --baseline 2026-04-27
 """
+
 from __future__ import annotations
 
 import argparse
@@ -90,9 +91,7 @@ def compute_metrics(results: list[QuestionResult]) -> EvalMetrics:
     total_hits = sum(sum(h for h in r.claim_hits) for r in results)
     claim_recall = total_hits / total_claims if total_claims else 0.0
 
-    hallucination_rate = sum(1 for r in results if r.unsupported_claims) / len(
-        results
-    )
+    hallucination_rate = sum(1 for r in results if r.unsupported_claims) / len(results)
     refusal_rate = sum(1 for r in results if r.is_refusal) / len(results)
     pass_at_1 = sum(1 for r in results if r.pass_at_1) / len(results)
 
@@ -116,9 +115,7 @@ def compute_metrics(results: list[QuestionResult]) -> EvalMetrics:
     )
 
 
-def print_metrics(
-    metrics: EvalMetrics, baseline: EvalMetrics | None = None
-) -> None:
+def print_metrics(metrics: EvalMetrics, baseline: EvalMetrics | None = None) -> None:
     def delta(new: float, old: float | None) -> str:
         if old is None:
             return ""

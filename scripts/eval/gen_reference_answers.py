@@ -5,6 +5,7 @@ Run once, review output, paste back into gen_questions.yaml.
 Usage:
     uv run python scripts/eval/gen_reference_answers.py
 """
+
 from __future__ import annotations
 
 import os
@@ -33,9 +34,9 @@ def draft_reference(query: str) -> tuple[str, list[str]]:
         f" answer.\n\n"
         f"Query: {query}\n\n"
         f"Respond in this exact YAML format:\n"
-        f"reference_answer: \"...\"\n"
+        f'reference_answer: "..."\n'
         f"required_claims:\n"
-        f"  - \"...\"\n"
+        f'  - "..."\n'
     )
     response = client.models.generate_content(
         model=_MODEL,

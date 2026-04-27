@@ -74,9 +74,7 @@ class TestComputeMetrics:
         assert metrics.refusal_rate == pytest.approx(1.0)
 
     def test_per_category_recall(self) -> None:
-        q1 = _make_question(
-            id="el001", category="easy_lexical", required_claims=["Speed: 90"]
-        )
+        q1 = _make_question(id="el001", category="easy_lexical", required_claims=["Speed: 90"])
         q2 = _make_question(
             id="ag001",
             category="aggregation",
