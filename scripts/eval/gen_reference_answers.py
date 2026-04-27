@@ -29,7 +29,8 @@ def draft_reference(query: str) -> tuple[str, list[str]]:
     prompt = (
         f"You are an expert on Pokémon. For the following query, provide:\n"
         f"1. A concise reference answer (1-2 sentences).\n"
-        f"2. A list of 1-3 required claims — short, exact strings that must appear in a correct answer.\n\n"
+        f"2. A list of 1-3 required claims — short, exact strings that must appear in a correct"
+        f" answer.\n\n"
         f"Query: {query}\n\n"
         f"Respond in this exact YAML format:\n"
         f"reference_answer: \"...\"\n"
