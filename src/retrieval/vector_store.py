@@ -53,6 +53,79 @@ def _is_transient(exc: Exception) -> bool:
     return True  # timeouts, connection resets, etc.
 
 
+def _build_points(
+    documents: list[RetrievedChunk],
+    embeddings: EmbeddingOutput,
+    *,
+    colbert_enabled: bool,
+) -> list[PointStruct]:
+    points = []
+    for i, doc in enumerate(documents):
+        vec: dict[str, Any] = {
+            _DENSE_VECTOR_NAME: embeddings.dense[i],
+            _SPARSE_VECTOR_NAME: SparseVector(
+                indices=list(embeddings.sparse[i].keys()),
+                values=list(embeddings.sparse[i].values()),
+            ),
+        }
+        if colbert_enabled and embeddings.colbert is not None:
+            vec[_COLBERT_VECTOR_NAME] = embeddings.colbert[i]
+        points.append(
+            PointStruct(
+                id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"{doc.original_doc_id}:{doc.chunk_index}")),
+                vector=vec,
+                payload={
+                    "text": doc.text,
+                    "source": doc.source,
+                    "entity_name": (
+                        doc.entity_name.lower().strip() if doc.entity_name is not None else None
+                    ),
+                    "entity_type": doc.entity_type,
+                    "chunk_index": doc.chunk_index,
+                    "original_doc_id": doc.original_doc_id,
+                    "metadata": doc.metadata,
+                },
+            )
+        )
+    return points
+
+
+def _parse_response_points(
+    response_points: Any,
+) -> tuple[list[RetrievedChunk], int]:
+    chunks: list[RetrievedChunk] = []
+    skipped_count = 0
+    for p in response_points:
+        try:
+            if p.payload is None:
+                raise ValueError("Payload is None")
+            chunks.append(
+                RetrievedChunk(
+                    text=p.payload["text"],
+                    score=float(p.score),
+                    source=p.payload["source"],
+                    entity_name=p.payload.get("entity_name"),
+                    entity_type=p.payload.get("entity_type"),
+                    chunk_index=int(p.payload["chunk_index"]),
+                    original_doc_id=p.payload["original_doc_id"],
+                    metadata=p.payload.get("metadata"),
+                )
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            _LOG.warning("Malformed payload for point %s: %s", p.id, exc)
+            skipped_count += 1
+    return chunks, skipped_count
+
+
+def _build_entity_filter(entity_name: str | None) -> Filter | None:
+    if entity_name is None:
+        return None
+    normalized = entity_name.lower().strip()
+    return Filter(
+        must=[FieldCondition(key="entity_name", match=MatchValue(value=normalized))]
+    )
+
+
 class QdrantVectorStore:
     """One Qdrant collection per source, hybrid dense+sparse vectors."""
 
@@ -118,36 +191,7 @@ class QdrantVectorStore:
                 f"documents={len(documents)}, colbert={colbert_len}"
             )
         _LOG.info("Upserting %d point(s) into '%s'", len(documents), collection)
-        points = []
-        for i, doc in enumerate(documents):
-            vec: dict[str, Any] = {
-                _DENSE_VECTOR_NAME: embeddings.dense[i],
-                _SPARSE_VECTOR_NAME: SparseVector(
-                    indices=list(embeddings.sparse[i].keys()),
-                    values=list(embeddings.sparse[i].values()),
-                ),
-            }
-            if self._colbert_enabled and embeddings.colbert is not None:
-                vec[_COLBERT_VECTOR_NAME] = embeddings.colbert[i]
-            points.append(
-                PointStruct(
-                    id=str(
-                        uuid.uuid5(uuid.NAMESPACE_URL, f"{doc.original_doc_id}:{doc.chunk_index}")
-                    ),
-                    vector=vec,
-                    payload={
-                        "text": doc.text,
-                        "source": doc.source,
-                        "entity_name": (
-                            doc.entity_name.lower().strip() if doc.entity_name is not None else None
-                        ),
-                        "entity_type": doc.entity_type,
-                        "chunk_index": doc.chunk_index,
-                        "original_doc_id": doc.original_doc_id,
-                        "metadata": doc.metadata,
-                    },
-                )
-            )
+        points = _build_points(documents, embeddings, colbert_enabled=self._colbert_enabled)
         batch_size = _COLBERT_UPSERT_BATCH_SIZE if self._colbert_enabled else _UPSERT_BATCH_SIZE
         for i in range(0, len(points), batch_size):
             batch = points[i : i + batch_size]
@@ -210,27 +254,7 @@ class QdrantVectorStore:
         except Exception as exc:
             raise VectorIndexError(f"Query to collection '{collection}' failed: {exc}") from exc
 
-        chunks: list[RetrievedChunk] = []
-        skipped_count = 0
-        for p in response.points:
-            try:
-                if p.payload is None:
-                    raise ValueError("Payload is None")
-                chunks.append(
-                    RetrievedChunk(
-                        text=p.payload["text"],
-                        score=float(p.score),
-                        source=p.payload["source"],
-                        entity_name=p.payload.get("entity_name"),
-                        entity_type=p.payload.get("entity_type"),
-                        chunk_index=int(p.payload["chunk_index"]),
-                        original_doc_id=p.payload["original_doc_id"],
-                        metadata=p.payload.get("metadata"),
-                    )
-                )
-            except (KeyError, TypeError, ValueError) as exc:
-                _LOG.warning("Malformed payload for point %s: %s", p.id, exc)
-                skipped_count += 1
+        chunks, skipped_count = _parse_response_points(response.points)
 
         if not chunks and response.points:
             raise VectorIndexError(
@@ -257,14 +281,7 @@ class QdrantVectorStore:
             raise ValueError(f"top_k must be between 1 and {_MAX_TOP_K}, got {top_k}")
         _LOG.debug("Searching '%s': top_k=%d, entity_name=%s", collection, top_k, entity_name)
 
-        normalized_name = entity_name.lower().strip() if entity_name is not None else None
-        query_filter = (
-            Filter(
-                must=[FieldCondition(key="entity_name", match=MatchValue(value=normalized_name))]
-            )
-            if normalized_name is not None
-            else None
-        )
+        query_filter = _build_entity_filter(entity_name)
 
         chunks = self._query(
             collection, query_dense, query_sparse, top_k, query_filter, query_colbert
@@ -352,36 +369,7 @@ class AsyncQdrantVectorStore:
                 f"documents={len(documents)}, colbert={colbert_len}"
             )
         _LOG.info("Upserting %d point(s) into '%s'", len(documents), collection)
-        points = []
-        for i, doc in enumerate(documents):
-            vec: dict[str, Any] = {
-                _DENSE_VECTOR_NAME: embeddings.dense[i],
-                _SPARSE_VECTOR_NAME: SparseVector(
-                    indices=list(embeddings.sparse[i].keys()),
-                    values=list(embeddings.sparse[i].values()),
-                ),
-            }
-            if self._colbert_enabled and embeddings.colbert is not None:
-                vec[_COLBERT_VECTOR_NAME] = embeddings.colbert[i]
-            points.append(
-                PointStruct(
-                    id=str(
-                        uuid.uuid5(uuid.NAMESPACE_URL, f"{doc.original_doc_id}:{doc.chunk_index}")
-                    ),
-                    vector=vec,
-                    payload={
-                        "text": doc.text,
-                        "source": doc.source,
-                        "entity_name": (
-                            doc.entity_name.lower().strip() if doc.entity_name is not None else None
-                        ),
-                        "entity_type": doc.entity_type,
-                        "chunk_index": doc.chunk_index,
-                        "original_doc_id": doc.original_doc_id,
-                        "metadata": doc.metadata,
-                    },
-                )
-            )
+        points = _build_points(documents, embeddings, colbert_enabled=self._colbert_enabled)
         batch_size = _COLBERT_UPSERT_BATCH_SIZE if self._colbert_enabled else _UPSERT_BATCH_SIZE
         for i in range(0, len(points), batch_size):
             batch = points[i : i + batch_size]
@@ -444,27 +432,7 @@ class AsyncQdrantVectorStore:
         except Exception as exc:
             raise VectorIndexError(f"Query to collection '{collection}' failed: {exc}") from exc
 
-        chunks: list[RetrievedChunk] = []
-        skipped_count = 0
-        for p in response.points:
-            try:
-                if p.payload is None:
-                    raise ValueError("Payload is None")
-                chunks.append(
-                    RetrievedChunk(
-                        text=p.payload["text"],
-                        score=float(p.score),
-                        source=p.payload["source"],
-                        entity_name=p.payload.get("entity_name"),
-                        entity_type=p.payload.get("entity_type"),
-                        chunk_index=int(p.payload["chunk_index"]),
-                        original_doc_id=p.payload["original_doc_id"],
-                        metadata=p.payload.get("metadata"),
-                    )
-                )
-            except (KeyError, TypeError, ValueError) as exc:
-                _LOG.warning("Malformed payload for point %s: %s", p.id, exc)
-                skipped_count += 1
+        chunks, skipped_count = _parse_response_points(response.points)
 
         if not chunks and response.points:
             raise VectorIndexError(
@@ -491,14 +459,7 @@ class AsyncQdrantVectorStore:
             raise ValueError(f"top_k must be between 1 and {_MAX_TOP_K}, got {top_k}")
         _LOG.debug("Searching '%s': top_k=%d, entity_name=%s", collection, top_k, entity_name)
 
-        normalized_name = entity_name.lower().strip() if entity_name is not None else None
-        query_filter = (
-            Filter(
-                must=[FieldCondition(key="entity_name", match=MatchValue(value=normalized_name))]
-            )
-            if normalized_name is not None
-            else None
-        )
+        query_filter = _build_entity_filter(entity_name)
 
         chunks = await self._query(
             collection, query_dense, query_sparse, top_k, query_filter, query_colbert
