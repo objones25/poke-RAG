@@ -160,3 +160,64 @@ The `KnowledgeRefiner` from step 2 above is now implemented and wired into both 
 - **Check metadata fields, not text.** Replace the substring search with a comparison against `chunk.metadata["generation"]` and `chunk.metadata["tier"]`. These are populated during Smogon ingestion. A gap fires when the requested generation/tier is absent from the metadata of _all_ surviving chunks, independent of what the text happens to say.
 - **Normalise constraint extraction.** The query "gen 6 OU" and the metadata field `generation=6, tier="OU"` need a shared normalisation step (strip whitespace, lowercase, map "gen 6" → 6). This is the same normaliser already used in `_extract_constraint_keywords`; it just needs to compare against structured fields rather than raw text.
 - **Fallback to text search only for sources without metadata.** Bulbapedia and pokeapi chunks don't carry generation/tier metadata; text search is still appropriate for those. The fix is to branch on `chunk.source`: use metadata comparison for smogon, text search for everything else.
+
+---
+
+## Pre-implementation notes for step 3 — Constraint extraction
+
+Before wiring in the `ConstraintExtractor`, two architectural questions about `Inferencer` need to be settled.
+
+### LoRA weights — not a concern
+
+The LoRA adapter is merged into the model at load time inside `ModelLoader`. `Inferencer` is unaware it exists. A `ConstraintExtractor` that takes a shared `Inferencer` will transparently benefit from the fine-tuned Pokémon vocabulary — entity names, format labels, tier names — without any changes to `Inferencer` and without a second load. The two-dependents concern (RAG generation and constraint extraction both calling into the same `Inferencer`) is low-risk: `Inferencer` is a 135-line thin wrapper around `model.generate()` with no mutable state between calls. The only realistic divergence scenario is if the two consumers end up needing radically different model configurations, which is unlikely given they use the same base model.
+
+### Generation config — the real problem
+
+`infer()` bakes in `temperature`, `top_p`, and `do_sample` from the stored `GenerationConfig` at every call site:
+
+```python
+output_ids = self._model.generate(
+    **inputs,
+    max_new_tokens=resolved_max_new_tokens,
+    temperature=self._config.temperature,
+    top_p=self._config.top_p,
+    do_sample=self._config.do_sample,
+)
+```
+
+RAG generation benefits from sampling (`do_sample=True`, moderate temperature) — it produces natural-sounding answers. Constraint extraction is the opposite: it needs deterministic, greedy decoding (`do_sample=False`) to reliably produce parseable JSON. Using a sampling config for constraint extraction will sometimes produce malformed JSON, inconsistent field values, or hallucinated constraints. Currently there is no override path.
+
+### Recommendation
+
+Extend `infer()` with optional keyword overrides for the generation parameters:
+
+```python
+def infer(
+    self,
+    prompt: str,
+    *,
+    max_new_tokens: int | None = None,
+    temperature: float | None = None,
+    do_sample: bool | None = None,
+) -> str:
+    resolved_temperature = temperature if temperature is not None else self._config.temperature
+    resolved_do_sample = do_sample if do_sample is not None else self._config.do_sample
+    ...
+```
+
+Then build `ConstraintExtractor` as a thin wrapper that takes the shared `Inferencer` and always calls it with deterministic overrides plus a JSON-mode prompt template:
+
+```python
+class ConstraintExtractor:
+    def __init__(self, inferencer: Inferencer) -> None:
+        self._inferencer = inferencer
+
+    def extract(self, query: str) -> ConstraintSet:
+        prompt = CONSTRAINT_EXTRACTION_PROMPT.format(query=query)
+        raw = self._inferencer.infer(prompt, do_sample=False, temperature=None)
+        return ConstraintSet.model_validate_json(raw)
+```
+
+This keeps a single model load, keeps `Inferencer` as the only place that calls `model.generate()`, and gives `ConstraintExtractor` full control over decoding behaviour without any shared-state risk.
+
+The `CONSTRAINT_EXTRACTION_PROMPT` template should instruct the model to return a JSON object with fields `entity_name`, `format`, `generation` (int or null), `tier`, and `temporal_intent` (`"latest"` / `"specific_period"` / `"timeless"`). The `temporal_intent` field is what step 3 uses to set the recency weight α in the reranker.
