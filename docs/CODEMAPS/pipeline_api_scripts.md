@@ -1,6 +1,6 @@
 # Pipeline, API & Scripts Codemap
 
-**Last Updated:** 2026-04-26
+**Last Updated:** 2026-04-27
 
 **Entry Points:**
 
@@ -73,12 +73,19 @@ RAGPipeline(
     retriever: RetrieverProtocol,
     generator: GeneratorProtocol,
     query_router: QueryRouterProtocol | None = None,
+    knowledge_refiner: KnowledgeRefinerProtocol | None = None,
+    cache: CacheProtocol | None = None,
+    cache_ttl_seconds: int = 3600,
 ) -> None
 ```
 
 **Key Invariant:** If `retriever.retrieve()` raises `RetrievalError`, the generator is never called. The exception propagates immediately.
 
+**Cache Integration:** If `cache` is set, query results are cached with TTL of `cache_ttl_seconds`. Cache key is derived from (query, sources, entity_name).
+
 **Query Router Integration:** If `query_router` is set and `sources` is not explicitly specified in the request, the router classifies the query and selects the target sources. This enables keyword-based source routing (e.g., "stats" → pokeapi only, "tier" → smogon only).
+
+**Knowledge Refiner Integration:** If `knowledge_refiner` is set, post-retrieval refinement (triage, strip-filtering, constraint gap detection) is applied before generation. Refiner output populates `knowledge_gaps` field in `PipelineResult`.
 
 **query() Method:**
 
@@ -94,12 +101,16 @@ def query(
 ```
 
 - Validates `query` is non-empty/non-whitespace; raises `ValueError` if not
+- Checks cache (if enabled) for (query, sources, entity_name) key
 - If `sources` is None and `query_router` is set, calls `query_router.route(query)` to determine sources
 - Calls `retriever.retrieve(query, top_k=top_k, sources=sources, entity_name=entity_name)`
-- If retrieval succeeds, calls `generator.generate(query, chunks)`
+- If `knowledge_refiner` is set, calls `refiner.refine(query, chunks)` to filter and detect gaps
+- If retrieval succeeds, calls `generator.generate(query, chunks)` (or refined_chunks)
 - Computes confidence score: `sigmoid(top_chunk.score)` if chunks exist, else None
 - Deduplicates and sorts sources from chunks: `tuple(sorted({c.source for c in chunks}))`
-- Returns `PipelineResult` with answer, sources used, chunk count, model name, query, and confidence_score
+- Extracts `knowledge_gaps` from refiner result (if refiner is enabled), else None
+- Stores result in cache (if enabled) with `cache_ttl_seconds` TTL
+- Returns `PipelineResult` with answer, sources used, chunk count, model name, query, confidence_score, and knowledge_gaps
 
 **Raises:**
 
@@ -333,113 +344,162 @@ class QueryResponse(BaseModel):
 
 **Location:** `src/api/dependencies.py`
 
-### get_pipeline()
+### _build_cache()
+
+```python
+def _build_cache(settings: Settings) -> CacheProtocol | None:
+    """Instantiate the configured cache backend, or return None if caching is disabled.
+    
+    Returns:
+        RedisCache if redis_url is set (with fallback to LocalLRUCache on init failure),
+        LocalLRUCache if cache_enabled but no Redis,
+        None if cache_enabled=False.
+    """
+```
+
+### _SharedComponents Dataclass
+
+```python
+@dataclass
+class _SharedComponents:
+    embedder: BGEEmbedder                                    # Shared by sync & async
+    reranker: BGEReranker                                    # Shared by sync & async
+    api_key_str: str | None                                  # Extracted from Settings secret
+    gen_config: GenerationConfig                             # Shared by sync & async
+    loader: ModelLoader                                      # Shared by sync & async
+    inferencer: Inferencer                                   # Shared by sync & async
+    query_transformer: MultiDraftHyDETransformer | HyDETransformer | None  # Shared
+    generator: Generator                                     # Shared by sync & async
+    query_router: QueryRouter | None                         # Shared by sync & async
+    knowledge_refiner: KnowledgeRefiner | None               # Shared by sync & async
+    cache: CacheProtocol | None                              # Shared by sync & async (async interface)
+```
+
+### _build_shared_components()
+
+```python
+def _build_shared_components(settings: Settings) -> _SharedComponents:
+    """Extract and construct all components that are shared between sync and async pipelines.
+    
+    Wires:
+    - Embedder (BGE-M3) with ColBERT support
+    - Reranker (BGE-Reranker v2-m3)
+    - ModelLoader + Inferencer + Generator (Gemma 4)
+    - Optional QueryTransformer (HyDE or MultiDraftHyDE)
+    - Optional QueryRouter (keyword-based source routing)
+    - Optional KnowledgeRefiner (CRAG-style post-retrieval refinement)
+    - Cache backend (Redis or LocalLRU)
+    
+    Returns _SharedComponents dataclass with all wired dependencies.
+    Avoids duplication between build_pipeline() and build_async_pipeline().
+    """
+```
+
+### get_pipeline() & get_async_pipeline()
 
 ```python
 def get_pipeline(request: Request) -> RAGPipeline:
-```
+    """FastAPI dependency that extracts the (sync) pipeline from request state."""
 
-FastAPI dependency that extracts the pipeline from request state. Raises `RuntimeError` if not initialized (should not happen if lifespan succeeded).
+def get_async_pipeline(request: Request) -> AsyncRAGPipeline:
+    """FastAPI dependency that extracts the async pipeline from request state."""
+```
 
 ### build_pipeline()
 
 ```python
 def build_pipeline() -> tuple[RAGPipeline, ModelLoader, QdrantClient]:
+    """Build synchronous RAG pipeline with all dependencies.
+    
+    Returns: 3-tuple of (RAGPipeline, ModelLoader, QdrantClient).
+
+    Orchestration:
+
+    1. Load settings from environment via `Settings.from_env()`:
+       - `QDRANT_URL` (required)
+       - `QDRANT_API_KEY` (optional)
+       - `EMBED_MODEL`, `RERANK_MODEL`, `GEN_MODEL` (with defaults)
+       - All generation parameters: temperature, max_new_tokens, top_p, do_sample, etc.
+       - `DEVICE` (auto-detected from torch: cuda → mps → cpu)
+       - Cache settings: `CACHE_ENABLED`, `REDIS_URL`, `CACHE_MAX_SIZE`, `CACHE_TTL_SECONDS`
+       - Optional: HyDE, routing, refiner, ColBERT flags and thresholds
+
+    2. Call `_build_shared_components(settings)` → `_SharedComponents` dataclass
+       - All embedder, generator, transformer, router, refiner setup
+       - Cache initialization
+
+    3. **Sync-specific wiring:**
+       ```python
+       client = QdrantClient(url=settings.qdrant_url, api_key=shared.api_key_str)
+       vector_store = QdrantVectorStore(client, colbert_enabled=settings.colbert_enabled)
+       vector_store.ensure_collections()
+
+       retriever = Retriever(
+           embedder=shared.embedder,
+           vector_store=vector_store,
+           reranker=shared.reranker,
+           query_transformer=shared.query_transformer,
+           hyde_confidence_threshold=settings.hyde_confidence_threshold,
+       )
+
+       pipeline = RAGPipeline(
+           retriever=retriever,
+           generator=shared.generator,
+           query_router=shared.query_router,
+           knowledge_refiner=shared.knowledge_refiner,
+           cache=shared.cache,
+           cache_ttl_seconds=settings.cache_ttl_seconds,
+       )
+       ```
+
+    4. **Return 3-tuple:**
+       ```python
+       return pipeline, shared.loader, client
+       ```
+    """
 ```
 
-**Returns:** 3-tuple of (RAGPipeline, ModelLoader, QdrantClient).
+### build_async_pipeline()
 
-**Orchestration:**
+```python
+def build_async_pipeline() -> tuple[AsyncRAGPipeline, ModelLoader, AsyncQdrantClient]:
+    """Build asynchronous RAG pipeline with all dependencies.
+    
+    Returns: 3-tuple of (AsyncRAGPipeline, ModelLoader, AsyncQdrantClient).
 
-1. Load settings from environment via `Settings.from_env()`:
-   - `QDRANT_URL` (required)
-   - `QDRANT_API_KEY` (optional)
-   - `EMBED_MODEL`, `RERANK_MODEL`, `GEN_MODEL` (with defaults)
-   - All generation parameters: temperature, max_new_tokens, top_p, do_sample, etc.
-   - `DEVICE` (auto-detected from torch: cuda → mps → cpu)
+    Identical to build_pipeline() except:
+    - Uses AsyncQdrantClient instead of QdrantClient
+    - Uses AsyncQdrantVectorStore instead of QdrantVectorStore
+    - Uses AsyncRetriever instead of Retriever
+    - Uses AsyncRAGPipeline instead of RAGPipeline
+    - Shared components are identical (_build_shared_components is reused)
+    """
+```
 
-2. **Retrieval Pipeline:**
+**Dependencies Wired (via _SharedComponents):**
 
-   ```python
-   embedder = BGEEmbedder.from_pretrained(
-       model_name=settings.embed_model,
-       device=settings.device,
-   )
-   reranker = BGEReranker.from_pretrained(
-       model_name=settings.rerank_model,
-       device=settings.device,
-   )
-   client = QdrantClient(url=settings.qdrant_url, api_key=settings.qdrant_api_key)
-   vector_store = QdrantVectorStore(client)
-   vector_store.ensure_collections()
-
-   # Optional query transformation (HyDE)
-   if settings.hyde_enabled:
-       query_transformer = HyDETransformer(
-           inferencer,  # Created below
-           max_new_tokens=settings.hyde_max_tokens
-       )
-   else:
-       query_transformer = None
-
-   retriever = Retriever(
-       embedder=embedder,
-       vector_store=vector_store,
-       reranker=reranker,
-       query_transformer=query_transformer,
-   )
-   ```
-
-3. **Generation Pipeline:**
-
-   ```python
-   gen_config = GenerationConfig(...)       # from Settings
-   tok_config = TokenizerConfig(...)        # from Settings
-   loader = ModelLoader(config=gen_config, device=settings.device)
-   loader.load()                            # Loads Gemma 4 model
-   inferencer = Inferencer(                 # Wraps inference
-       model=loader.get_model(),
-       processor=loader.get_processor(),
-       config=gen_config,
-   )
-   generator = Generator(
-       loader=loader,
-       prompt_builder=build_prompt,         # Callable from generation.prompt_builder
-       inferencer=inferencer,
-       config=gen_config,
-   )
-   ```
-
-4. **Optional Query Router (keyword-based source routing):**
-
-   ```python
-   if settings.routing_enabled:
-       query_router = QueryRouter()
-   else:
-       query_router = None
-   ```
-
-5. **Combine into RAGPipeline and return 3-tuple:**
-
-   ```python
-   pipeline = RAGPipeline(
-       retriever=retriever,
-       generator=generator,
-       query_router=query_router,
-   )
-   return pipeline, loader, client
-   ```
-
-**Dependencies Wired:**
-
-- Embedder: BGE-M3 for dense+sparse embeddings
-- Vector Store: Qdrant with 3 collections (bulbapedia, pokeapi, smogon)
+- Embedder: BGE-M3 for dense+sparse embeddings (+ optional ColBERT)
 - Reranker: BGE Reranker v2-m3 for ranking retrieved chunks
 - Generator: Gemma 4 via HuggingFace Transformers
-- Processor: Paired with generator model (Gemma 4 uses AutoProcessor, not a tokenizer)
+- Processor: Paired with generator model (Gemma 4 uses AutoProcessor)
 - Prompt Builder: Callable that formats query + context into model input
 - Loader: ModelLoader instance (stored for cleanup during lifespan shutdown)
-- Client: QdrantClient instance (stored in app.state for /stats endpoint)
+- Cache: RedisCache or LocalLRUCache (optional, async interface)
+- Query Transformer: HyDE or MultiDraftHyDE (optional)
+- Query Router: Keyword-based source routing (optional)
+- Knowledge Refiner: CRAG-style post-retrieval refinement (optional)
+
+**Sync-specific:**
+
+- Vector Store: Qdrant with 3 collections (sync client)
+- Retriever: Synchronous retrieval orchestrator
+- RAGPipeline: Synchronous pipeline with cache_ttl_seconds
+
+**Async-specific:**
+
+- Vector Store: Qdrant with 3 collections (async client)
+- Retriever: Asynchronous retrieval orchestrator
+- RAGPipeline: Asynchronous pipeline with cache_ttl_seconds
 
 ---
 
@@ -781,6 +841,8 @@ class Settings:
     # Optional: Query transformation (HyDE)
     hyde_enabled: bool             # HYDE_ENABLED (default: false)
     hyde_max_tokens: int           # HYDE_MAX_TOKENS (default: 150)
+    hyde_num_drafts: int           # HYDE_NUM_DRAFTS (default: 1)
+    hyde_confidence_threshold: float | None  # HYDE_CONFIDENCE_THRESHOLD (optional)
 
     # Optional: Query routing
     routing_enabled: bool          # ROUTING_ENABLED (default: false)
@@ -793,6 +855,14 @@ class Settings:
 
     # Optional: ColBERT multi-vector reranking
     colbert_enabled: bool          # COLBERT_ENABLED (default: false)
+
+    # Optional: Result caching (Redis or LocalLRU)
+    cache_enabled: bool            # CACHE_ENABLED (default: false)
+    cache_ttl_seconds: int         # CACHE_TTL_SECONDS (default: 3600)
+    cache_max_size: int            # CACHE_MAX_SIZE (default: 1000) — for LocalLRU
+    redis_url: str | None          # REDIS_URL (optional, e.g., "redis://localhost:6379")
+    redis_username: str | None     # REDIS_USERNAME (optional)
+    redis_password: SecretStr | None  # REDIS_PASSWORD (optional, masked in logs)
 ```
 
 **from_env()** classmethod:
@@ -849,19 +919,19 @@ Implemented by: `src/retrieval/query_router.py:QueryRouter`
 
 ## File Organization Summary
 
-| File                                              | Purpose                                                                     |
-| ------------------------------------------------- | --------------------------------------------------------------------------- |
-| `src/pipeline/rag_pipeline.py`                    | RAGPipeline orchestrator class                                              |
-| `src/pipeline/types.py`                           | PipelineResult dataclass                                                    |
-| `src/types.py`                                    | Shared types: RetrievedChunk, RetrievalResult, GenerationResult, exceptions |
-| `src/api/app.py`                                  | FastAPI app, lifespan, exception handlers, endpoints                        |
-| `src/api/dependencies.py`                         | get_pipeline(), build_pipeline() factory                                    |
-| `src/api/models.py`                               | QueryRequest, QueryResponse Pydantic models                                 |
-| `src/api/query_parser.py`                         | parse_query() validator                                                     |
-| `src/utils/logging.py`                            | setup_logging() configuration                                               |
-| `src/config.py`                                   | Settings dataclass, from_env()                                              |
-| `scripts/build_index.py`                          | Index builder: discover, chunk, embed, upsert; checkpointing, topic cache   |
-| `scripts/retrieval/bulbapedia_topic_extractor.py` | Pre-compute topic cache for bulbapedia                                      |
+| File                                              | Purpose                                                                                     |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `src/pipeline/rag_pipeline.py`                    | RAGPipeline (sync) + AsyncRAGPipeline (async) orchestrators with cache & refiner support    |
+| `src/pipeline/types.py`                           | PipelineResult dataclass (with knowledge_gaps field)                                        |
+| `src/types.py`                                    | Shared types: RetrievedChunk, RetrievalResult, GenerationResult, exceptions                 |
+| `src/api/app.py`                                  | FastAPI app, lifespan, exception handlers, endpoints (with rate limiting middleware)         |
+| `src/api/dependencies.py`                         | `_build_shared_components()`, `build_pipeline()`, `build_async_pipeline()` factories         |
+| `src/api/models.py`                               | QueryRequest, QueryResponse Pydantic models (with confidence_score, knowledge_gaps)          |
+| `src/api/query_parser.py`                         | parse_query() validator                                                                     |
+| `src/utils/logging.py`                            | setup_logging() configuration                                                               |
+| `src/config.py`                                   | Settings dataclass, from_env() with cache/HyDE/refiner/ColBERT flags                        |
+| `scripts/build_index.py`                          | Index builder: discover, chunk, embed, upsert; checkpointing, topic cache, ColBERT support  |
+| `scripts/retrieval/bulbapedia_topic_extractor.py` | Pre-compute topic cache for bulbapedia                                                      |
 
 ---
 

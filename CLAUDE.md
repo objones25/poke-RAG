@@ -157,6 +157,7 @@ All major components implement protocols from `src/retrieval/protocols.py` and `
 - `RetrieverProtocol` — `retrieve(query, top_k, sources, entity_name) -> RetrievalResult`
 - `QueryRouterProtocol` — `route(query: str) -> list[Source]` (returns non-empty sorted list)
 - `QueryTransformerProtocol` — `transform(query: str) -> str` (returns original on failure)
+- `FusedEmbeddingTransformerProtocol` — `transform_to_embedding(query: str) -> EmbeddingOutput`; runtime-checkable; implemented by `MultiDraftHyDETransformer`; replaces `hasattr` duck-typing in `retriever.py`
 - `KnowledgeRefinerProtocol` — `refine(query, chunks, constraints?) -> RefinementResult` (`RefinementResult` in `src/retrieval/types.py` contains `chunks: tuple[RetrievedChunk, ...]`, `gaps: tuple[str, ...]`)
 - `GeneratorProtocol` — `generate(query, chunks) -> GenerationResult`
 
