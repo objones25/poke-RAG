@@ -44,12 +44,14 @@ class RAGPipeline:
         query_router: QueryRouterProtocol | None = None,
         knowledge_refiner: KnowledgeRefinerProtocol | None = None,
         cache: CacheProtocol | None = None,
+        cache_ttl_seconds: int = 3600,
     ) -> None:
         self._retriever = retriever
         self._generator = generator
         self._query_router = query_router
         self._knowledge_refiner = knowledge_refiner
         self._cache = cache
+        self._cache_ttl_seconds = cache_ttl_seconds
 
     def query(
         self,
@@ -115,7 +117,11 @@ class RAGPipeline:
 
         if self._cache is not None:
             try:
-                _sync_await(self._cache.set(cache_key, to_cache_dict(result)))
+                _sync_await(
+                    self._cache.set(
+                        cache_key, to_cache_dict(result), ttl_seconds=self._cache_ttl_seconds
+                    )
+                )
             except Exception:
                 _LOG.warning("Cache set failed; result still returned", exc_info=True)
 
@@ -133,12 +139,14 @@ class AsyncRAGPipeline:
         query_router: QueryRouterProtocol | None = None,
         knowledge_refiner: KnowledgeRefinerProtocol | None = None,
         cache: CacheProtocol | None = None,
+        cache_ttl_seconds: int = 3600,
     ) -> None:
         self._retriever = retriever
         self._generator = generator
         self._query_router = query_router
         self._knowledge_refiner = knowledge_refiner
         self._cache = cache
+        self._cache_ttl_seconds = cache_ttl_seconds
 
     async def query(
         self,
@@ -205,7 +213,9 @@ class AsyncRAGPipeline:
 
         if self._cache is not None and cache_key is not None:
             try:
-                await self._cache.set(cache_key, to_cache_dict(result))
+                await self._cache.set(
+                    cache_key, to_cache_dict(result), ttl_seconds=self._cache_ttl_seconds
+                )
             except Exception:
                 _LOG.warning("Cache set failed; result still returned", exc_info=True)
 

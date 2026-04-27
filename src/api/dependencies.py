@@ -214,6 +214,7 @@ def build_pipeline() -> tuple[RAGPipeline, ModelLoader, QdrantClient]:
         query_router=shared.query_router,
         knowledge_refiner=shared.knowledge_refiner,
         cache=shared.cache,
+        cache_ttl_seconds=settings.cache_ttl_seconds,
     )
     return pipeline, shared.loader, client
 
@@ -241,5 +242,6 @@ def build_async_pipeline() -> tuple[AsyncRAGPipeline, ModelLoader, AsyncQdrantCl
         query_router=shared.query_router,
         knowledge_refiner=shared.knowledge_refiner,
         cache=shared.cache,
+        cache_ttl_seconds=settings.cache_ttl_seconds,
     )
     return async_pipeline, shared.loader, async_client
