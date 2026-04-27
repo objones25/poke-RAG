@@ -7,6 +7,7 @@ import math
 from collections.abc import AsyncGenerator
 from typing import Any, cast
 
+from src.config import Settings
 from src.generation.protocols import GeneratorProtocol, StreamingGeneratorProtocol
 from src.pipeline.types import PipelineResult
 from src.retrieval.protocols import (
@@ -45,6 +46,7 @@ class RAGPipeline:
         knowledge_refiner: KnowledgeRefinerProtocol | None = None,
         cache: CacheProtocol | None = None,
         cache_ttl_seconds: int = 3600,
+        settings: Settings | None = None,
     ) -> None:
         self._retriever = retriever
         self._generator = generator
@@ -52,6 +54,7 @@ class RAGPipeline:
         self._knowledge_refiner = knowledge_refiner
         self._cache = cache
         self._cache_ttl_seconds = cache_ttl_seconds
+        self._retrieval_hard_floor = settings.retrieval_hard_floor if settings is not None else -2.0
 
     def query(
         self,
@@ -99,6 +102,9 @@ class RAGPipeline:
                 raise RetrievalError("KnowledgeRefiner dropped all chunks for query")
             chunks = refinement.chunks
             knowledge_gaps = refinement.gaps if refinement.gaps else None
+
+        if max(c.score for c in chunks) < self._retrieval_hard_floor:
+            raise RetrievalError("All retrieved chunks below relevance floor")
 
         gen_result = self._generator.generate(query, chunks)
 

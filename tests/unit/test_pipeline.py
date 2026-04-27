@@ -224,6 +224,7 @@ class TestRAGPipelineConfidenceScore:
         assert 0.0 <= result.confidence_score <= 1.0
 
     def test_confidence_score_higher_for_better_chunks(self, mocker) -> None:
+        from src.config import Settings
         from src.pipeline.rag_pipeline import RAGPipeline
 
         def _pipeline_with_score(score: float, mocker):
@@ -232,7 +233,24 @@ class TestRAGPipelineConfidenceScore:
             retriever.retrieve.return_value = _make_retrieval_result(chunks=chunks)
             generator = mocker.MagicMock()
             generator.generate.return_value = _make_generation_result()
-            return RAGPipeline(retriever=retriever, generator=generator)
+            # Use a very low floor to allow testing with negative scores
+            settings = Settings(
+                qdrant_url="http://localhost:6333",
+                qdrant_api_key=None,
+                embed_model="BAAI/bge-m3",
+                rerank_model="BAAI/bge-reranker-v2-m3",
+                gen_model="google/gemma-4-E4B-it",
+                temperature=0.7,
+                max_new_tokens=512,
+                top_p=0.9,
+                do_sample=True,
+                tokenizer_max_length=8192,
+                return_tensors="pt",
+                truncation=True,
+                device="cpu",
+                retrieval_hard_floor=-1000.0,
+            )
+            return RAGPipeline(retriever=retriever, generator=generator, settings=settings)
 
         high = _pipeline_with_score(5.0, mocker).query("q.").confidence_score
         low = _pipeline_with_score(-5.0, mocker).query("q.").confidence_score
@@ -280,6 +298,7 @@ class TestRAGPipelineConfidenceScore:
         assert result.confidence_score == pytest.approx(expected_confidence)
 
     def test_confidence_score_stable_for_large_negative_score(self, mocker) -> None:
+        from src.config import Settings
         from src.pipeline.rag_pipeline import RAGPipeline
 
         chunks = (_make_chunk(original_doc_id="doc_0", chunk_index=0, score=-800.0),)
@@ -287,7 +306,24 @@ class TestRAGPipelineConfidenceScore:
         retriever.retrieve.return_value = _make_retrieval_result(chunks=chunks)
         generator = mocker.MagicMock()
         generator.generate.return_value = _make_generation_result()
-        pipeline = RAGPipeline(retriever=retriever, generator=generator)
+        # Use a very low floor to allow testing with large negative scores
+        settings = Settings(
+            qdrant_url="http://localhost:6333",
+            qdrant_api_key=None,
+            embed_model="BAAI/bge-m3",
+            rerank_model="BAAI/bge-reranker-v2-m3",
+            gen_model="google/gemma-4-E4B-it",
+            temperature=0.7,
+            max_new_tokens=512,
+            top_p=0.9,
+            do_sample=True,
+            tokenizer_max_length=8192,
+            return_tensors="pt",
+            truncation=True,
+            device="cpu",
+            retrieval_hard_floor=-1000.0,
+        )
+        pipeline = RAGPipeline(retriever=retriever, generator=generator, settings=settings)
 
         result = pipeline.query("Any question.")
         assert result.confidence_score is not None
@@ -331,6 +367,7 @@ class TestRAGPipelineConfidenceScore:
         assert result.confidence_score is None
 
     def test_confidence_score_is_none_for_negative_inf_score(self, mocker) -> None:
+        from src.config import Settings
         from src.pipeline.rag_pipeline import RAGPipeline
 
         chunks = (_make_chunk(original_doc_id="doc_0", chunk_index=0, score=float("-inf")),)
@@ -338,7 +375,24 @@ class TestRAGPipelineConfidenceScore:
         retriever.retrieve.return_value = _make_retrieval_result(chunks=chunks)
         generator = mocker.MagicMock()
         generator.generate.return_value = _make_generation_result()
-        pipeline = RAGPipeline(retriever=retriever, generator=generator)
+        # Use a very low floor to allow testing with -inf scores
+        settings = Settings(
+            qdrant_url="http://localhost:6333",
+            qdrant_api_key=None,
+            embed_model="BAAI/bge-m3",
+            rerank_model="BAAI/bge-reranker-v2-m3",
+            gen_model="google/gemma-4-E4B-it",
+            temperature=0.7,
+            max_new_tokens=512,
+            top_p=0.9,
+            do_sample=True,
+            tokenizer_max_length=8192,
+            return_tensors="pt",
+            truncation=True,
+            device="cpu",
+            retrieval_hard_floor=float("-inf"),
+        )
+        pipeline = RAGPipeline(retriever=retriever, generator=generator, settings=settings)
         result = pipeline.query("Any question.")
         assert result.confidence_score is None
 
