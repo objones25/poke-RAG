@@ -75,9 +75,7 @@ def _build_shared_components(settings: Settings) -> _SharedComponents:
         device=settings.device,
         colbert_enabled=settings.colbert_enabled,
     )
-    reranker = BGEReranker.from_pretrained(
-        model_name=settings.rerank_model, device=settings.device
-    )
+    reranker = BGEReranker.from_pretrained(model_name=settings.rerank_model, device=settings.device)
 
     api_key_str = (
         None if settings.qdrant_api_key is None else settings.qdrant_api_key.get_secret_value()
@@ -117,9 +115,7 @@ def _build_shared_components(settings: Settings) -> _SharedComponents:
                 settings.hyde_max_tokens,
             )
         else:
-            query_transformer = HyDETransformer(
-                inferencer, max_new_tokens=settings.hyde_max_tokens
-            )
+            query_transformer = HyDETransformer(inferencer, max_new_tokens=settings.hyde_max_tokens)
             _LOG.info(
                 "HyDE enabled: query transformer active (max_new_tokens=%d)",
                 settings.hyde_max_tokens,

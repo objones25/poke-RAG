@@ -541,9 +541,7 @@ def _chunk_pokeapi_file(
 ) -> list[RetrievedChunk]:
     chunks: list[RetrievedChunk] = []
     for i, line in enumerate(text.splitlines()):
-        chunks.extend(
-            chunk_pokeapi_line(line, doc_id=f"{path.stem}_{i}", entity_type=entity_type)
-        )
+        chunks.extend(chunk_pokeapi_line(line, doc_id=f"{path.stem}_{i}", entity_type=entity_type))
     return chunks
 
 

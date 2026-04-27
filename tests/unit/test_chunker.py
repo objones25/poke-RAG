@@ -482,15 +482,18 @@ class TestChunkSmogonDataFile:
 class TestChunkFileRegistry:
     def test_chunkers_dict_has_all_three_sources(self) -> None:
         from src.retrieval.chunker import _CHUNKERS
+
         assert set(_CHUNKERS.keys()) == {"pokeapi", "smogon", "bulbapedia"}
 
     def test_chunkers_dict_values_are_callable(self) -> None:
         from src.retrieval.chunker import _CHUNKERS
+
         for chunker in _CHUNKERS.values():
             assert callable(chunker)
 
     def test_chunk_file_uses_registry_for_pokeapi(self, tmp_path: Path) -> None:
         from src.retrieval.chunker import chunk_file
+
         f = tmp_path / "ability.txt"
         f.write_text("Static ability for Pikachu\n")
         chunks = chunk_file(f, source="pokeapi")
@@ -499,6 +502,7 @@ class TestChunkFileRegistry:
 
     def test_chunk_file_uses_registry_for_bulbapedia(self, tmp_path: Path) -> None:
         from src.retrieval.chunker import chunk_file
+
         f = tmp_path / "bulbapedia.txt"
         f.write_text("Title: Pikachu\nPikachu is an electric-type Pokémon.\n")
         chunks = chunk_file(f, source="bulbapedia")

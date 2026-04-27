@@ -121,9 +121,7 @@ def _build_entity_filter(entity_name: str | None) -> Filter | None:
     if entity_name is None:
         return None
     normalized = entity_name.lower().strip()
-    return Filter(
-        must=[FieldCondition(key="entity_name", match=MatchValue(value=normalized))]
-    )
+    return Filter(must=[FieldCondition(key="entity_name", match=MatchValue(value=normalized))])
 
 
 class QdrantVectorStore:

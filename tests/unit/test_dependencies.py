@@ -411,9 +411,7 @@ class TestBuildPipelineCacheWiring:
 
 @pytest.mark.unit
 class TestBuildSharedComponents:
-    def test_function_exists_and_returns_embedder(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_function_exists_and_returns_embedder(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from unittest.mock import MagicMock, patch
 
         from src.api.dependencies import _build_shared_components  # ImportError until implemented
@@ -450,9 +448,7 @@ class TestBuildSharedComponents:
             assert shared.query_router is None
             assert shared.knowledge_refiner is None
 
-    def test_shared_components_routing_enabled(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_shared_components_routing_enabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from unittest.mock import MagicMock, patch
 
         from src.api.dependencies import _build_shared_components
