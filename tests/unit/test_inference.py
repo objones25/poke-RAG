@@ -246,3 +246,30 @@ class TestInferencerEdgeCases:
 
         with pytest.raises(RuntimeError, match="no sequences"):
             inferencer.infer("prompt")
+
+
+@pytest.mark.unit
+class TestPrepareInputs:
+    def test_returns_inputs_and_input_len(self) -> None:
+        inferencer, _, fake_processor, fake_inputs = _make_inferencer(prompt_len=5)
+        inputs, input_len = inferencer._prepare_inputs("What is Pikachu?")
+        assert inputs is fake_inputs
+        assert input_len == 5
+
+    def test_apply_chat_template_called(self) -> None:
+        inferencer, _, fake_processor, _ = _make_inferencer()
+        inferencer._prepare_inputs("test prompt")
+        fake_processor.apply_chat_template.assert_called_once()
+        args, _ = fake_processor.apply_chat_template.call_args
+        assert args[0] == [{"role": "user", "content": "test prompt"}]
+
+    def test_processor_called_with_pt_tensors(self) -> None:
+        inferencer, _, fake_processor, _ = _make_inferencer()
+        inferencer._prepare_inputs("test prompt")
+        _, kwargs = fake_processor.call_args
+        assert kwargs["return_tensors"] == "pt"
+
+    def test_inputs_moved_to_model_device(self) -> None:
+        inferencer, _, _, fake_inputs = _make_inferencer(device="cuda")
+        inferencer._prepare_inputs("test prompt")
+        fake_inputs.to.assert_called_once_with("cuda")
