@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
@@ -15,7 +16,7 @@ class QueryRequest(BaseModel):
     query: str = Field(
         ...,
         min_length=1,
-        max_length=2000,
+        max_length=500,
         description="Natural language question about Pokémon",
     )
     sources: list[Literal["bulbapedia", "pokeapi", "smogon"]] | None = Field(
@@ -31,7 +32,10 @@ class QueryRequest(BaseModel):
     @field_validator("entity_name")
     @classmethod
     def validate_entity_name(cls, v: str | None) -> str | None:
-        if v is not None and not _ENTITY_NAME_RE.match(v):
+        if v is None:
+            return v
+        v = unicodedata.normalize("NFKC", v)
+        if not _ENTITY_NAME_RE.match(v):
             raise ValueError(
                 "entity_name may only contain letters, digits, spaces, "
                 "hyphens, underscores, and apostrophes"
@@ -53,7 +57,12 @@ class QueryResponse(BaseModel):
     query: str = Field(..., description="The parsed query that was processed")
     confidence_score: float | None = Field(
         default=None,
-        description="Sigmoid of the top-ranked chunk's reranker score; None if score is non-finite",
+        description=(
+            "Sigmoid of the top-ranked chunk's BGE reranker logit. Measures retrieval relevance "
+            "of the best chunk, not answer quality. Topically-related queries typically produce "
+            "values ≥ 0.5 because the reranker assigns positive logits to on-topic content. "
+            "None if the top chunk's score is non-finite."
+        ),
     )
     knowledge_gaps: list[str] | None = Field(
         default=None,

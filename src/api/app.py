@@ -67,6 +67,8 @@ class LatencyTrackingMiddleware(BaseHTTPMiddleware):
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """Rate limiter for /query endpoint: 20 requests per minute per IP."""
 
+    _xff_warning_issued: bool = False
+
     def __init__(
         self,
         app: ASGIApp,
@@ -95,6 +97,20 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     async def dispatch(
         self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
+        # Warn once if XFF header is present but no trusted proxy is declared — rate limiting
+        # will apply to the proxy's socket IP rather than the real client.
+        if (
+            self.trusted_proxy_count == 0
+            and not RateLimitMiddleware._xff_warning_issued
+            and request.headers.get("X-Forwarded-For")
+        ):
+            _LOG.warning(
+                "X-Forwarded-For header is present but TRUSTED_PROXY_COUNT=0. "
+                "Rate limiting applies to the socket IP, not the real client. "
+                "Set TRUSTED_PROXY_COUNT if this app is behind a reverse proxy."
+            )
+            RateLimitMiddleware._xff_warning_issued = True
+
         if not self.enabled or request.url.path == "/health":
             return await call_next(request)
 
@@ -107,6 +123,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 self.request_times[client_ip] = [
                     t for t in self.request_times[client_ip] if t > window_start
                 ]
+                # LRU: promote recently-active IPs to tail so FIFO only evicts idle IPs
+                self.request_times.move_to_end(client_ip)
             else:
                 # Evict oldest entry if at capacity
                 if len(self.request_times) >= _MAX_TRACKED_IPS:
@@ -164,22 +182,27 @@ class BodySizeLimitMiddleware(BaseHTTPMiddleware):
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     setup_logging()
+    if not _parse_bool(os.getenv("HTTPS_ENABLED"), "HTTPS_ENABLED", False):
+        _LOG.warning(
+            "HTTPS_ENABLED is not set to true — HSTS header is disabled. "
+            "Set HTTPS_ENABLED=true in production to enable Strict-Transport-Security."
+        )
     loader = None
     async_qdrant_client: AsyncQdrantClient | None = None
     try:
         settings = Settings.from_env()
+        client: AsyncQdrantClient | QdrantClient
         if settings.async_pipeline_enabled:
             async_pipeline, loader, async_qdrant_client = build_async_pipeline()
+            await async_qdrant_client.get_collections()
             app.state.async_pipeline = async_pipeline
-            api_key_str = (
-                None
-                if settings.qdrant_api_key is None
-                else settings.qdrant_api_key.get_secret_value()
-            )
-            client: QdrantClient = QdrantClient(url=settings.qdrant_url, api_key=api_key_str)
+            client = async_qdrant_client
+            app.state.qdrant_client_is_async = True
         else:
-            pipeline, loader, client = build_pipeline()
-            app.state.pipeline = pipeline
+            sync_pipeline, loader, sync_client = build_pipeline()
+            app.state.pipeline = sync_pipeline
+            client = sync_client
+            app.state.qdrant_client_is_async = False
         app.state.qdrant_client = client
         app.state.settings = settings
     except Exception as exc:
@@ -202,17 +225,30 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 app = FastAPI(title="poke-RAG", lifespan=lifespan)
 
-allowed_origins = os.getenv("ALLOWED_ORIGINS", "*")
-if allowed_origins == "*":
-    origins = ["*"]
-    _allow_credentials = False
-else:
-    origins = [origin.strip() for origin in allowed_origins.split(",")]
-    _allow_credentials = True
+
+def _compute_cors_origins(env_value: str | None) -> tuple[list[str], bool]:
+    """Return (origins, allow_credentials) for CORSMiddleware.
+
+    Empty/unset → no CORS (deny by default). Explicit '*' → wildcard (no credentials).
+    Comma-separated list → specific origins with credentials allowed.
+    """
+    if not env_value:
+        return [], False
+    if env_value == "*":
+        _LOG.warning(
+            "ALLOWED_ORIGINS=* permits all cross-origin requests; "
+            "set an explicit origin list for production"
+        )
+        return ["*"], False
+    origins = [o.strip() for o in env_value.split(",") if o.strip()]
+    return origins, True
+
+
+_cors_origins, _allow_credentials = _compute_cors_origins(os.getenv("ALLOWED_ORIGINS"))
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=_cors_origins,
     allow_credentials=_allow_credentials,
     allow_methods=["GET", "POST"],
     allow_headers=["Content-Type", "Authorization"],
@@ -250,7 +286,7 @@ async def timeout_error_handler(request: Request, exc: TimeoutError) -> JSONResp
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    _LOG.error("Unhandled exception: %s", exc, exc_info=True)
+    _LOG.error("Unhandled exception: %s", exc, exc_info=_LOG.isEnabledFor(logging.DEBUG))
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 
@@ -262,15 +298,19 @@ def health() -> dict[str, str]:
 @app.get("/stats")
 async def stats(request: Request) -> dict[str, bool]:
     stats_api_key = os.getenv("STATS_API_KEY")
-    if stats_api_key:
-        auth = request.headers.get("Authorization", "")
-        expected = f"Bearer {stats_api_key}"
-        if not hmac.compare_digest(auth.encode(), expected.encode()):
-            raise HTTPException(status_code=401, detail="Unauthorized")
-    client: QdrantClient | None = getattr(request.app.state, "qdrant_client", None)
+    if not stats_api_key:
+        raise HTTPException(status_code=403, detail="Stats endpoint requires STATS_API_KEY")
+    auth = request.headers.get("Authorization", "")
+    expected = f"Bearer {stats_api_key}"
+    if not hmac.compare_digest(auth.encode(), expected.encode()):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    client = getattr(request.app.state, "qdrant_client", None)
     if client is None:
         raise RuntimeError("Qdrant client not initialized")
-    collections = await asyncio.to_thread(client.get_collections)
+    if getattr(request.app.state, "qdrant_client_is_async", False):
+        collections = await client.get_collections()
+    else:
+        collections = await asyncio.to_thread(client.get_collections)
     return {col.name: True for col in collections.collections}
 
 
@@ -279,6 +319,11 @@ async def query(
     body: QueryRequest,
     request: Request,
 ) -> QueryResponse:
+    _LOG.info(
+        "query received: entity_name=%r sources=%r",
+        body.entity_name,
+        body.sources,
+    )
     parsed = parse_query(body.query)
     settings: Settings = request.app.state.settings
     if settings.async_pipeline_enabled:
@@ -321,6 +366,12 @@ async def query_stream(
     import json as _json
 
     parsed = parse_query(body.query)
+    settings: Settings = request.app.state.settings
+    if not settings.async_pipeline_enabled:
+        raise HTTPException(
+            status_code=501,
+            detail="Streaming requires the async pipeline. Set ASYNC_PIPELINE_ENABLED=true.",
+        )
     async_pipeline: AsyncRAGPipeline = get_async_pipeline(request)
 
     async def _event_generator() -> AsyncGenerator[str, None]:

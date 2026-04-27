@@ -9,6 +9,12 @@ from pydantic import SecretStr
 _LOG = logging.getLogger(__name__)
 
 
+def _parse_string_required(value: str | None, env_var_name: str) -> str:
+    if value is None:
+        raise ValueError(f"{env_var_name} environment variable is required but not set")
+    return value
+
+
 def _parse_bool(value: str | None, env_var_name: str, default: bool) -> bool:
     """Parse a boolean environment variable.
 
@@ -246,8 +252,23 @@ class Settings:
             raise ValueError(f"DEVICE must be one of {valid_devices}, got: {device!r}")
         _LOG.info("Using device: %s", device)
 
+        refiner_upper_threshold = _parse_float_unbounded(
+            os.getenv("REFINER_UPPER_THRESHOLD"), "REFINER_UPPER_THRESHOLD", 0.0
+        )
+        refiner_lower_threshold = _parse_float_unbounded(
+            os.getenv("REFINER_LOWER_THRESHOLD"), "REFINER_LOWER_THRESHOLD", -3.0
+        )
+        refiner_strip_threshold = _parse_float_unbounded(
+            os.getenv("REFINER_STRIP_THRESHOLD"), "REFINER_STRIP_THRESHOLD", -1.0
+        )
+        if refiner_lower_threshold >= refiner_upper_threshold:
+            raise ValueError(
+                f"REFINER_LOWER_THRESHOLD ({refiner_lower_threshold}) must be less than "
+                f"REFINER_UPPER_THRESHOLD ({refiner_upper_threshold})"
+            )
+
         return cls(
-            qdrant_url=os.environ["QDRANT_URL"],
+            qdrant_url=_parse_string_required(os.getenv("QDRANT_URL"), "QDRANT_URL"),
             qdrant_api_key=SecretStr(api_key) if (api_key := os.getenv("QDRANT_API_KEY")) else None,
             embed_model=os.getenv("EMBED_MODEL", "BAAI/bge-m3"),
             rerank_model=os.getenv("RERANK_MODEL", "BAAI/bge-reranker-v2-m3"),
@@ -280,13 +301,7 @@ class Settings:
             ),
             colbert_enabled=_parse_bool(os.getenv("COLBERT_ENABLED"), "COLBERT_ENABLED", False),
             refiner_enabled=_parse_bool(os.getenv("REFINER_ENABLED"), "REFINER_ENABLED", False),
-            refiner_upper_threshold=_parse_float_unbounded(
-                os.getenv("REFINER_UPPER_THRESHOLD"), "REFINER_UPPER_THRESHOLD", 0.0
-            ),
-            refiner_lower_threshold=_parse_float_unbounded(
-                os.getenv("REFINER_LOWER_THRESHOLD"), "REFINER_LOWER_THRESHOLD", -3.0
-            ),
-            refiner_strip_threshold=_parse_float_unbounded(
-                os.getenv("REFINER_STRIP_THRESHOLD"), "REFINER_STRIP_THRESHOLD", -1.0
-            ),
+            refiner_upper_threshold=refiner_upper_threshold,
+            refiner_lower_threshold=refiner_lower_threshold,
+            refiner_strip_threshold=refiner_strip_threshold,
         )

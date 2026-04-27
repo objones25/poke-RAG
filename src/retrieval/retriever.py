@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import builtins
 import logging
-import math
 from concurrent.futures import ThreadPoolExecutor, TimeoutError, as_completed
 from typing import cast
 
@@ -18,15 +16,9 @@ from src.retrieval.protocols import (
 )
 from src.retrieval.types import EmbeddingOutput
 from src.types import EmbeddingError, RetrievalError, RetrievalResult, RetrievedChunk, Source
+from src.utils.math import sigmoid as _sigmoid
 
 _LOG = logging.getLogger(__name__)
-
-
-def _sigmoid(x: float) -> float:
-    if x >= 0:
-        return 1.0 / (1.0 + math.exp(-x))
-    ex = math.exp(x)
-    return ex / (1.0 + ex)
 
 
 _ALL_SOURCES: tuple[Source, ...] = ("bulbapedia", "pokeapi", "smogon")
@@ -333,7 +325,7 @@ class AsyncRetriever:
                 ),
                 timeout=_SEARCH_TIMEOUT_SECONDS,
             )
-        except builtins.TimeoutError as exc:
+        except TimeoutError as exc:
             raise RetrievalError(
                 f"Vector search timed out for '{source}' (timeout={_SEARCH_TIMEOUT_SECONDS}s)"
             ) from exc
@@ -373,7 +365,10 @@ class AsyncRetriever:
                         )
                     )
         except* RetrievalError as eg:
-            raise eg.exceptions[0] from None
+            msgs = "; ".join(str(e) for e in eg.exceptions)
+            raise RetrievalError(
+                f"Retrieval failed for {len(eg.exceptions)} source(s): {msgs}"
+            ) from eg
 
         candidates: list[RetrievedChunk] = []
         for task in tasks:

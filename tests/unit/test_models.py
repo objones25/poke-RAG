@@ -61,7 +61,11 @@ class TestQueryRequestValidation:
 
     def test_query_max_length_enforced(self) -> None:
         with pytest.raises(ValidationError):
-            QueryRequest(query="x" * 2001)
+            QueryRequest(query="x" * 501)
+
+    def test_query_at_max_length_accepted(self) -> None:
+        req = QueryRequest(query="x" * 500)
+        assert len(req.query) == 500
 
     def test_query_required_field(self) -> None:
         with pytest.raises(ValidationError):
@@ -78,6 +82,28 @@ class TestQueryRequestValidation:
     def test_sources_none_accepted(self) -> None:
         req = QueryRequest(query="test", sources=None)
         assert req.sources is None
+
+
+class TestEntityNameNFKCNormalization:
+    """S7: entity_name must be NFKC-normalized before regex validation."""
+
+    def test_fullwidth_chars_normalized_and_accepted(self) -> None:
+        # U+FF30…U+FF49 are fullwidth Latin letters; NFKC folds them to ASCII
+        req = QueryRequest(query="test", entity_name="Ｐikachu")  # 'Ｐikachu'
+        assert req.entity_name == "Pikachu"
+
+    def test_validator_returns_normalized_form(self) -> None:
+        # Confirm the stored value is the normalized string, not the original
+        req = QueryRequest(query="test", entity_name="０")  # FULLWIDTH DIGIT ZERO → '0'
+        assert req.entity_name == "0"
+
+    def test_cyrillic_lookalike_rejected(self) -> None:
+        # Cyrillic 'а' (U+0430) does not normalize to ASCII 'a' — must be rejected
+        import pytest
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            QueryRequest(query="test", entity_name="Pіkachu")  # 'і' is Cyrillic
 
 
 class TestQueryResponseValidation:

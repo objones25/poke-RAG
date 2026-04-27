@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncGenerator
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -102,3 +102,39 @@ class TestStreamEndpointErrorHandling:
         response = client.post("/query/stream", json={"query": "test"})
         events = _parse_sse_events(response.text)
         assert events[-1] == {"done": True}
+
+
+@pytest.mark.integration
+class TestStreamEndpointAsyncGuard:
+    """B1: /query/stream must return 501 when async pipeline is disabled."""
+
+    def test_stream_returns_501_when_async_disabled(self, monkeypatch):
+        monkeypatch.setenv("RATE_LIMIT_ENABLED", "false")
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("ASYNC_PIPELINE_ENABLED", "false")
+        mock_pipeline = MagicMock()
+        mock_loader = MagicMock()
+        mock_client = MagicMock()
+        build_rv = (mock_pipeline, mock_loader, mock_client)
+        with (
+            patch("src.api.app.build_pipeline", return_value=build_rv),
+            TestClient(app) as c,
+        ):
+            response = c.post("/query/stream", json={"query": "What is Pikachu?"})
+        assert response.status_code == 501
+
+    def test_stream_returns_501_detail_mentions_env_var(self, monkeypatch):
+        monkeypatch.setenv("RATE_LIMIT_ENABLED", "false")
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("ASYNC_PIPELINE_ENABLED", "false")
+        mock_pipeline = MagicMock()
+        mock_loader = MagicMock()
+        mock_client = MagicMock()
+        build_rv = (mock_pipeline, mock_loader, mock_client)
+        with (
+            patch("src.api.app.build_pipeline", return_value=build_rv),
+            TestClient(app) as c,
+        ):
+            response = c.post("/query/stream", json={"query": "What is Pikachu?"})
+        detail = response.json()["detail"]
+        assert "ASYNC_PIPELINE_ENABLED" in detail

@@ -45,7 +45,9 @@ def make_chunk(
         entity_name=entity_name,
         entity_type=entity_type,
         chunk_index=chunk_index,
-        original_doc_id=(original_doc_id if original_doc_id is not None else f"doc_{chunk_index}"),
+        original_doc_id=(
+            original_doc_id if original_doc_id is not None else f"pokeapi_{chunk_index}"
+        ),
         metadata=metadata,
     )
 

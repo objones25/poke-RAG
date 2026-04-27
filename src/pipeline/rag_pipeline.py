@@ -15,15 +15,9 @@ from src.retrieval.protocols import (
     RetrieverProtocol,
 )
 from src.types import RetrievalError, Source
+from src.utils.math import sigmoid as _sigmoid
 
 _SENTINEL = object()
-
-
-def _sigmoid(x: float) -> float:
-    if x >= 0:
-        return 1.0 / (1.0 + math.exp(-x))
-    ex = math.exp(x)
-    return ex / (1.0 + ex)
 
 
 class RAGPipeline:
@@ -80,7 +74,7 @@ class RAGPipeline:
 
         gen_result = self._generator.generate(query, chunks)
 
-        raw_score = chunks[0].score
+        raw_score = max(c.score for c in chunks)
         confidence_score: float | None = _sigmoid(raw_score) if math.isfinite(raw_score) else None
 
         return PipelineResult(
@@ -148,7 +142,7 @@ class AsyncRAGPipeline:
 
         gen_result = await asyncio.to_thread(self._generator.generate, query, chunks)
 
-        raw_score = chunks[0].score
+        raw_score = max(c.score for c in chunks)
         confidence_score: float | None = _sigmoid(raw_score) if math.isfinite(raw_score) else None
 
         return PipelineResult(

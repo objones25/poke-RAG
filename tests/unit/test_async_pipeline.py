@@ -86,6 +86,20 @@ class TestAsyncRAGPipeline:
         assert 0.0 < result.confidence_score < 1.0
 
     @pytest.mark.anyio
+    async def test_confidence_score_uses_max_score_not_position(self) -> None:
+        """B3: async pipeline confidence uses max score regardless of chunk ordering."""
+        import math
+
+        # chunks intentionally NOT in descending score order
+        chunks = [make_chunk(score=2.0), make_chunk(score=5.0)]
+        retriever = _make_async_retriever(chunks=chunks)
+        pipeline = AsyncRAGPipeline(retriever=retriever, generator=_make_generator())
+
+        result = await pipeline.query("test")
+        expected = 1.0 / (1.0 + math.exp(-5.0))
+        assert result.confidence_score == pytest.approx(expected)
+
+    @pytest.mark.anyio
     async def test_passes_sources_to_retriever(self) -> None:
         retriever = _make_async_retriever()
         pipeline = AsyncRAGPipeline(retriever=retriever, generator=_make_generator())

@@ -188,7 +188,7 @@ class TestAsyncRetrieverExceptionHandling:
             await r.retrieve("test", sources=["pokeapi"])
 
     @pytest.mark.anyio
-    async def test_all_sources_raise_exception_group_raises_first(self) -> None:
+    async def test_all_sources_raise_exception_group_raises_retrieval_error(self) -> None:
         store = AsyncMock(spec=AsyncVectorStoreProtocol)
         store.search.side_effect = RuntimeError("All failed")
         r = AsyncRetriever(
@@ -198,6 +198,31 @@ class TestAsyncRetrieverExceptionHandling:
         )
         with pytest.raises(RetrievalError):
             await r.retrieve("test")
+
+    @pytest.mark.anyio
+    async def test_multiple_source_failures_all_reported_in_message(self) -> None:
+        """B4: when multiple sources fail, all failures must appear in the error message."""
+        call_count = 0
+
+        async def _fail_with_distinct_message(**kwargs: object) -> list:
+            nonlocal call_count
+            call_count += 1
+            src = kwargs.get("collection", f"source_{call_count}")
+            raise RuntimeError(f"failed_{src}")
+
+        store = AsyncMock(spec=AsyncVectorStoreProtocol)
+        store.search.side_effect = _fail_with_distinct_message
+        r = AsyncRetriever(
+            embedder=_make_embedder(),
+            vector_store=store,
+            reranker=_make_reranker(),
+        )
+        with pytest.raises(RetrievalError) as exc_info:
+            await r.retrieve("test", sources=["pokeapi", "smogon"])
+        msg = str(exc_info.value)
+        assert "pokeapi" in msg or "smogon" in msg
+        # Both sources must be represented — not silently dropped
+        assert "2" in msg or ("pokeapi" in msg and "smogon" in msg)
 
     @pytest.mark.anyio
     async def test_async_task_group_creates_concurrent_tasks(self) -> None:

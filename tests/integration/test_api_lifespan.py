@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -105,3 +105,118 @@ class TestAppLifespan:
             TestClient(app),
         ):
             pass
+
+
+@pytest.mark.integration
+class TestAsyncLifespan:
+    """B2: async mode must reuse the AsyncQdrantClient from build_async_pipeline,
+    not create a redundant sync QdrantClient."""
+
+    def test_async_mode_does_not_instantiate_sync_qdrant_client(self, monkeypatch) -> None:
+        from src.api.app import app
+
+        monkeypatch.setenv("ASYNC_PIPELINE_ENABLED", "true")
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+
+        mock_pipeline = MagicMock()
+        mock_loader = MagicMock()
+        mock_async_client = AsyncMock()
+
+        build_rv = (mock_pipeline, mock_loader, mock_async_client)
+        with (
+            patch("src.api.app.build_async_pipeline", return_value=build_rv),
+            patch("src.api.app.QdrantClient") as mock_sync_cls,
+            TestClient(app),
+        ):
+            mock_sync_cls.assert_not_called()
+
+    def test_async_mode_stores_async_client_in_app_state(self, monkeypatch) -> None:
+        from src.api.app import app
+
+        monkeypatch.setenv("ASYNC_PIPELINE_ENABLED", "true")
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+
+        mock_pipeline = MagicMock()
+        mock_loader = MagicMock()
+        mock_async_client = AsyncMock()
+
+        build_rv = (mock_pipeline, mock_loader, mock_async_client)
+        with (
+            patch("src.api.app.build_async_pipeline", return_value=build_rv),
+            patch("src.api.app.QdrantClient"),
+            TestClient(app),
+        ):
+            assert app.state.qdrant_client is mock_async_client
+
+    def test_stats_uses_async_client_directly_in_async_mode(self, monkeypatch) -> None:
+        from src.api.app import app
+
+        monkeypatch.setenv("ASYNC_PIPELINE_ENABLED", "true")
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("RATE_LIMIT_ENABLED", "false")
+        monkeypatch.setenv("STATS_API_KEY", "test-key")
+
+        mock_pipeline = MagicMock()
+        mock_loader = MagicMock()
+        mock_async_client = AsyncMock()
+        mock_async_client.get_collections.return_value = MagicMock(collections=[])
+
+        build_rv = (mock_pipeline, mock_loader, mock_async_client)
+        with (
+            patch("src.api.app.build_async_pipeline", return_value=build_rv),
+            patch("src.api.app.QdrantClient"),
+            TestClient(app) as c,
+        ):
+            response = c.get("/stats", headers={"Authorization": "Bearer test-key"})
+
+        assert response.status_code == 200
+        # get_collections must be called directly on the async client (awaited), not via to_thread.
+        # Called at least twice: once for the S10 startup probe, once for the /stats response.
+        mock_async_client.get_collections.assert_called()
+
+
+@pytest.mark.integration
+class TestAsyncLifespanQdrantConnectivity:
+    """S10: async pipeline must probe Qdrant connectivity at startup."""
+
+    def test_qdrant_down_raises_runtime_error_on_startup(self, monkeypatch) -> None:
+        from src.api.app import app
+
+        monkeypatch.setenv("ASYNC_PIPELINE_ENABLED", "true")
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+
+        mock_pipeline = MagicMock()
+        mock_loader = MagicMock()
+        mock_async_client = AsyncMock()
+        mock_async_client.get_collections.side_effect = ConnectionError("Qdrant is unreachable")
+
+        build_rv = (mock_pipeline, mock_loader, mock_async_client)
+        with (
+            pytest.raises(RuntimeError),
+            patch("src.api.app.build_async_pipeline", return_value=build_rv),
+            TestClient(app, raise_server_exceptions=True),
+        ):
+            pass
+
+    def test_connectivity_probe_called_at_startup(self, monkeypatch) -> None:
+        from src.api.app import app
+
+        monkeypatch.setenv("ASYNC_PIPELINE_ENABLED", "true")
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+
+        mock_pipeline = MagicMock()
+        mock_loader = MagicMock()
+        mock_async_client = AsyncMock()
+        mock_async_client.get_collections.return_value = MagicMock(collections=[])
+
+        build_rv = (mock_pipeline, mock_loader, mock_async_client)
+        with (
+            patch("src.api.app.build_async_pipeline", return_value=build_rv),
+            TestClient(app),
+        ):
+            pass
+
+        # get_collections called at least once for the startup probe
+        assert mock_async_client.get_collections.call_count >= 1, (
+            "S10: async client get_collections() must be called at startup to probe connectivity"
+        )

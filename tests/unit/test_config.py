@@ -279,10 +279,11 @@ class TestSettingsFromEnv:
         settings = Settings.from_env()
         assert settings.qdrant_url == "http://localhost:6333"
 
-    def test_raises_keyerror_when_qdrant_url_missing(self) -> None:
+    def test_raises_valueerror_when_qdrant_url_missing(self) -> None:
+        """B6: missing QDRANT_URL must raise ValueError with a descriptive message."""
         from src.config import Settings
 
-        with patch.dict(os.environ, {}, clear=True), pytest.raises(KeyError):
+        with patch.dict(os.environ, {}, clear=True), pytest.raises(ValueError, match="QDRANT_URL"):
             Settings.from_env()
 
     def test_reads_optional_qdrant_api_key(self, monkeypatch) -> None:
@@ -885,10 +886,10 @@ class TestParseBoolUnexpectedValue:
 
 @pytest.mark.unit
 class TestSettingsMissingQdrantUrl:
-    def test_settings_from_env_missing_qdrant_url_raises_key_error(self) -> None:
+    def test_settings_from_env_missing_qdrant_url_raises_value_error(self) -> None:
         from src.config import Settings
 
-        with patch.dict(os.environ, {}, clear=True), pytest.raises(KeyError):
+        with patch.dict(os.environ, {}, clear=True), pytest.raises(ValueError, match="QDRANT_URL"):
             Settings.from_env()
 
 
@@ -925,6 +926,39 @@ class TestHydeConfidenceThresholdBoundary:
         monkeypatch.setenv("HYDE_CONFIDENCE_THRESHOLD", "1.1")
         with pytest.raises(ValueError, match="HYDE_CONFIDENCE_THRESHOLD"):
             Settings.from_env()
+
+
+@pytest.mark.unit
+class TestRefinerThresholdOrdering:
+    """B9: Settings.from_env() must validate threshold ordering eagerly."""
+
+    def test_lower_equal_to_upper_raises_value_error(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("REFINER_LOWER_THRESHOLD", "0.0")
+        monkeypatch.setenv("REFINER_UPPER_THRESHOLD", "0.0")
+        with pytest.raises(ValueError, match="(?i)(lower.*upper|upper.*lower)"):
+            Settings.from_env()
+
+    def test_lower_greater_than_upper_raises_value_error(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("REFINER_LOWER_THRESHOLD", "2.0")
+        monkeypatch.setenv("REFINER_UPPER_THRESHOLD", "1.0")
+        with pytest.raises(ValueError, match="(?i)(lower.*upper|upper.*lower)"):
+            Settings.from_env()
+
+    def test_valid_ordering_is_accepted(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("REFINER_LOWER_THRESHOLD", "-3.0")
+        monkeypatch.setenv("REFINER_UPPER_THRESHOLD", "0.0")
+        settings = Settings.from_env()
+        assert settings.refiner_lower_threshold == -3.0
+        assert settings.refiner_upper_threshold == 0.0
 
 
 @pytest.mark.unit

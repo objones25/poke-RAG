@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from unittest.mock import MagicMock
 
 import pytest
@@ -43,24 +44,18 @@ def client(mock_pipeline):
 
 @pytest.mark.unit
 class TestStatsEndpoint:
-    def test_stats_returns_200(self, client) -> None:
-        import os
-
-        stats_key = os.getenv("STATS_API_KEY")
-        if stats_key:
-            response = client.get("/stats", headers={"Authorization": f"Bearer {stats_key}"})
-        else:
-            response = client.get("/stats")
+    def test_stats_returns_200_with_valid_key(
+        self, client, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("STATS_API_KEY", "test-key")
+        response = client.get("/stats", headers={"Authorization": "Bearer test-key"})
         assert response.status_code == 200
 
-    def test_stats_returns_dict_with_collections(self, client) -> None:
-        import os
-
-        stats_key = os.getenv("STATS_API_KEY")
-        if stats_key:
-            response = client.get("/stats", headers={"Authorization": f"Bearer {stats_key}"})
-        else:
-            response = client.get("/stats")
+    def test_stats_returns_dict_with_collections(
+        self, client, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("STATS_API_KEY", "test-key")
+        response = client.get("/stats", headers={"Authorization": "Bearer test-key"})
         result = response.json()
         assert isinstance(result, dict)
 
@@ -444,6 +439,54 @@ class TestGetClientIpXFFSpoofing:
 
 
 @pytest.mark.unit
+class TestXFFUndeclaredProxyWarning:
+    """S4: Warn once when XFF header is present but TRUSTED_PROXY_COUNT=0."""
+
+    def test_warning_emitted_when_xff_present_and_no_proxy_declared(
+        self, mock_pipeline, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        import logging
+
+        from src.api.app import RateLimitMiddleware
+
+        # Reset the one-time flag so this test is hermetic
+        RateLimitMiddleware._xff_warning_issued = False
+
+        with (
+            caplog.at_level(logging.WARNING, logger="src.api.app"),
+            TestClient(app, raise_server_exceptions=False) as c,
+        ):
+            c.get("/health", headers={"X-Forwarded-For": "1.2.3.4"})
+
+        assert any(
+            "X-Forwarded-For" in r.message and r.levelno == logging.WARNING for r in caplog.records
+        ), "S4: expected WARNING about XFF present but TRUSTED_PROXY_COUNT=0"
+
+    def test_warning_emitted_only_once(
+        self, mock_pipeline, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        import logging
+
+        from src.api.app import RateLimitMiddleware
+
+        RateLimitMiddleware._xff_warning_issued = False
+
+        with (
+            caplog.at_level(logging.WARNING, logger="src.api.app"),
+            TestClient(app, raise_server_exceptions=False) as c,
+        ):
+            c.get("/health", headers={"X-Forwarded-For": "1.2.3.4"})
+            c.get("/health", headers={"X-Forwarded-For": "5.6.7.8"})
+
+        xff_warnings = [
+            r
+            for r in caplog.records
+            if "X-Forwarded-For" in r.message and r.levelno == logging.WARNING
+        ]
+        assert len(xff_warnings) == 1, "S4: warning must be emitted exactly once"
+
+
+@pytest.mark.unit
 class TestQueryEndpointTimeout:
     def test_query_timeout_returns_504(self, client, mock_pipeline) -> None:
         mock_pipeline.query.side_effect = TimeoutError()
@@ -488,6 +531,51 @@ class TestSecurityHeadersHSTS:
         with TestClient(test_app) as c:
             response = c.get("/health")
             assert "Strict-Transport-Security" not in response.headers
+
+
+@pytest.mark.unit
+class TestHSTSStartupWarning:
+    """S5: Warn at startup when HSTS is disabled (HTTPS_ENABLED not true)."""
+
+    def test_warning_emitted_when_https_not_enabled(
+        self, mock_pipeline, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        import logging
+
+        monkeypatch.delenv("HTTPS_ENABLED", raising=False)
+
+        with (
+            caplog.at_level(logging.WARNING, logger="src.api.app"),
+            TestClient(app, raise_server_exceptions=False),
+        ):
+            pass
+
+        assert any(
+            "HSTS" in r.message or "HTTPS_ENABLED" in r.message
+            for r in caplog.records
+            if r.levelno == logging.WARNING
+        ), "S5: expected startup WARNING about HSTS being disabled"
+
+    def test_no_warning_when_https_enabled(
+        self, mock_pipeline, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        import logging
+
+        monkeypatch.setenv("HTTPS_ENABLED", "true")
+
+        with (
+            caplog.at_level(logging.WARNING, logger="src.api.app"),
+            TestClient(app, raise_server_exceptions=False),
+        ):
+            pass
+
+        hsts_warnings = [
+            r
+            for r in caplog.records
+            if ("HSTS" in r.message or "HTTPS_ENABLED" in r.message)
+            and r.levelno == logging.WARNING
+        ]
+        assert hsts_warnings == [], "S5: no HSTS warning expected when HTTPS_ENABLED=true"
 
 
 @pytest.mark.unit
@@ -556,15 +644,13 @@ class TestStatsApiKeyTiming:
         response = client.get("/stats", headers={"Authorization": "Bearer wrong-key"})
         assert response.status_code == 401
 
-    def test_stats_public_when_no_api_key_set(self, client: TestClient) -> None:
-        """Stats should be public (200) when STATS_API_KEY is not set."""
-        # Ensure STATS_API_KEY is not set
-        import os
-
-        if "STATS_API_KEY" in os.environ:
-            del os.environ["STATS_API_KEY"]
+    def test_stats_returns_403_when_no_api_key_configured(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Stats must return 403 when STATS_API_KEY is not configured (S1 fix)."""
+        monkeypatch.delenv("STATS_API_KEY", raising=False)
         response = client.get("/stats")
-        assert response.status_code == 200
+        assert response.status_code == 403
 
 
 @pytest.mark.unit
@@ -679,6 +765,125 @@ class TestRateLimitMiddlewareCapacityEviction:
 
 
 @pytest.mark.unit
+class TestRateLimitMiddlewareLRUEviction:
+    """B8: dispatch() must call move_to_end() for existing IPs so FIFO eviction cannot
+    purge recently-active rate-limited IPs and let them bypass the limit."""
+
+    @staticmethod
+    def _get_app_module():
+        import importlib
+
+        return importlib.import_module("src.api.app")
+
+    def test_existing_ip_moved_to_tail_on_dispatch(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """dispatch() in the existing-IP branch must call move_to_end() so that
+        recently-active IPs migrate to the tail and are not the first victims of eviction.
+
+        RED before fix: victim stays at HEAD (insertion order).
+        GREEN after fix: dispatch() calls move_to_end() → victim at TAIL.
+        """
+        import asyncio
+        from unittest.mock import MagicMock
+
+        from src.api.app import RateLimitMiddleware
+
+        monkeypatch.setenv("RATE_LIMIT_ENABLED", "true")
+
+        middleware = RateLimitMiddleware(
+            app=MagicMock(),
+            requests_per_minute=100,
+            trusted_proxy_count=0,
+        )
+
+        # victim inserted first (HEAD), two more IPs push it away from TAIL.
+        middleware.request_times["victim"] = [time.time()]
+        middleware.request_times["other-1"] = [time.time()]
+        middleware.request_times["other-2"] = [time.time()]
+
+        # Call actual dispatch() for victim — existing-IP branch should call move_to_end().
+        request = MagicMock()
+        request.url.path = "/query"
+        request.client.host = "victim"
+        request.headers.get.return_value = ""
+
+        async def call_next(req: object) -> object:
+            from starlette.responses import Response
+
+            return Response(status_code=200)
+
+        asyncio.run(middleware.dispatch(request, call_next))
+
+        keys = list(middleware.request_times.keys())
+        assert keys[-1] == "victim", (
+            f"B8: dispatch() must call move_to_end() for existing IPs — got order: {keys}"
+        )
+
+    def test_rate_limited_ip_stays_blocked_after_capacity_flood(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """B8 core: victim must stay rate-limited after FIFO eviction would reset its state.
+
+        Sequence (CAPACITY=3, RPM=2):
+          1. victim: 2 requests (fills budget) — inserted first, at HEAD.
+          2. flood-0, flood-1 added to reach CAPACITY; victim still at HEAD.
+          3. victim: 3rd request → 429. FIX calls move_to_end() → victim to TAIL.
+          4. flood-2 triggers eviction. BUG evicts victim (HEAD); FIX evicts flood-0.
+          5. victim: 4th request. BUG → 200 (bypass); FIX → 429 (still blocked).
+
+        Uses trusted_proxy_count=1 + X-Forwarded-For so each header IP is tracked
+        separately (TestClient always presents the same socket IP otherwise).
+        """
+        app_module = self._get_app_module()
+        CAPACITY = 3
+        RPM = 2
+        monkeypatch.setattr(app_module, "_MAX_TRACKED_IPS", CAPACITY)
+        monkeypatch.setenv("RATE_LIMIT_ENABLED", "true")
+
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from src.api.app import RateLimitMiddleware
+
+        test_app = FastAPI()
+        test_app.add_middleware(
+            RateLimitMiddleware,
+            requests_per_minute=RPM,
+            trusted_proxy_count=1,  # enables X-Forwarded-For so each test IP is distinct
+        )
+
+        @test_app.post("/query")
+        async def _query() -> dict[str, bool]:
+            return {"ok": True}
+
+        def xff(ip: str) -> dict[str, str]:
+            return {"X-Forwarded-For": ip}
+
+        with TestClient(test_app) as c:
+            # Step 1: victim fills its rate-limit budget (inserted first → HEAD)
+            for _ in range(RPM):
+                c.post("/query", headers=xff("victim"))
+
+            # Step 2: flood-0, flood-1 fill dict to CAPACITY (victim still at HEAD)
+            c.post("/query", headers=xff("flood-0"))
+            c.post("/query", headers=xff("flood-1"))
+
+            # Step 3: victim's 3rd request is blocked; FIX moves it to TAIL here
+            rate_limited = c.post("/query", headers=xff("victim"))
+            assert rate_limited.status_code == 429, "pre-condition: victim must be rate-limited"
+
+            # Step 4: flood-2 triggers eviction
+            # BUG: HEAD = victim → evicted. FIX: HEAD = flood-0 → evicted, victim survives.
+            c.post("/query", headers=xff("flood-2"))
+
+            # Step 5: victim's request must still be blocked
+            after_eviction = c.post("/query", headers=xff("victim"))
+            assert after_eviction.status_code == 429, (
+                "B8: rate-limited IP bypassed limit after FIFO eviction — "
+                "dispatch() must call move_to_end() in the existing-IP branch"
+            )
+
+
+@pytest.mark.unit
 class TestBodySizeLimitMiddlewareEdgeCases:
     def test_content_length_exactly_at_limit(self) -> None:
         from fastapi import FastAPI
@@ -743,3 +948,137 @@ class TestBodySizeLimitMiddlewareEdgeCases:
         with TestClient(test_app) as c:
             response = c.post("/upload", headers={"Content-Length": "-1"})
             assert response.status_code == 413
+
+
+@pytest.mark.unit
+class TestGlobalExceptionHandlerStackTrace:
+    """S8: global exception handler must only log full stack traces at DEBUG level."""
+
+    def test_exc_info_not_logged_at_error_level(self, monkeypatch) -> None:
+        import logging
+        from unittest.mock import patch
+
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from src.api.app import global_exception_handler
+
+        test_app = FastAPI()
+        test_app.add_exception_handler(Exception, global_exception_handler)
+
+        @test_app.get("/boom")
+        async def _boom() -> None:
+            raise RuntimeError("intentional test error")
+
+        log_calls: list[dict] = []
+        original_error = logging.Logger.error
+
+        def capture_error(self, msg, *args, **kwargs):  # type: ignore[no-untyped-def]
+            log_calls.append({"msg": msg, "kwargs": kwargs})
+            original_error(self, msg, *args, **kwargs)
+
+        app_logger = logging.getLogger("src.api.app")
+        original_level = app_logger.level
+        try:
+            app_logger.setLevel(logging.WARNING)
+            with (
+                patch.object(logging.Logger, "error", capture_error),
+                TestClient(test_app, raise_server_exceptions=False) as c,
+            ):
+                c.get("/boom")
+        finally:
+            app_logger.setLevel(original_level)
+
+        exc_info_calls = [call for call in log_calls if call["kwargs"].get("exc_info")]
+        assert exc_info_calls == [], (
+            "S8: exc_info=True must not be logged when logger level is above DEBUG"
+        )
+
+    def test_exc_info_logged_at_debug_level(self, monkeypatch) -> None:
+        import logging
+        from unittest.mock import patch
+
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from src.api.app import global_exception_handler
+
+        test_app = FastAPI()
+        test_app.add_exception_handler(Exception, global_exception_handler)
+
+        @test_app.get("/boom")
+        async def _boom() -> None:
+            raise RuntimeError("intentional test error")
+
+        log_calls: list[dict] = []
+        original_error = logging.Logger.error
+
+        def capture_error(self, msg, *args, **kwargs):  # type: ignore[no-untyped-def]
+            log_calls.append({"msg": msg, "kwargs": kwargs})
+            original_error(self, msg, *args, **kwargs)
+
+        app_logger = logging.getLogger("src.api.app")
+        original_level = app_logger.level
+        try:
+            app_logger.setLevel(logging.DEBUG)
+            with (
+                patch.object(logging.Logger, "error", capture_error),
+                TestClient(test_app, raise_server_exceptions=False) as c,
+            ):
+                c.get("/boom")
+        finally:
+            app_logger.setLevel(original_level)
+
+        exc_info_calls = [call for call in log_calls if call["kwargs"].get("exc_info")]
+        assert exc_info_calls, "S8: exc_info=True must be logged when logger level is DEBUG"
+
+
+@pytest.mark.unit
+class TestQueryAuditLogging:
+    """S11: /query must emit an INFO-level audit log with entity_name and sources."""
+
+    def test_audit_log_emitted_with_entity_name_and_sources(
+        self, mock_pipeline, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        import logging
+
+        mock_pipeline.query.return_value = _make_result(
+            query="What moves does Pikachu learn?",
+            sources_used=("pokeapi",),
+        )
+        with (
+            caplog.at_level(logging.INFO, logger="src.api.app"),
+            TestClient(app, raise_server_exceptions=False) as c,
+        ):
+            c.post(
+                "/query",
+                json={
+                    "query": "What moves does Pikachu learn?",
+                    "entity_name": "Pikachu",
+                    "sources": ["pokeapi"],
+                },
+            )
+
+        assert any(
+            "Pikachu" in r.message and "pokeapi" in r.message
+            for r in caplog.records
+            if r.levelno == logging.INFO
+        ), "S11: expected INFO audit log containing entity_name and sources"
+
+    def test_audit_log_emitted_without_optional_fields(
+        self, mock_pipeline, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        import logging
+
+        mock_pipeline.query.return_value = _make_result(
+            query="What type is Bulbasaur?",
+        )
+        with (
+            caplog.at_level(logging.INFO, logger="src.api.app"),
+            TestClient(app, raise_server_exceptions=False) as c,
+        ):
+            c.post("/query", json={"query": "What type is Bulbasaur?"})
+
+        assert any(
+            "query" in r.message.lower() for r in caplog.records if r.levelno == logging.INFO
+        ), "S11: expected INFO audit log for query without entity_name/sources"

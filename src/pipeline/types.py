@@ -14,5 +14,7 @@ class PipelineResult:
     num_chunks_used: int
     model_name: str
     query: str
+    # Sigmoid of top chunk's BGE reranker logit — measures retrieval relevance, not answer
+    # quality. On-topic queries routinely exceed 0.5; None when the score is non-finite.
     confidence_score: float | None = None
     knowledge_gaps: tuple[str, ...] | None = None

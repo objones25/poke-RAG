@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import logging
 import time
 import uuid
@@ -43,6 +44,7 @@ _COLBERT_UPSERT_BATCH_SIZE = 2  # ColBERT token matrices are large; keep HTTP pa
 _TRANSIENT_STATUS_CODES = {429, 500, 502, 503, 504}
 _MAX_RETRIES = 4
 _RETRY_BASE_DELAY = 2.0
+_MAX_TOP_K = 1000
 
 
 def _is_transient(exc: Exception) -> bool:
@@ -212,6 +214,8 @@ class QdrantVectorStore:
         skipped_count = 0
         for p in response.points:
             try:
+                if p.payload is None:
+                    raise ValueError("Payload is None")
                 chunks.append(
                     RetrievedChunk(
                         text=p.payload["text"],
@@ -249,6 +253,8 @@ class QdrantVectorStore:
         entity_name: str | None = None,
         query_colbert: list[list[float]] | None = None,
     ) -> list[RetrievedChunk]:
+        if not (1 <= top_k <= _MAX_TOP_K):
+            raise ValueError(f"top_k must be between 1 and {_MAX_TOP_K}, got {top_k}")
         _LOG.debug("Searching '%s': top_k=%d, entity_name=%s", collection, top_k, entity_name)
 
         normalized_name = entity_name.lower().strip() if entity_name is not None else None
@@ -270,7 +276,15 @@ class QdrantVectorStore:
                 entity_name,
                 collection,
             )
-            chunks = self._query(collection, query_dense, query_sparse, top_k, None, query_colbert)
+            fallback = self._query(
+                collection, query_dense, query_sparse, top_k, None, query_colbert
+            )
+            chunks = [
+                dataclasses.replace(
+                    c, metadata={**(c.metadata or {}), "entity_filter_fallback": True}
+                )
+                for c in fallback
+            ]
 
         _LOG.debug("Search '%s' → %d result(s)", collection, len(chunks))
         return chunks
@@ -304,25 +318,17 @@ class AsyncQdrantVectorStore:
                 multivector_config=MultiVectorConfig(comparator=MultiVectorComparator.MAX_SIM),
             )
         for source in _SOURCES:
-            try:
-                exists = await self._client.collection_exists(collection_name=source)
-            except Exception as exc:
-                raise exc
+            exists = await self._client.collection_exists(collection_name=source)
             if exists:
                 _LOG.debug("Collection '%s' already exists", source)
                 continue
-            try:
-                await self._client.create_collection(
-                    collection_name=source,
-                    vectors_config=vectors_config,
-                    sparse_vectors_config={
-                        _SPARSE_VECTOR_NAME: SparseVectorParams(
-                            index=SparseIndexParams(on_disk=False)
-                        ),
-                    },
-                )
-            except Exception as exc:
-                raise exc
+            await self._client.create_collection(
+                collection_name=source,
+                vectors_config=vectors_config,
+                sparse_vectors_config={
+                    _SPARSE_VECTOR_NAME: SparseVectorParams(index=SparseIndexParams(on_disk=False)),
+                },
+            )
             _LOG.debug("Collection '%s' created", source)
 
     async def upsert(
@@ -481,6 +487,8 @@ class AsyncQdrantVectorStore:
         entity_name: str | None = None,
         query_colbert: list[list[float]] | None = None,
     ) -> list[RetrievedChunk]:
+        if not (1 <= top_k <= _MAX_TOP_K):
+            raise ValueError(f"top_k must be between 1 and {_MAX_TOP_K}, got {top_k}")
         _LOG.debug("Searching '%s': top_k=%d, entity_name=%s", collection, top_k, entity_name)
 
         normalized_name = entity_name.lower().strip() if entity_name is not None else None
@@ -502,9 +510,15 @@ class AsyncQdrantVectorStore:
                 entity_name,
                 collection,
             )
-            chunks = await self._query(
+            fallback = await self._query(
                 collection, query_dense, query_sparse, top_k, None, query_colbert
             )
+            chunks = [
+                dataclasses.replace(
+                    c, metadata={**(c.metadata or {}), "entity_filter_fallback": True}
+                )
+                for c in fallback
+            ]
 
         _LOG.debug("Search '%s' → %d result(s)", collection, len(chunks))
         return chunks

@@ -296,6 +296,20 @@ class TestSearch:
         assert second_call_kwargs.get("query_filter") is None
         assert len(results) == 1
 
+    def test_entity_filter_fallback_marks_chunks_in_metadata(self) -> None:
+        """B5: entity-filter fallback chunks must carry entity_filter_fallback=True."""
+        client = _make_client()
+        empty_response = MagicMock()
+        empty_response.points = []
+        result_response = MagicMock()
+        result_response.points = [self._make_scored_point("Pikachu is electric", 0.9, "Pikachu")]
+        client.query_points.side_effect = [empty_response, result_response]
+        store = QdrantVectorStore(client)
+        results = store.search("pokeapi", [0.1] * 1024, {1: 0.5}, top_k=5, entity_name="Pikachu")
+        assert len(results) == 1
+        assert results[0].metadata is not None
+        assert results[0].metadata.get("entity_filter_fallback") is True
+
     def test_search_normalizes_entity_name_to_lowercase_in_filter(self) -> None:
         client = _make_client()
         client.query_points.return_value.points = [
@@ -426,6 +440,32 @@ class TestSearch:
         with pytest.raises(VectorIndexError):
             store.search("pokeapi", [0.1] * 1024, {1: 0.5}, top_k=5)
 
+    def test_none_payload_skipped_when_other_valid_results_exist(self) -> None:
+        """C3: sync _query() must handle p.payload is None without crashing."""
+        client = _make_client()
+        none_payload_point = MagicMock()
+        none_payload_point.score = 0.8
+        none_payload_point.id = "none_payload_id"
+        none_payload_point.payload = None
+        good_point = self._make_scored_point("Valid text", 0.9)
+        client.query_points.return_value.points = [none_payload_point, good_point]
+        store = QdrantVectorStore(client)
+        results = store.search("pokeapi", [0.1] * 1024, {}, top_k=2)
+        assert len(results) == 1
+        assert results[0].text == "Valid text"
+
+    def test_none_payload_raises_when_all_invalid(self) -> None:
+        """C3: sync _query() raises VectorIndexError when all points have None payload."""
+        client = _make_client()
+        none_payload_point = MagicMock()
+        none_payload_point.score = 0.8
+        none_payload_point.id = "none_payload_id"
+        none_payload_point.payload = None
+        client.query_points.return_value.points = [none_payload_point]
+        store = QdrantVectorStore(client)
+        with pytest.raises(VectorIndexError):
+            store.search("pokeapi", [0.1] * 1024, {}, top_k=1)
+
 
 @pytest.mark.unit
 class TestUpsertBatchBoundaries:
@@ -491,20 +531,17 @@ class TestSearchEdgeCases:
         }
         return p
 
-    def test_search_with_top_k_zero_returns_empty(self) -> None:
+    def test_search_with_top_k_zero_raises(self) -> None:
         client = _make_client()
-        client.query_points.return_value.points = []
         store = QdrantVectorStore(client)
-        results = store.search("pokeapi", [0.1] * 1024, {}, top_k=0)
-        assert results == []
+        with pytest.raises(ValueError, match="top_k"):
+            store.search("pokeapi", [0.1] * 1024, {}, top_k=0)
 
-    def test_search_with_negative_top_k(self) -> None:
+    def test_search_with_negative_top_k_raises(self) -> None:
         client = _make_client()
-        client.query_points.return_value.points = []
         store = QdrantVectorStore(client)
-        store.search("pokeapi", [0.1] * 1024, {}, top_k=-1)
-        call_kwargs = client.query_points.call_args[1]
-        assert call_kwargs.get("limit") == -1
+        with pytest.raises(ValueError, match="top_k"):
+            store.search("pokeapi", [0.1] * 1024, {}, top_k=-1)
 
     def test_search_with_whitespace_entity_name_creates_filter(self) -> None:
         client = _make_client()
@@ -712,3 +749,24 @@ class TestSearchColBERT:
         call_kwargs = client.query_points.call_args[1]
         prefetch = call_kwargs["prefetch"]
         assert len(prefetch) == 2
+
+
+@pytest.mark.unit
+class TestSearchTopKValidation:
+    def test_search_raises_on_zero_top_k(self) -> None:
+        client = _make_client()
+        store = QdrantVectorStore(client)
+        with pytest.raises(ValueError, match="top_k"):
+            store.search("pokeapi", [0.1] * 1024, {1: 0.5}, top_k=0)
+
+    def test_search_raises_on_negative_top_k(self) -> None:
+        client = _make_client()
+        store = QdrantVectorStore(client)
+        with pytest.raises(ValueError, match="top_k"):
+            store.search("pokeapi", [0.1] * 1024, {1: 0.5}, top_k=-1)
+
+    def test_search_raises_on_excessive_top_k(self) -> None:
+        client = _make_client()
+        store = QdrantVectorStore(client)
+        with pytest.raises(ValueError, match="top_k"):
+            store.search("pokeapi", [0.1] * 1024, {1: 0.5}, top_k=1001)
