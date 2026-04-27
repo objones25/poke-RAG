@@ -26,7 +26,7 @@ def check_claim(answer: str, claim: str) -> bool:
         contents=prompt,
         config=GenerateContentConfig(http_options=HttpOptions(timeout=_TIMEOUT)),
     )
-    return response.text.strip().lower().startswith("yes")
+    return (response.text or "").strip().lower().startswith("yes")
 
 
 def check_hallucination(answer: str, context: str) -> list[str]:
@@ -41,7 +41,7 @@ def check_hallucination(answer: str, context: str) -> list[str]:
         contents=prompt,
         config=GenerateContentConfig(http_options=HttpOptions(timeout=_TIMEOUT)),
     )
-    text = response.text.strip()
+    text = (response.text or "").strip()
     if text.upper() == "SUPPORTED":
         return []
     return [line.strip() for line in text.splitlines() if line.strip()]

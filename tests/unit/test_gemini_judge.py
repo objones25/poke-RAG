@@ -32,6 +32,12 @@ class TestCheckClaim:
         mock_client.models.generate_content.return_value = mocker.MagicMock(text="maybe")
         assert check_claim("anything", "claim") is False
 
+    def test_returns_false_when_text_is_none(self, mocker) -> None:
+        mock_client = mocker.MagicMock()
+        mocker.patch.object(_judge_mod, "_client", return_value=mock_client)
+        mock_client.models.generate_content.return_value = mocker.MagicMock(text=None)
+        assert check_claim("answer", "claim") is False
+
 
 @pytest.mark.unit
 class TestCheckHallucination:
@@ -64,6 +70,12 @@ class TestCheckHallucination:
         )
         result = check_hallucination("answer", "context")
         assert result == ["Claim one.", "Claim two."]
+
+    def test_returns_empty_list_when_text_is_none(self, mocker) -> None:
+        mock_client = mocker.MagicMock()
+        mocker.patch.object(_judge_mod, "_client", return_value=mock_client)
+        mock_client.models.generate_content.return_value = mocker.MagicMock(text=None)
+        assert check_hallucination("answer", "context") == []
 
 
 @pytest.mark.unit
