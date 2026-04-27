@@ -12,8 +12,10 @@ from src.generation.loader import ModelLoader
 from src.generation.models import GenerationConfig
 from src.generation.prompt_builder import build_prompt
 from src.pipeline.rag_pipeline import AsyncRAGPipeline, RAGPipeline
+from src.retrieval.cache import LocalLRUCache, RedisCache
 from src.retrieval.embedder import BGEEmbedder
 from src.retrieval.knowledge_refiner import KnowledgeRefiner
+from src.retrieval.protocols import CacheProtocol
 from src.retrieval.query_router import QueryRouter
 from src.retrieval.query_transformer import HyDETransformer, MultiDraftHyDETransformer
 from src.retrieval.reranker import BGEReranker
@@ -21,6 +23,36 @@ from src.retrieval.retriever import AsyncRetriever, Retriever
 from src.retrieval.vector_store import AsyncQdrantVectorStore, QdrantVectorStore
 
 _LOG = logging.getLogger(__name__)
+
+
+def _build_cache(settings: Settings) -> CacheProtocol | None:
+    """Instantiate the configured cache backend, or return None if caching is disabled."""
+    if not settings.cache_enabled:
+        _LOG.info("Cache disabled")
+        return None
+
+    if settings.redis_url:
+        try:
+            password = (
+                settings.redis_password.get_secret_value()
+                if settings.redis_password is not None
+                else None
+            )
+            cache: CacheProtocol = RedisCache(
+                redis_url=settings.redis_url,
+                username=settings.redis_username,
+                password=password,
+            )
+            _LOG.info("Cache enabled: Redis at %s", settings.redis_url)
+            return cache
+        except Exception:
+            _LOG.warning(
+                "Redis cache init failed; falling back to LocalLRUCache", exc_info=True
+            )
+
+    cache = LocalLRUCache(maxsize=settings.cache_max_size)
+    _LOG.info("Cache enabled: LocalLRUCache (maxsize=%d)", settings.cache_max_size)
+    return cache
 
 
 def get_pipeline(request: Request) -> RAGPipeline:
@@ -136,11 +168,14 @@ def build_pipeline() -> tuple[RAGPipeline, ModelLoader, QdrantClient]:
         knowledge_refiner = None
         _LOG.info("KnowledgeRefiner disabled")
 
+    cache = _build_cache(settings)
+
     pipeline = RAGPipeline(
         retriever=retriever,
         generator=generator,
         query_router=query_router,
         knowledge_refiner=knowledge_refiner,
+        cache=cache,
     )
     return pipeline, loader, client
 
@@ -246,10 +281,13 @@ def build_async_pipeline() -> tuple[AsyncRAGPipeline, ModelLoader, AsyncQdrantCl
         knowledge_refiner = None
         _LOG.info("KnowledgeRefiner disabled")
 
+    cache = _build_cache(settings)
+
     async_pipeline = AsyncRAGPipeline(
         retriever=async_retriever,
         generator=generator,
         query_router=query_router,
         knowledge_refiner=knowledge_refiner,
+        cache=cache,
     )
     return async_pipeline, loader, async_client

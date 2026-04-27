@@ -289,3 +289,125 @@ class TestBuildPipelineHyDEEnabled:
             pipeline, _, _ = build_pipeline()
 
             assert isinstance(pipeline, RAGPipeline)
+
+
+# ---------------------------------------------------------------------------
+# Cache wiring tests for build_pipeline / build_async_pipeline
+# ---------------------------------------------------------------------------
+
+_COMMON_PATCHES = (
+    "src.api.dependencies.BGEEmbedder",
+    "src.api.dependencies.BGEReranker",
+    "src.api.dependencies.QdrantClient",
+    "src.api.dependencies.ModelLoader",
+    "src.api.dependencies.Inferencer",
+    "src.api.dependencies.Generator",
+)
+
+_ASYNC_PATCHES = (
+    "src.api.dependencies.BGEEmbedder",
+    "src.api.dependencies.BGEReranker",
+    "src.api.dependencies.AsyncQdrantClient",
+    "src.api.dependencies.ModelLoader",
+    "src.api.dependencies.Inferencer",
+    "src.api.dependencies.Generator",
+)
+
+
+def _mock_build_context(patch_targets: tuple[str, ...]):
+    """Context manager stack that stubs heavy model/client construction."""
+    from contextlib import ExitStack
+    from unittest.mock import patch as _patch
+
+    stack = ExitStack()
+    mocks: dict[str, MagicMock] = {}
+    for target in patch_targets:
+        m = stack.enter_context(_patch(target))
+        key = target.split(".")[-1]
+        mocks[key] = m
+        if hasattr(m, "from_pretrained"):
+            m.from_pretrained.return_value = MagicMock()
+        loader = m.return_value
+        loader.load = MagicMock()
+        loader.get_model = MagicMock(return_value=MagicMock())
+        loader.get_tokenizer = MagicMock(return_value=MagicMock())
+    return stack, mocks
+
+
+@pytest.mark.unit
+class TestBuildPipelineCacheWiring:
+    def test_cache_disabled_pipeline_has_no_cache(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from src.api.dependencies import build_pipeline
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("ROUTING_ENABLED", "false")
+        monkeypatch.setenv("HYDE_ENABLED", "false")
+        monkeypatch.setenv("CACHE_ENABLED", "false")
+
+        with _mock_build_context(_COMMON_PATCHES)[0]:
+            pipeline, _, _ = build_pipeline()
+
+        assert pipeline._cache is None
+
+    def test_cache_enabled_no_redis_uses_local_lru(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from src.api.dependencies import build_pipeline
+        from src.retrieval.cache import LocalLRUCache
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("ROUTING_ENABLED", "false")
+        monkeypatch.setenv("HYDE_ENABLED", "false")
+        monkeypatch.setenv("CACHE_ENABLED", "true")
+        monkeypatch.delenv("REDIS_URL", raising=False)
+
+        with _mock_build_context(_COMMON_PATCHES)[0]:
+            pipeline, _, _ = build_pipeline()
+
+        assert isinstance(pipeline._cache, LocalLRUCache)
+
+    def test_cache_enabled_with_redis_url_uses_redis_cache(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from src.api.dependencies import build_pipeline
+        from src.retrieval.cache import RedisCache
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("ROUTING_ENABLED", "false")
+        monkeypatch.setenv("HYDE_ENABLED", "false")
+        monkeypatch.setenv("CACHE_ENABLED", "true")
+        monkeypatch.setenv("REDIS_URL", "redis://localhost:6379")
+
+        fake_redis_cache = MagicMock(spec=RedisCache)
+        with (
+            _mock_build_context(_COMMON_PATCHES)[0],
+            patch(
+                "src.api.dependencies.RedisCache", return_value=fake_redis_cache
+            ) as mock_redis_cls,
+        ):
+            pipeline, _, _ = build_pipeline()
+
+        mock_redis_cls.assert_called_once()
+        assert pipeline._cache is fake_redis_cache
+
+    def test_redis_init_failure_falls_back_to_local_lru(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from src.api.dependencies import build_pipeline
+        from src.retrieval.cache import LocalLRUCache
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("ROUTING_ENABLED", "false")
+        monkeypatch.setenv("HYDE_ENABLED", "false")
+        monkeypatch.setenv("CACHE_ENABLED", "true")
+        monkeypatch.setenv("REDIS_URL", "redis://bad-host:6379")
+
+        with (
+            _mock_build_context(_COMMON_PATCHES)[0],
+            patch("src.api.dependencies.RedisCache", side_effect=Exception("conn refused")),
+        ):
+            pipeline, _, _ = build_pipeline()
+
+        assert isinstance(pipeline._cache, LocalLRUCache)

@@ -152,3 +152,56 @@ class CacheKey:
         combined = f"{query}:{sources_str}"
         digest = hashlib.sha256(combined.encode()).hexdigest()[:16]
         return f"retrieval:{digest}"
+
+    @staticmethod
+    def make_rag_key(
+        query: str,
+        sources: list[str] | None,
+        entity_name: str | None,
+        top_k: int,
+    ) -> str:
+        """Generate a cache key for a full RAG query result.
+
+        Includes all parameters that affect the pipeline output.
+        Source order is normalized so different orderings produce the same key.
+        """
+        sources_str = "|".join(sorted(sources)) if sources is not None else "all"
+        entity_str = entity_name if entity_name is not None else ""
+        combined = f"{query}:{sources_str}:{entity_str}:{top_k}"
+        digest = hashlib.sha256(combined.encode()).hexdigest()[:16]
+        return f"rag:{digest}"
+
+
+def to_cache_dict(result: Any) -> dict[str, Any]:
+    """Serialize a PipelineResult to a JSON-safe dict for cache storage."""
+    return {
+        "answer": result.answer,
+        "sources_used": list(result.sources_used),
+        "num_chunks_used": result.num_chunks_used,
+        "model_name": result.model_name,
+        "query": result.query,
+        "confidence_score": result.confidence_score,
+        "knowledge_gaps": (
+            list(result.knowledge_gaps) if result.knowledge_gaps is not None else None
+        ),
+    }
+
+
+def from_cache_dict(data: dict[str, Any]) -> Any:
+    """Deserialize a PipelineResult from a cached dict.
+
+    Returns a PipelineResult with all tuple fields restored correctly.
+    Import is local to avoid a circular import between cache and pipeline.
+    """
+    from src.pipeline.types import PipelineResult
+
+    gaps_raw = data.get("knowledge_gaps")
+    return PipelineResult(
+        answer=data["answer"],
+        sources_used=tuple(data["sources_used"]),
+        num_chunks_used=data["num_chunks_used"],
+        model_name=data["model_name"],
+        query=data["query"],
+        confidence_score=data.get("confidence_score"),
+        knowledge_gaps=tuple(gaps_raw) if gaps_raw is not None else None,
+    )

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import math
 from collections.abc import AsyncGenerator
 from typing import Any, cast
@@ -10,6 +11,7 @@ from src.generation.protocols import GeneratorProtocol, StreamingGeneratorProtoc
 from src.pipeline.types import PipelineResult
 from src.retrieval.protocols import (
     AsyncRetrieverProtocol,
+    CacheProtocol,
     KnowledgeRefinerProtocol,
     QueryRouterProtocol,
     RetrieverProtocol,
@@ -18,6 +20,17 @@ from src.types import RetrievalError, Source
 from src.utils.math import sigmoid as _sigmoid
 
 _SENTINEL = object()
+_LOG = logging.getLogger(__name__)
+
+
+def _sync_await(coro: Any) -> Any:
+    """Run a coroutine from sync code, handling both thread and top-level contexts."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    else:
+        return asyncio.run_coroutine_threadsafe(coro, loop).result()
 
 
 class RAGPipeline:
@@ -30,11 +43,13 @@ class RAGPipeline:
         generator: GeneratorProtocol,
         query_router: QueryRouterProtocol | None = None,
         knowledge_refiner: KnowledgeRefinerProtocol | None = None,
+        cache: CacheProtocol | None = None,
     ) -> None:
         self._retriever = retriever
         self._generator = generator
         self._query_router = query_router
         self._knowledge_refiner = knowledge_refiner
+        self._cache = cache
 
     def query(
         self,
@@ -50,8 +65,19 @@ class RAGPipeline:
             ValueError: If query is empty or whitespace-only.
             RetrievalError: Propagated immediately if retrieval fails — generator is never called.
         """
+        from src.retrieval.cache import CacheKey, from_cache_dict, to_cache_dict
+
         if not query.strip():
             raise ValueError("query must not be empty or whitespace-only")
+
+        if self._cache is not None:
+            cache_key = CacheKey.make_rag_key(query, sources, entity_name, top_k)
+            try:
+                cached = _sync_await(self._cache.get(cache_key))
+                if cached is not None:
+                    return from_cache_dict(cached)
+            except Exception:
+                _LOG.warning("Cache get failed; proceeding without cache", exc_info=True)
 
         if sources is None and self._query_router is not None:
             sources = self._query_router.route(query)
@@ -77,7 +103,7 @@ class RAGPipeline:
         raw_score = max(c.score for c in chunks)
         confidence_score: float | None = _sigmoid(raw_score) if math.isfinite(raw_score) else None
 
-        return PipelineResult(
+        result = PipelineResult(
             answer=gen_result.answer,
             sources_used=gen_result.sources_used,
             num_chunks_used=gen_result.num_chunks_used,
@@ -86,6 +112,14 @@ class RAGPipeline:
             confidence_score=confidence_score,
             knowledge_gaps=knowledge_gaps,
         )
+
+        if self._cache is not None:
+            try:
+                _sync_await(self._cache.set(cache_key, to_cache_dict(result)))
+            except Exception:
+                _LOG.warning("Cache set failed; result still returned", exc_info=True)
+
+        return result
 
 
 class AsyncRAGPipeline:
@@ -98,11 +132,13 @@ class AsyncRAGPipeline:
         generator: GeneratorProtocol,
         query_router: QueryRouterProtocol | None = None,
         knowledge_refiner: KnowledgeRefinerProtocol | None = None,
+        cache: CacheProtocol | None = None,
     ) -> None:
         self._retriever = retriever
         self._generator = generator
         self._query_router = query_router
         self._knowledge_refiner = knowledge_refiner
+        self._cache = cache
 
     async def query(
         self,
@@ -118,8 +154,20 @@ class AsyncRAGPipeline:
             ValueError: If query is empty or whitespace-only.
             RetrievalError: Propagated immediately if retrieval fails.
         """
+        from src.retrieval.cache import CacheKey, from_cache_dict, to_cache_dict
+
         if not query.strip():
             raise ValueError("query must not be empty or whitespace-only")
+
+        cache_key: str | None = None
+        if self._cache is not None:
+            cache_key = CacheKey.make_rag_key(query, sources, entity_name, top_k)
+            try:
+                cached = await self._cache.get(cache_key)
+                if cached is not None:
+                    return from_cache_dict(cached)
+            except Exception:
+                _LOG.warning("Cache get failed; proceeding without cache", exc_info=True)
 
         if sources is None and self._query_router is not None:
             sources = self._query_router.route(query)
@@ -145,7 +193,7 @@ class AsyncRAGPipeline:
         raw_score = max(c.score for c in chunks)
         confidence_score: float | None = _sigmoid(raw_score) if math.isfinite(raw_score) else None
 
-        return PipelineResult(
+        result = PipelineResult(
             answer=gen_result.answer,
             sources_used=gen_result.sources_used,
             num_chunks_used=gen_result.num_chunks_used,
@@ -154,6 +202,14 @@ class AsyncRAGPipeline:
             confidence_score=confidence_score,
             knowledge_gaps=knowledge_gaps,
         )
+
+        if self._cache is not None and cache_key is not None:
+            try:
+                await self._cache.set(cache_key, to_cache_dict(result))
+            except Exception:
+                _LOG.warning("Cache set failed; result still returned", exc_info=True)
+
+        return result
 
     async def stream_query(
         self,
