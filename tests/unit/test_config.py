@@ -997,6 +997,73 @@ class TestColbertEnabledSetting:
 
 
 @pytest.mark.unit
+class TestRetrievalTopKSetting:
+    def test_retrieval_top_k_defaults_to_5(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.delenv("TOP_K", raising=False)
+        settings = Settings.from_env()
+        assert settings.retrieval_top_k == 5
+
+    def test_retrieval_top_k_reads_from_env(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("TOP_K", "20")
+        settings = Settings.from_env()
+        assert settings.retrieval_top_k == 20
+
+    def test_retrieval_top_k_zero_raises_valueerror(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("TOP_K", "0")
+        with pytest.raises(ValueError, match="TOP_K"):
+            Settings.from_env()
+
+    def test_retrieval_top_k_negative_raises_valueerror(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("TOP_K", "-1")
+        with pytest.raises(ValueError, match="TOP_K"):
+            Settings.from_env()
+
+    def test_retrieval_top_k_above_1000_raises_valueerror(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("TOP_K", "1001")
+        with pytest.raises(ValueError, match="TOP_K"):
+            Settings.from_env()
+
+    def test_retrieval_top_k_non_integer_raises_valueerror(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("TOP_K", "abc")
+        with pytest.raises(ValueError, match="TOP_K"):
+            Settings.from_env()
+
+    def test_retrieval_top_k_valid_at_minimum_1(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("TOP_K", "1")
+        settings = Settings.from_env()
+        assert settings.retrieval_top_k == 1
+
+    def test_retrieval_top_k_valid_at_maximum_1000(self, monkeypatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("TOP_K", "1000")
+        settings = Settings.from_env()
+        assert settings.retrieval_top_k == 1000
+
+
+@pytest.mark.unit
 class TestTrustedProxyCountAsFloat:
     def test_trusted_proxy_count_as_float_via_middleware(
         self, monkeypatch: pytest.MonkeyPatch

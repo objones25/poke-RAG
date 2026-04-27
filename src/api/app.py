@@ -329,14 +329,23 @@ async def query(
     if settings.async_pipeline_enabled:
         async_pipeline: AsyncRAGPipeline = get_async_pipeline(request)
         result = await asyncio.wait_for(
-            async_pipeline.query(parsed, sources=body.sources, entity_name=body.entity_name),
+            async_pipeline.query(
+                parsed,
+                sources=body.sources,
+                entity_name=body.entity_name,
+                top_k=settings.retrieval_top_k,
+            ),
             timeout=settings.query_timeout_seconds,
         )
     else:
         sync_pipeline: RAGPipeline = get_pipeline(request)
         result = await asyncio.wait_for(
             asyncio.to_thread(
-                sync_pipeline.query, parsed, sources=body.sources, entity_name=body.entity_name
+                sync_pipeline.query,
+                parsed,
+                sources=body.sources,
+                entity_name=body.entity_name,
+                top_k=settings.retrieval_top_k,
             ),
             timeout=settings.query_timeout_seconds,
         )

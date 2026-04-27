@@ -98,6 +98,25 @@ def _parse_float_in_range_optional(
     return parsed
 
 
+def _parse_int_in_range(
+    value: str | None,
+    env_var_name: str,
+    default: int,
+    min_val: int,
+    max_val: int,
+) -> int:
+    """Parse a positive integer from environment variable within a specified range."""
+    if value is None:
+        return default
+    try:
+        parsed = int(value)
+    except ValueError:
+        raise ValueError(f"{env_var_name} must be a valid int, got: {value!r}") from None
+    if not min_val <= parsed <= max_val:
+        raise ValueError(f"{env_var_name} must be between {min_val} and {max_val}, got: {parsed}")
+    return parsed
+
+
 def _parse_int_positive(
     value: str | None,
     env_var_name: str,
@@ -181,6 +200,7 @@ class Settings:
     refiner_upper_threshold: float = 0.0
     refiner_lower_threshold: float = -3.0
     refiner_strip_threshold: float = -1.0
+    retrieval_top_k: int = 5
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -261,6 +281,14 @@ class Settings:
         refiner_strip_threshold = _parse_float_unbounded(
             os.getenv("REFINER_STRIP_THRESHOLD"), "REFINER_STRIP_THRESHOLD", -1.0
         )
+        retrieval_top_k = _parse_int_in_range(
+            os.getenv("TOP_K"),
+            "TOP_K",
+            5,
+            1,
+            1000,
+        )
+
         if refiner_lower_threshold >= refiner_upper_threshold:
             raise ValueError(
                 f"REFINER_LOWER_THRESHOLD ({refiner_lower_threshold}) must be less than "
@@ -304,4 +332,5 @@ class Settings:
             refiner_upper_threshold=refiner_upper_threshold,
             refiner_lower_threshold=refiner_lower_threshold,
             refiner_strip_threshold=refiner_strip_threshold,
+            retrieval_top_k=retrieval_top_k,
         )
