@@ -531,6 +531,75 @@ def chunk_smogon_data_file(
     return chunks
 
 
+def _chunk_pokeapi_file(
+    path: Path,
+    text: str,
+    entity_type: EntityType | None,
+    *,
+    tokenize_fn: Callable[[str], int] | None = None,
+    topic_lookup: dict[str, dict[str, Any]] | None = None,
+) -> list[RetrievedChunk]:
+    chunks: list[RetrievedChunk] = []
+    for i, line in enumerate(text.splitlines()):
+        chunks.extend(chunk_pokeapi_line(line, doc_id=f"{path.stem}_{i}", entity_type=entity_type))
+    return chunks
+
+
+def _chunk_smogon_file(
+    path: Path,
+    text: str,
+    entity_type: EntityType | None,
+    *,
+    tokenize_fn: Callable[[str], int] | None = None,
+    topic_lookup: dict[str, dict[str, Any]] | None = None,
+) -> list[RetrievedChunk]:
+    if path.stem == "smogon_data":
+        return list(chunk_smogon_data_file(text, tokenize_fn=tokenize_fn))
+    chunks: list[RetrievedChunk] = []
+    for i, line in enumerate(text.splitlines()):
+        chunks.extend(
+            chunk_smogon_line(
+                line,
+                doc_id=f"{path.stem}_{i}",
+                entity_type=entity_type,
+                tokenize_fn=tokenize_fn,
+            )
+        )
+    return chunks
+
+
+def _chunk_bulbapedia_file(
+    path: Path,
+    text: str,
+    entity_type: EntityType | None,
+    *,
+    tokenize_fn: Callable[[str], int] | None = None,
+    topic_lookup: dict[str, dict[str, Any]] | None = None,
+) -> list[RetrievedChunk]:
+    chunks: list[RetrievedChunk] = []
+    docs = _RE_BULBA_DOC_SPLIT.split(text)
+    for i, doc in enumerate(docs):
+        doc = doc.strip()
+        if doc:
+            chunks.extend(
+                chunk_bulbapedia_doc(
+                    doc,
+                    doc_id=f"{path.stem}_{i}",
+                    entity_type=entity_type,
+                    tokenize_fn=tokenize_fn,
+                    topic_lookup=topic_lookup,
+                )
+            )
+    return chunks
+
+
+_CHUNKERS: dict[Source, Callable[..., list[RetrievedChunk]]] = {
+    "pokeapi": _chunk_pokeapi_file,
+    "smogon": _chunk_smogon_file,
+    "bulbapedia": _chunk_bulbapedia_file,
+}
+
+
 def chunk_file(
     path: Path,
     *,
@@ -541,42 +610,7 @@ def chunk_file(
     """Chunk an entire file according to its source format."""
     text = path.read_text(encoding="utf-8")
     entity_type = _entity_type_from_stem(path.stem)
-    chunks: list[RetrievedChunk] = []
-
-    if source == "pokeapi":
-        for i, line in enumerate(text.splitlines()):
-            chunks.extend(
-                chunk_pokeapi_line(line, doc_id=f"{path.stem}_{i}", entity_type=entity_type)
-            )
-
-    elif source == "smogon":
-        if path.stem == "smogon_data":
-            chunks.extend(chunk_smogon_data_file(text, tokenize_fn=tokenize_fn))
-        else:
-            for i, line in enumerate(text.splitlines()):
-                chunks.extend(
-                    chunk_smogon_line(
-                        line,
-                        doc_id=f"{path.stem}_{i}",
-                        entity_type=entity_type,
-                        tokenize_fn=tokenize_fn,
-                    )
-                )
-
-    elif source == "bulbapedia":
-        docs = _RE_BULBA_DOC_SPLIT.split(text)
-        for i, doc in enumerate(docs):
-            doc = doc.strip()
-            if doc:
-                chunks.extend(
-                    chunk_bulbapedia_doc(
-                        doc,
-                        doc_id=f"{path.stem}_{i}",
-                        entity_type=entity_type,
-                        tokenize_fn=tokenize_fn,
-                        topic_lookup=topic_lookup,
-                    )
-                )
-
+    chunker = _CHUNKERS[source]
+    chunks = chunker(path, text, entity_type, tokenize_fn=tokenize_fn, topic_lookup=topic_lookup)
     _LOG.debug("Chunked '%s' (source=%s) → %d chunk(s)", path.name, source, len(chunks))
     return chunks

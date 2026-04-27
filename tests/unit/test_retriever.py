@@ -881,3 +881,39 @@ class TestRetrieverCandidatePoolCap:
         call_kwargs = vector_store.search.call_args_list[0][1]
         top_k = call_kwargs["top_k"]
         assert top_k >= 50
+
+
+@pytest.mark.unit
+class TestFusedEmbeddingProtocol:
+    def test_multi_draft_transformer_satisfies_protocol(self) -> None:
+        from src.retrieval.protocols import (
+            FusedEmbeddingTransformerProtocol,  # ImportError until added
+        )
+        from src.retrieval.query_transformer import MultiDraftHyDETransformer
+
+        mock_inferencer = MagicMock()
+        mock_embedder = MagicMock()
+        transformer = MultiDraftHyDETransformer(mock_inferencer, mock_embedder)
+
+        assert isinstance(transformer, FusedEmbeddingTransformerProtocol)
+
+    def test_hyde_transformer_does_not_satisfy_fused_protocol(self) -> None:
+        from src.retrieval.protocols import FusedEmbeddingTransformerProtocol
+        from src.retrieval.query_transformer import HyDETransformer
+
+        mock_inferencer = MagicMock()
+        transformer = HyDETransformer(mock_inferencer)
+
+        assert not isinstance(transformer, FusedEmbeddingTransformerProtocol)
+
+    def test_retriever_uses_isinstance_not_hasattr(self) -> None:
+        """Verify that the retriever code no longer uses hasattr for transformer dispatch."""
+        import inspect
+
+        import src.retrieval.retriever as retriever_mod
+
+        source = inspect.getsource(retriever_mod)
+        assert "hasattr" not in source, (
+            "retriever.py should use isinstance(…, FusedEmbeddingTransformerProtocol) "
+            "instead of hasattr"
+        )

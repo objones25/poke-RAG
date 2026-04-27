@@ -18,14 +18,7 @@ class Inferencer:
         self._processor = processor
         self._config = config
 
-    def infer(self, prompt: str, *, max_new_tokens: int | None = None) -> str:
-        if not prompt.strip():
-            raise ValueError("prompt must not be empty")
-
-        resolved_max_new_tokens = (
-            max_new_tokens if max_new_tokens is not None else self._config.max_new_tokens
-        )
-
+    def _prepare_inputs(self, prompt: str) -> tuple[Any, int]:
         messages = [{"role": "user", "content": prompt}]
         text: str = self._processor.apply_chat_template(
             messages,
@@ -35,6 +28,17 @@ class Inferencer:
         )
         inputs = self._processor(text=text, return_tensors="pt").to(self._model.device)
         input_len: int = inputs["input_ids"].shape[-1]
+        return inputs, input_len
+
+    def infer(self, prompt: str, *, max_new_tokens: int | None = None) -> str:
+        if not prompt.strip():
+            raise ValueError("prompt must not be empty")
+
+        resolved_max_new_tokens = (
+            max_new_tokens if max_new_tokens is not None else self._config.max_new_tokens
+        )
+
+        inputs, input_len = self._prepare_inputs(prompt)
         _LOG.debug(
             "Inferring: prompt_len=%d tokens, max_new=%d",
             input_len,
@@ -89,14 +93,7 @@ class Inferencer:
             max_new_tokens if max_new_tokens is not None else self._config.max_new_tokens
         )
 
-        messages = [{"role": "user", "content": prompt}]
-        text: str = self._processor.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True,
-            enable_thinking=False,
-        )
-        inputs = self._processor(text=text, return_tensors="pt").to(self._model.device)
+        inputs, _ = self._prepare_inputs(prompt)
 
         streamer = TextIteratorStreamer(
             self._processor,

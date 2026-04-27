@@ -238,3 +238,79 @@ class TestAsyncRAGPipelineCacheHit:
         result = await pipeline.query("q")
 
         assert result.answer == "answer"
+
+
+# ---------------------------------------------------------------------------
+# TTL wiring tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestRAGPipelineCacheTTL:
+    def test_cache_set_called_with_configured_ttl(self, mocker) -> None:
+        """cache.set must receive ttl_seconds matching cache_ttl_seconds."""
+        from src.pipeline.rag_pipeline import RAGPipeline
+
+        cache = mocker.AsyncMock()
+        cache.get.return_value = None
+
+        chunk = make_chunk(score=0.9)
+        retriever = mocker.MagicMock()
+        retriever.retrieve.return_value = _rr(chunk)
+
+        generator = mocker.MagicMock()
+        generator.generate.return_value = _gr()
+
+        pipeline = RAGPipeline(
+            retriever=retriever, generator=generator, cache=cache, cache_ttl_seconds=7200
+        )
+        pipeline.query("q")
+
+        _, kwargs = cache.set.call_args
+        assert kwargs.get("ttl_seconds") == 7200
+
+    def test_cache_set_uses_default_ttl_when_not_specified(self, mocker) -> None:
+        """Default cache_ttl_seconds=3600 is used when not explicitly set."""
+        from src.pipeline.rag_pipeline import RAGPipeline
+
+        cache = mocker.AsyncMock()
+        cache.get.return_value = None
+
+        chunk = make_chunk(score=0.9)
+        retriever = mocker.MagicMock()
+        retriever.retrieve.return_value = _rr(chunk)
+
+        generator = mocker.MagicMock()
+        generator.generate.return_value = _gr()
+
+        pipeline = RAGPipeline(retriever=retriever, generator=generator, cache=cache)
+        pipeline.query("q")
+
+        _, kwargs = cache.set.call_args
+        assert kwargs.get("ttl_seconds") == 3600
+
+
+@pytest.mark.unit
+@pytest.mark.anyio
+class TestAsyncRAGPipelineCacheTTL:
+    async def test_cache_set_called_with_configured_ttl(self, mocker) -> None:
+        """async cache.set must receive ttl_seconds matching cache_ttl_seconds."""
+        from src.pipeline.rag_pipeline import AsyncRAGPipeline
+
+        cache = mocker.AsyncMock()
+        cache.get.return_value = None
+
+        chunk = make_chunk(score=0.9)
+        retriever = mocker.AsyncMock()
+        retriever.retrieve.return_value = _rr(chunk)
+
+        generator = mocker.MagicMock()
+        generator.generate.return_value = _gr()
+
+        pipeline = AsyncRAGPipeline(
+            retriever=retriever, generator=generator, cache=cache, cache_ttl_seconds=1800
+        )
+        await pipeline.query("q")
+
+        _, kwargs = cache.set.call_args
+        assert kwargs.get("ttl_seconds") == 1800

@@ -407,3 +407,77 @@ class TestBuildPipelineCacheWiring:
             pipeline, _, _ = build_pipeline()
 
         assert isinstance(pipeline._cache, LocalLRUCache)
+
+
+@pytest.mark.unit
+class TestBuildSharedComponents:
+    def test_function_exists_and_returns_embedder(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from unittest.mock import MagicMock, patch
+
+        from src.api.dependencies import _build_shared_components  # ImportError until implemented
+        from src.config import Settings
+
+        monkeypatch.setenv("HYDE_ENABLED", "false")
+        monkeypatch.setenv("ROUTING_ENABLED", "false")
+        monkeypatch.setenv("REFINER_ENABLED", "false")
+        monkeypatch.setenv("CACHE_ENABLED", "false")
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+
+        with (
+            patch("src.api.dependencies.BGEEmbedder") as mock_embedder_cls,
+            patch("src.api.dependencies.BGEReranker") as mock_reranker_cls,
+            patch("src.api.dependencies.ModelLoader") as mock_loader_cls,
+            patch("src.api.dependencies.Inferencer") as mock_inferencer_cls,
+            patch("src.api.dependencies.Generator") as mock_generator_cls,
+        ):
+            mock_embedder_cls.from_pretrained.return_value = MagicMock()
+            mock_reranker_cls.from_pretrained.return_value = MagicMock()
+            mock_loader = MagicMock()
+            mock_loader_cls.return_value = mock_loader
+            mock_loader.get_model.return_value = MagicMock()
+            mock_loader.get_tokenizer.return_value = MagicMock()
+            mock_inferencer_cls.return_value = MagicMock()
+            mock_generator_cls.return_value = MagicMock()
+
+            settings = Settings.from_env()
+            shared = _build_shared_components(settings)
+
+            assert shared.embedder is mock_embedder_cls.from_pretrained.return_value
+            assert shared.reranker is mock_reranker_cls.from_pretrained.return_value
+            assert shared.query_transformer is None
+            assert shared.query_router is None
+            assert shared.knowledge_refiner is None
+
+    def test_shared_components_routing_enabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from unittest.mock import MagicMock, patch
+
+        from src.api.dependencies import _build_shared_components
+        from src.config import Settings
+        from src.retrieval.query_router import QueryRouter
+
+        monkeypatch.setenv("HYDE_ENABLED", "false")
+        monkeypatch.setenv("ROUTING_ENABLED", "true")
+        monkeypatch.setenv("REFINER_ENABLED", "false")
+        monkeypatch.setenv("CACHE_ENABLED", "false")
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+
+        with (
+            patch("src.api.dependencies.BGEEmbedder") as mock_embedder_cls,
+            patch("src.api.dependencies.BGEReranker") as mock_reranker_cls,
+            patch("src.api.dependencies.ModelLoader") as mock_loader_cls,
+            patch("src.api.dependencies.Inferencer") as mock_inferencer_cls,
+            patch("src.api.dependencies.Generator") as mock_generator_cls,
+        ):
+            mock_embedder_cls.from_pretrained.return_value = MagicMock()
+            mock_reranker_cls.from_pretrained.return_value = MagicMock()
+            mock_loader = MagicMock()
+            mock_loader_cls.return_value = mock_loader
+            mock_loader.get_model.return_value = MagicMock()
+            mock_loader.get_tokenizer.return_value = MagicMock()
+            mock_inferencer_cls.return_value = MagicMock()
+            mock_generator_cls.return_value = MagicMock()
+
+            settings = Settings.from_env()
+            shared = _build_shared_components(settings)
+
+            assert isinstance(shared.query_router, QueryRouter)

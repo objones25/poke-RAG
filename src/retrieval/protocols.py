@@ -84,6 +84,13 @@ class QueryTransformerProtocol(Protocol):
 
 
 @runtime_checkable
+class FusedEmbeddingTransformerProtocol(Protocol):
+    """Extended transformer that returns a fused multi-draft EmbeddingOutput directly."""
+
+    def transform_to_embedding(self, query: str) -> EmbeddingOutput: ...
+
+
+@runtime_checkable
 class RetrieverProtocol(Protocol):
     def retrieve(
         self,

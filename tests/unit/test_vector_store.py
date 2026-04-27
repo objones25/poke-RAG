@@ -770,3 +770,110 @@ class TestSearchTopKValidation:
         store = QdrantVectorStore(client)
         with pytest.raises(ValueError, match="top_k"):
             store.search("pokeapi", [0.1] * 1024, {1: 0.5}, top_k=1001)
+
+
+@pytest.mark.unit
+class TestVectorStoreModuleHelpers:
+    """Tests for module-level helper functions extracted from QdrantVectorStore."""
+
+    def test_build_points_returns_correct_count(self) -> None:
+        from src.retrieval.types import EmbeddingOutput
+        from src.retrieval.vector_store import _build_points
+
+        docs = [
+            RetrievedChunk(
+                text="doc1",
+                score=1.0,
+                source="bulbapedia",
+                entity_name="pikachu",
+                entity_type="pokemon",
+                chunk_index=0,
+                original_doc_id="doc1",
+            ),
+            RetrievedChunk(
+                text="doc2",
+                score=1.0,
+                source="pokeapi",
+                entity_name=None,
+                entity_type=None,
+                chunk_index=1,
+                original_doc_id="doc2",
+            ),
+        ]
+        embeddings = EmbeddingOutput(
+            dense=[[0.1] * 1024, [0.2] * 1024],
+            sparse=[{1: 0.5}, {2: 0.7}],
+        )
+        points = _build_points(docs, embeddings, colbert_enabled=False)
+        assert len(points) == 2
+
+    def test_build_points_payload_fields(self) -> None:
+        from src.retrieval.types import EmbeddingOutput
+        from src.retrieval.vector_store import _build_points
+
+        doc = RetrievedChunk(
+            text="hello",
+            score=0.9,
+            source="smogon",
+            entity_name="Pikachu",
+            entity_type="pokemon",
+            chunk_index=3,
+            original_doc_id="orig123",
+        )
+        embeddings = EmbeddingOutput(dense=[[0.1] * 1024], sparse=[{0: 1.0}])
+        points = _build_points([doc], embeddings, colbert_enabled=False)
+        payload = points[0].payload
+        assert payload is not None
+        assert payload["text"] == "hello"
+        assert payload["source"] == "smogon"
+        assert payload["entity_name"] == "pikachu"  # lowercased
+        assert payload["chunk_index"] == 3
+        assert payload["original_doc_id"] == "orig123"
+
+    def test_parse_response_points_returns_chunks(self) -> None:
+        from unittest.mock import MagicMock
+
+        from src.retrieval.vector_store import _parse_response_points
+
+        point = MagicMock()
+        point.id = "abc"
+        point.score = 0.8
+        point.payload = {
+            "text": "some text",
+            "source": "bulbapedia",
+            "entity_name": "charizard",
+            "entity_type": "pokemon",
+            "chunk_index": 0,
+            "original_doc_id": "origX",
+        }
+        chunks, skipped = _parse_response_points([point])
+        assert len(chunks) == 1
+        assert chunks[0].text == "some text"
+        assert skipped == 0
+
+    def test_parse_response_points_skips_malformed(self) -> None:
+        from unittest.mock import MagicMock
+
+        from src.retrieval.vector_store import _parse_response_points
+
+        bad_point = MagicMock()
+        bad_point.id = "bad"
+        bad_point.payload = None
+        chunks, skipped = _parse_response_points([bad_point])
+        assert len(chunks) == 0
+        assert skipped == 1
+
+    def test_build_entity_filter_returns_none_for_none(self) -> None:
+        from src.retrieval.vector_store import _build_entity_filter
+
+        assert _build_entity_filter(None) is None
+
+    def test_build_entity_filter_normalises_name(self) -> None:
+        from qdrant_client.models import Filter
+
+        from src.retrieval.vector_store import _build_entity_filter
+
+        f = _build_entity_filter("  Pikachu  ")
+        assert isinstance(f, Filter)
+        cond = f.must[0]
+        assert cond.match.value == "pikachu"
