@@ -70,6 +70,22 @@ class TestAPIResponseFormat:
         assert response.status_code == 422
         assert response.json()["detail"] == "Invalid input"
 
+    def test_off_topic_query_returns_503_or_answer(self, client, mock_pipeline) -> None:
+        """Off-topic query may hit hard floor → 503, or succeed with low confidence.
+
+        When retrieval returns chunks below the hard_floor threshold, RetrievalError is raised
+        by the pipeline, which the API converts to 503. Otherwise, the generator may still
+        produce a valid answer with low confidence. Both responses are valid.
+        """
+        mock_pipeline.query.side_effect = RetrievalError(
+            "retrieval hard floor exceeded; no documents met threshold"
+        )
+        response = client.post(
+            "/query", json={"query": "what is the airspeed velocity of an unladen swallow"}
+        )
+        assert response.status_code == 503
+        assert response.json()["detail"] == "Retrieval service unavailable"
+
 
 @pytest.mark.integration
 class TestAPIRouting:
