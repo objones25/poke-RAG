@@ -336,9 +336,7 @@ def _mock_build_context(patch_targets: tuple[str, ...]):
 
 @pytest.mark.unit
 class TestBuildPipelineCacheWiring:
-    def test_cache_disabled_pipeline_has_no_cache(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_cache_disabled_pipeline_has_no_cache(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from src.api.dependencies import build_pipeline
 
         monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
@@ -351,9 +349,7 @@ class TestBuildPipelineCacheWiring:
 
         assert pipeline._cache is None
 
-    def test_cache_enabled_no_redis_uses_local_lru(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_cache_enabled_no_redis_uses_local_lru(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from src.api.dependencies import build_pipeline
         from src.retrieval.cache import LocalLRUCache
 

@@ -46,9 +46,7 @@ def _build_cache(settings: Settings) -> CacheProtocol | None:
             _LOG.info("Cache enabled: Redis at %s", settings.redis_url)
             return cache
         except Exception:
-            _LOG.warning(
-                "Redis cache init failed; falling back to LocalLRUCache", exc_info=True
-            )
+            _LOG.warning("Redis cache init failed; falling back to LocalLRUCache", exc_info=True)
 
     cache = LocalLRUCache(maxsize=settings.cache_max_size)
     _LOG.info("Cache enabled: LocalLRUCache (maxsize=%d)", settings.cache_max_size)
