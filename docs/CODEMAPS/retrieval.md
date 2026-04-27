@@ -1,6 +1,6 @@
 # Retrieval Subsystem Codemap
 
-**Last Updated:** 2026-04-26  
+**Last Updated:** 2026-04-27  
 **Entry Points:** `src/retrieval/__init__.py` → `BGEEmbedder`, `Retriever`, `BGEReranker`, `ContextAssembler`, `KnowledgeRefiner`
 
 ## Overview
@@ -170,6 +170,17 @@ def transform(self, query: str) -> str:
     """Transform a query before embedding. Returns original query on failure."""
 ```
 
+**`FusedEmbeddingTransformerProtocol`**
+
+```python
+def transform_to_embedding(self, query: str) -> EmbeddingOutput:
+    """Transform a query directly to an EmbeddingOutput (used by MultiDraftHyDETransformer).
+    
+    Enables extended transformers that combine multiple draft hypothetical documents
+    into a single fused embedding, avoiding separate embedder.encode() call.
+    """
+```
+
 **`RetrieverProtocol`**
 
 ```python
@@ -220,29 +231,36 @@ def encode(texts: list[str]) -> EmbeddingOutput:
 **`QdrantVectorStore`**
 
 ```python
-def __init__(client: Any) -> None:
-    """Wrap an existing qdrant_client.QdrantClient."""
+def __init__(client: Any, *, colbert_enabled: bool = False) -> None:
+    """Wrap an existing qdrant_client.QdrantClient.
+    
+    Args:
+        colbert_enabled: If True, include ColBERT multi-vector configuration in collections.
+    """
 
 def ensure_collections() -> None:
-    """Create collections with COSINE distance for dense, on-disk=False for sparse."""
+    """Create collections with COSINE distance for dense, on-disk=False for sparse.
+    If colbert_enabled, also configure ColBERT (multi-vector late interaction) vectors."""
 
 def upsert(
     collection: Source,
     documents: list[RetrievedChunk],
     embeddings: EmbeddingOutput,
 ) -> None:
-    """Upsert in batches of _UPSERT_BATCH_SIZE (100).
+    """Upsert in batches (batch size adjusted for ColBERT: 100 for dense+sparse, 2 for ColBERT).
+    Uses module-level helper _build_points() to construct PointStruct objects.
     Point IDs are deterministic: uuid5(NAMESPACE_URL, f"{original_doc_id}:{chunk_index}").
-    Payload includes all RetrievedChunk fields.
+    Payload includes all RetrievedChunk fields plus optional ColBERT vectors.
     """
 
 def search(...) -> list[RetrievedChunk]:
     """Hybrid search: Prefetch dense & sparse independently (limit=top_k*2 each),
-    fuse with RRF (Reciprocal Rank Fusion), apply optional entity_name filter,
-    limit final result to top_k. Payload parsing is partially resilient: text, source,
-    chunk_index, original_doc_id require direct access (KeyError if missing);
-    entity_name and entity_type use .get() with None defaults. Returns list of
-    RetrievedChunk with scores.
+    fuse with RRF (Reciprocal Rank Fusion), optionally include ColBERT multi-vector,
+    apply optional entity_name filter, limit final result to top_k.
+    Uses module-level helper _parse_response_points() to reconstruct RetrievedChunk objects.
+    Payload parsing is partially resilient: text, source, chunk_index, original_doc_id 
+    require direct access (KeyError if missing); entity_name and entity_type use .get() 
+    with None defaults. Returns list of RetrievedChunk with scores.
     """
 ```
 
@@ -254,15 +272,28 @@ def __init__(
     embedder: EmbedderProtocol,
     vector_store: VectorStoreProtocol,
     reranker: RerankerProtocol,
-    candidates_per_source: int = _DEFAULT_CANDIDATES_PER_SOURCE,  # 25 (updated)
+    candidates_per_source: int = _DEFAULT_CANDIDATES_PER_SOURCE,  # 25
     query_transformer: QueryTransformerProtocol | None = None,
+    hyde_confidence_threshold: float | None = None,
 ) -> None:
     """Inject dependencies (enables mocking in tests).
 
     Args:
-        query_transformer: Optional transformer (e.g., HyDETransformer) to pre-process query
-                          before embedding. If provided, transforms query and embeds result
-                          instead of raw query. Falls back to original query on transform failure.
+        query_transformer: Optional transformer (e.g., HyDETransformer, MultiDraftHyDETransformer)
+                          to pre-process query before embedding. If provided, checks if transformer
+                          implements FusedEmbeddingTransformerProtocol (for direct embedding output);
+                          if not, calls transform() + embedder.encode(). Falls back to original query
+                          on transform failure.
+        hyde_confidence_threshold: Optional float (0.0–1.0). If set, gates weak HyDE answers
+                                   below threshold (experimental).
+    """
+
+def _embed_for_search(self, query: str, *, use_transformer: bool) -> EmbeddingOutput:
+    """Return embedding to use for vector search.
+    
+    When use_transformer is True and transformer implements FusedEmbeddingTransformerProtocol,
+    calls transform_to_embedding() directly (multi-draft fusion, no extra embedder call).
+    Otherwise falls back to transform() + embedder.encode().
     """
 
 def retrieve(
@@ -272,12 +303,11 @@ def retrieve(
     sources: list[Source] | None = None,
     entity_name: str | None = None,
 ) -> RetrievalResult:
-    """1. Optionally transform query (if query_transformer is set).
-    2. Embed transformed query (raises EmbeddingError if empty or fails).
-    3. Validate embedding: assert len(embedding.dense) == 1 before using.
-    4. Search each active source for candidates_per_source items (parallel via ThreadPoolExecutor).
-    5. Merge candidates (may exceed top_k at this stage).
-    6. Rerank to top_k.
+    """1. Optionally embed query via _embed_for_search (handles FusedEmbeddingTransformer).
+    2. Validate embedding: assert len(embedding.dense) == 1 and len(embedding.sparse) == 1.
+    3. Search each active source for candidates_per_source items (parallel via ThreadPoolExecutor).
+    4. Merge candidates (may exceed top_k at this stage).
+    5. Rerank to top_k.
     Raises RetrievalError if no candidates found or reranking fails.
     """
 ```
@@ -403,53 +433,75 @@ class HyDETransformer:
         """
 ```
 
-### Chunking Functions (script-level, also exported)
+### Module-Level Helper Functions (vector_store.py)
+
+**`_build_points(documents, embeddings, *, colbert_enabled) -> list[PointStruct]`**
 
 ```python
-def chunk_pokeapi_line(
-    line: str,
+def _build_points(
+    documents: list[RetrievedChunk],
+    embeddings: EmbeddingOutput,
     *,
-    doc_id: str,
-    entity_type: EntityType | None = None,
-) -> list[RetrievedChunk]:
-    """No splitting: one line = one atomic fact (pokeapi format).
-    Returns single-element list. Extracts entity_name via _extract_pokeapi_name().
-    Calls _extract_pokeapi_metadata(doc_id=doc_id) to populate metadata.
+    colbert_enabled: bool,
+) -> list[PointStruct]:
+    """Construct Qdrant PointStruct objects from chunks and embeddings.
+    
+    Deterministic point IDs via uuid5(NAMESPACE_URL, f"{original_doc_id}:{chunk_index}").
+    Embeds dense, sparse, and optional ColBERT vectors into payload.
+    Normalizes entity_name to lowercase for consistent filtering.
     """
+```
 
-def chunk_smogon_line(
-    line: str,
-    *,
-    doc_id: str,
-    entity_type: EntityType | None = None,
-    tokenize_fn: Callable[[str], int] | None = None,
-) -> list[RetrievedChunk]:
-    """Split 'Name (tier): body...' by sentences/paragraphs to target 400 tokens.
-    Extracts entity_name from 'Name (tier)' prefix.
-    Returns list of RetrievedChunk with chunk_index 0..N.
+**`_parse_response_points(response_points) -> tuple[list[RetrievedChunk], int]`**
+
+```python
+def _parse_response_points(
+    response_points: Any,
+) -> tuple[list[RetrievedChunk], int]:
+    """Reconstruct RetrievedChunk objects from Qdrant response points.
+    
+    Returns (chunks, skipped_count). Skipped count reflects malformed payloads.
+    Payload parsing is partially resilient: text, source, chunk_index, original_doc_id
+    require direct access; entity_name and entity_type use .get() with None defaults.
     """
+```
 
-def chunk_bulbapedia_doc(
-    doc: str,
+**`_build_entity_filter(entity_name) -> Filter | None`**
+
+```python
+def _build_entity_filter(entity_name: str | None) -> Filter | None:
+    """Construct a Qdrant Filter for entity_name payload matching, or None if entity_name is None.
+    
+    Normalizes to lowercase + stripped for consistent matching with stored entity_name values.
+    """
+```
+
+### Chunking Functions (script-level, also exported)
+
+**Private chunker functions (source-specific):**
+
+```python
+def _chunk_pokeapi_file(
+    text: str,
     *,
-    doc_id: str,
-    entity_type: EntityType | None = None,
+    path: Path,
     tokenize_fn: Callable[[str], int] | None = None,
     topic_lookup: dict[str, dict[str, Any]] | None = None,
 ) -> list[RetrievedChunk]:
-    """Split 'Title: ...\nbody...' to target 512 tokens.
-    Extracts entity_name from title, ignoring parentheses.
-    Returns list of RetrievedChunk with chunk_index 0..N.
-    Uses topic_lookup to populate metadata with topics and entity_type_hint if provided.
+    """No splitting: one line = one atomic fact (pokeapi format).
+    Extracts entity_name via _extract_pokeapi_name().
+    Calls _extract_pokeapi_metadata() to populate metadata.
     """
 
-def chunk_smogon_data_file(
+def _chunk_smogon_file(
     text: str,
     *,
+    path: Path,
     tokenize_fn: Callable[[str], int] | None = None,
+    topic_lookup: dict[str, dict[str, Any]] | None = None,
 ) -> list[RetrievedChunk]:
-    """Parse the three-level hierarchical smogon_data.txt format into RetrievedChunks.
-
+    """Parse smogon_data.txt (three-level hierarchical format).
+    
     File structure:
       ={80} line  ← Pokémon block separator
       header (with "Smogon form: <name>" line)
@@ -466,6 +518,34 @@ def chunk_smogon_data_file(
     set_name, and battle attributes (Item, Ability, Nature, Tera Type).
     """
 
+def _chunk_bulbapedia_file(
+    text: str,
+    *,
+    path: Path,
+    tokenize_fn: Callable[[str], int] | None = None,
+    topic_lookup: dict[str, dict[str, Any]] | None = None,
+) -> list[RetrievedChunk]:
+    """Split 'Title: ...\nbody...' to target 512 tokens.
+    Extracts entity_name from title, ignoring parentheses.
+    Returns list of RetrievedChunk with chunk_index 0..N.
+    Uses topic_lookup to populate metadata with topics and entity_type_hint if provided.
+    Splits on 'Title:' boundaries first, then chunks each doc.
+    """
+```
+
+**Chunker registry:**
+
+```python
+_CHUNKERS: dict[Source, Callable[..., list[RetrievedChunk]]] = {
+    "pokeapi": _chunk_pokeapi_file,
+    "smogon": _chunk_smogon_file,
+    "bulbapedia": _chunk_bulbapedia_file,
+}
+```
+
+**Public dispatcher:**
+
+```python
 def chunk_file(
     path: Path,
     *,
@@ -474,11 +554,11 @@ def chunk_file(
     topic_lookup: dict[str, dict[str, Any]] | None = None,
 ) -> list[RetrievedChunk]:
     """Dispatch to source-specific chunker for an entire file.
+    
     Infers entity_type from path.stem (e.g., 'pokemon.txt' → 'pokemon').
-    For bulbapedia, splits on 'Title:' boundaries first, then chunks each doc.
-    For smogon, detects 'smogon_data.txt' and calls chunk_smogon_data_file().
+    Looks up chunker function in _CHUNKERS dict by source; raises ValueError if unknown source.
+    Passes topic_lookup to chunker if provided.
     Logs total chunks created.
-    Passes topic_lookup to bulbapedia chunker if provided.
     """
 ```
 

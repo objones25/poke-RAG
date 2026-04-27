@@ -1,6 +1,6 @@
 # Generation Subsystem Codemap
 
-**Last Updated:** 2026-04-23
+**Last Updated:** 2026-04-27
 **Entry Points:** `src/generation/__init__.py`
 
 ## Overview
@@ -144,12 +144,20 @@ class Inferencer:
         config: GenerationConfig,
     ) -> None: ...
 
-    def infer(self, prompt: str) -> str:
+    def _prepare_inputs(self, prompt: str) -> tuple[Any, int]:
+        """Prepare tokenized inputs for model inference (extracted from duplicated code).
+        
+        Returns:
+            (inputs: dict with tokenized input_ids on model device, input_len: int)
+        """
+
+    def infer(self, prompt: str, *, max_new_tokens: int | None = None) -> str:
         """
         Run inference on a single prompt.
 
         Args:
             prompt: Full formatted prompt including system, context, question
+            max_new_tokens: Optional override of config.max_new_tokens
 
         Returns:
             Generated answer text, stripped of leading/trailing whitespace
@@ -159,9 +167,20 @@ class Inferencer:
             RuntimeError: if model.generate() returns empty sequences
             TypeError: if processor.decode() returns non-str
         """
+
+    def stream_infer(self, prompt: str, *, max_new_tokens: int | None = None) -> Iterator[str]:
+        """Yield generated tokens one-at-a-time via TextIteratorStreamer.
+        
+        Reuses _prepare_inputs() for consistent tokenization.
+        Runs model.generate() in a background thread to feed TextIteratorStreamer.
+        
+        Raises:
+            ValueError: if prompt is empty
+            RuntimeError: if model.generate() raises during streaming
+        """
 ```
 
-**Implementation details:**
+**Implementation details (shared via _prepare_inputs):**
 
 - Builds messages list: `[{"role": "user", "content": prompt}]`
 - Calls `processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True, enable_thinking=False)`
