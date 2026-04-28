@@ -13,6 +13,7 @@ COPY src ./src
 # --no-dev: skip [dependency-groups].dev (hatchling)
 # --extra api: include fastapi + uvicorn
 # --no-editable: bake src into site-packages (no source tree needed at runtime)
+# For LoRA adapter support add: --extra lora
 ENV UV_LINK_MODE=copy
 RUN uv sync --frozen --no-dev --extra api --no-editable
 
