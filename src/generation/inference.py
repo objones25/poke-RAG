@@ -12,6 +12,35 @@ from src.generation.models import GenerationConfig
 _LOG = logging.getLogger(__name__)
 
 
+class _ThinkingStreamFilter:
+    """Two-state machine that buffers thought content and emits only post-thought tokens.
+
+    BUFFERING: accumulates tokens until '<channel|>' is detected.
+    EMITTING: yields tokens directly to caller.
+    A 64-char rolling buffer handles '<channel|>' arriving across two streamer chunks.
+    """
+
+    _CLOSE = "<channel|>"
+    _LOOKBACK = 64
+
+    def __init__(self) -> None:
+        self._emitting = False
+        self._buf = ""
+
+    def feed(self, token: str) -> str | None:
+        if self._emitting:
+            return token
+        self._buf += token
+        if self._CLOSE in self._buf:
+            self._emitting = True
+            suffix = self._buf.split(self._CLOSE, 1)[1]
+            self._buf = ""
+            return suffix or None
+        if len(self._buf) > self._LOOKBACK:
+            self._buf = self._buf[-self._LOOKBACK :]
+        return None
+
+
 class Inferencer:
     def __init__(self, model: PreTrainedModel, processor: Any, config: GenerationConfig) -> None:
         self._model = model

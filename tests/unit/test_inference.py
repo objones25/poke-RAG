@@ -273,3 +273,47 @@ class TestPrepareInputs:
         inferencer, _, _, fake_inputs = _make_inferencer(device="cuda")
         inferencer._prepare_inputs("test prompt")
         fake_inputs.to.assert_called_once_with("cuda")
+
+
+@pytest.mark.unit
+class TestThinkingStreamFilter:
+    def _make_filter(self) -> Any:
+        from src.generation.inference import _ThinkingStreamFilter
+
+        return _ThinkingStreamFilter()
+
+    def test_buffers_all_tokens_before_close_tag(self) -> None:
+        f = self._make_filter()
+        assert f.feed("<|channel>thought\n") is None
+        assert f.feed("some internal reasoning") is None
+
+    def test_emits_suffix_when_close_tag_received(self) -> None:
+        f = self._make_filter()
+        f.feed("<|channel>thought\n")
+        result = f.feed("<channel|>The actual answer")
+        assert result == "The actual answer"
+
+    def test_returns_none_when_close_tag_has_no_suffix(self) -> None:
+        f = self._make_filter()
+        f.feed("<|channel>thought\n")
+        result = f.feed("<channel|>")
+        assert result is None
+
+    def test_passthrough_after_close_tag_seen(self) -> None:
+        f = self._make_filter()
+        f.feed("<|channel>thought\n<channel|>")
+        assert f.feed("more answer tokens") == "more answer tokens"
+        assert f.feed("and more") == "and more"
+
+    def test_handles_straddled_close_tag(self) -> None:
+        f = self._make_filter()
+        f.feed("<|channel>thought\n")
+        f.feed("reasoning ")
+        f.feed("<channel")      # first half of tag
+        result = f.feed("|>answer here")  # second half
+        assert result == "answer here"
+
+    def test_close_tag_inline_with_thought(self) -> None:
+        f = self._make_filter()
+        result = f.feed("<|channel>thought\nreasoning<channel|>answer")
+        assert result == "answer"
