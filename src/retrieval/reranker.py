@@ -50,9 +50,7 @@ class BGEReranker:
         tokenizer = getattr(self._model, "tokenizer", None)
         if tokenizer is not None:
             truncated = sum(
-                1
-                for q, d in pairs
-                if len(tokenizer.encode(q + " " + d)) > _RERANKER_MAX_LENGTH
+                1 for q, d in pairs if len(tokenizer.encode(q + " " + d)) > _RERANKER_MAX_LENGTH
             )
             if truncated:
                 _LOG.info("reranker_truncated_pairs=%d of %d", truncated, len(pairs))

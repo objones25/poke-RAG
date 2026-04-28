@@ -81,9 +81,7 @@ class KnowledgeRefiner:
     def _split_sentences(text: str) -> list[str]:
         # Replace "Sp. " → "Sp\x00" so the period is not treated as a sentence boundary,
         # then restore after splitting.
-        protected = _ABBREV_RE.sub(
-            lambda m: m.group(0).replace(". ", _ABBREV_SENTINEL), text
-        )
+        protected = _ABBREV_RE.sub(lambda m: m.group(0).replace(". ", _ABBREV_SENTINEL), text)
         parts = [s.replace(_ABBREV_SENTINEL, ". ").strip() for s in _SENTENCE_RE.split(protected)]
         return [p for p in parts if p]
 
