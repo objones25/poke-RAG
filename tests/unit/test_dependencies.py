@@ -484,6 +484,54 @@ class TestBuildSharedComponents:
 
 
 @pytest.mark.unit
+class TestBuildPipelineThinking:
+    def test_inferencer_receives_thinking_enabled_from_settings(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from src.api.dependencies import build_pipeline
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("ROUTING_ENABLED", "false")
+        monkeypatch.setenv("HYDE_ENABLED", "false")
+        monkeypatch.setenv("THINKING_ENABLED", "true")
+
+        with (
+            patch("src.api.dependencies.BGEEmbedder") as mock_embedder_cls,
+            patch("src.api.dependencies.BGEReranker") as mock_reranker_cls,
+            patch("src.api.dependencies.QdrantClient") as mock_client_cls,
+            patch("src.api.dependencies.ModelLoader") as mock_loader_cls,
+            patch("src.api.dependencies.Inferencer") as mock_inferencer_cls,
+            patch("src.api.dependencies.Generator") as mock_generator_cls,
+        ):
+            mock_embedder_instance = MagicMock()
+            mock_embedder_cls.from_pretrained.return_value = mock_embedder_instance
+
+            mock_reranker_instance = MagicMock()
+            mock_reranker_cls.from_pretrained.return_value = mock_reranker_instance
+
+            mock_client_instance = MagicMock()
+            mock_client_cls.return_value = mock_client_instance
+            mock_client_instance.ensure_collections = MagicMock()
+
+            mock_loader_instance = MagicMock()
+            mock_loader_cls.return_value = mock_loader_instance
+            mock_loader_instance.load = MagicMock()
+            mock_loader_instance.get_model.return_value = MagicMock()
+            mock_loader_instance.get_tokenizer.return_value = MagicMock()
+
+            mock_inferencer_instance = MagicMock()
+            mock_inferencer_cls.return_value = mock_inferencer_instance
+
+            mock_generator_instance = MagicMock()
+            mock_generator_cls.return_value = mock_generator_instance
+
+            build_pipeline()
+
+            _, kwargs = mock_inferencer_cls.call_args
+            assert kwargs.get("thinking_enabled") is True
+
+
+@pytest.mark.unit
 class TestBuildPipelineSettingsWiring:
     def test_rag_pipeline_receives_settings(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from src.api.dependencies import build_pipeline
