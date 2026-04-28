@@ -43,13 +43,14 @@ Each query hits one or more collections via source filtering or keyword routing.
 
 Three read-only sources in `processed/`:
 
-| Source         | Format                              | Chunking Strategy                                               | Target Size     | Overlap |
-| -------------- | ----------------------------------- | --------------------------------------------------------------- | --------------- | ------- |
-| **Bulbapedia** | `Title: ...\n<body>` (one per line) | Split at `Title:` boundary, then recursive by `\n\n` → sentence | 512 tokens      | ~10%    |
-| **PokéAPI**    | One entry per line, no header       | None — each line is atomic                                      | ~100–300 tokens | 0%      |
-| **Smogon**     | Three-level hierarchical (Pokémon blocks / format sections / overview+set) via `chunk_smogon_data_file()` | Level 1: `={80}` delimiters; Level 2: `-{40}` delimiters; Level 3: subsections. Entity name from canonical `Smogon form:` line. Produces ~17,336 chunks (3,094 overview + 14,242 set) from 611 Pokémon. | ~400 tokens | N/A |
+| Source         | Format                                                                                                    | Chunking Strategy                                                                                                                                                                                       | Target Size     | Overlap |
+| -------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- | ------- |
+| **Bulbapedia** | `Title: ...\n<body>` (one per line)                                                                       | Split at `Title:` boundary, then recursive by `\n\n` → sentence                                                                                                                                         | 512 tokens      | ~10%    |
+| **PokéAPI**    | One entry per line, no header                                                                             | None — each line is atomic                                                                                                                                                                              | ~100–300 tokens | 0%      |
+| **Smogon**     | Three-level hierarchical (Pokémon blocks / format sections / overview+set) via `chunk_smogon_data_file()` | Level 1: `={80}` delimiters; Level 2: `-{40}` delimiters; Level 3: subsections. Entity name from canonical `Smogon form:` line. Produces ~17,336 chunks (3,094 overview + 14,242 set) from 611 Pokémon. | ~400 tokens     | N/A     |
 
 Every chunk carries metadata including `source`, `entity_name` (Pokémon/move/ability if extractable), `entity_type`, `chunk_index`, `original_doc_id`. Additionally, each source now produces enriched metadata:
+
 - **Smogon**: `chunk_kind` (overview/set), `generation`, `tier`, `set_name`, `tera_type`, `item`, `ability`, `nature`
 - **PokéAPI**: `entity_subtype` (species/moves/encounters/ability/item/move)
 - **Bulbapedia**: `topics` (list of tags), `entity_type_hint` (from optional topic cache)
@@ -204,7 +205,7 @@ curl -X POST "http://localhost:8000/query/stream" \
 
 Each line of the stream is a JSON event on a `data:` prefix:
 
-```
+```json
 data: {"token": "Gengar"}
 data: {"token": " learns"}
 data: {"token": " Shadow"}
@@ -240,11 +241,11 @@ print()  # newline after stream ends
 
 **Event format:**
 
-| Event | Payload | When |
-|-------|---------|------|
-| Token | `{"token": "..."}` | Each token produced by the model |
-| Done  | `{"done": true}`   | Stream complete (always last event) |
-| Error | `{"error": "Stream generation failed"}` | Retrieval or generation failure |
+| Event | Payload                                 | When                                |
+| ----- | --------------------------------------- | ----------------------------------- |
+| Token | `{"token": "..."}`                      | Each token produced by the model    |
+| Done  | `{"done": true}`                        | Stream complete (always last event) |
+| Error | `{"error": "Stream generation failed"}` | Retrieval or generation failure     |
 
 The streaming endpoint requires `ASYNC_PIPELINE_ENABLED=true` (the default when running the API normally). Rate limiting and body size limits apply identically to `/query`.
 
@@ -437,47 +438,47 @@ settings = Settings.from_env()
 
 ### Configuration Details
 
-| Variable | Default | Required | Description |
-| -------- | ------- | -------- | ----------- |
-| `QDRANT_URL` | `http://localhost:6333` | Yes | Qdrant vector DB URL (Docker locally, hosted in prod) |
-| `QDRANT_API_KEY` | (none) | No | API key for cloud Qdrant; omit for local |
-| `EMBED_MODEL` | `BAAI/bge-m3` | No | BGE-M3 embedding model (do not change) |
-| `RERANK_MODEL` | `BAAI/bge-reranker-v2-m3` | No | BGE Reranker v2-m3 model (do not change) |
-| `GEN_MODEL` | `google/gemma-4-E4B-it` | No | Gemma 4 generation model (do not change) |
-| `LORA_ADAPTER_PATH` | (none) | No | Path to local PEFT LoRA adapter (e.g. `models/pokesage-lora`). If set but path doesn't exist, falls back to `objones25/pokesage-lora` on HF Hub. Omit to run base model only. |
-| `ROUTING_ENABLED` | `false` | No | Enable keyword-based query router to classify queries into sources |
-| `HYDE_ENABLED` | `false` | No | Enable HyDE query transformation (generates pseudo-answer for better retrieval) |
-| `HYDE_MAX_TOKENS` | `150` | No | Maximum tokens for HyDE pseudo-answer generation |
-| `REFINER_ENABLED` | `false` | No | Enable post-retrieval knowledge refinement (CRAG-style action triage) |
-| `REFINER_UPPER_THRESHOLD` | `0.0` | No | Score threshold for accepting chunks (BGE reranker logit space) |
-| `REFINER_LOWER_THRESHOLD` | `-3.0` | No | Score threshold below which chunks are dropped |
-| `REFINER_STRIP_THRESHOLD` | `-1.0` | No | Score threshold for sentence-level strip filtering within chunks |
-| `TEMPERATURE` | `0.7` | No | Model temperature for generation (0.0–2.0, higher = more creative) |
-| `MAX_NEW_TOKENS` | `512` | No | Maximum tokens to generate in response |
-| `TOP_P` | `0.9` | No | Top-P nucleus sampling (0.0–1.0) |
-| `DO_SAMPLE` | `true` | No | Use sampling vs. greedy decoding |
-| `DEVICE` | `cuda` | No | Device: `cpu`, `cuda`, or `mps` (Apple Silicon) |
-| `RATE_LIMIT_ENABLED` | `true` | No | Enable/disable rate limiting on `/query` endpoint (20 req/min/IP) |
-| `QUERY_TIMEOUT_SECONDS` | `120` | No | Timeout for inference. Increase for MPS (e.g. `300`). |
-| `ALLOWED_ORIGINS` | `*` | No | CORS allowed origins (comma-separated or `*` for all) |
-| `LOG_LEVEL` | `INFO` | No | Log level: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` |
-| `TRUSTED_PROXY_COUNT` | `0` | No | Number of trusted proxies for X-Forwarded-For header parsing |
+| Variable                  | Default                   | Required | Description                                                                                                                                                                   |
+| ------------------------- | ------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `QDRANT_URL`              | `http://localhost:6333`   | Yes      | Qdrant vector DB URL (Docker locally, hosted in prod)                                                                                                                         |
+| `QDRANT_API_KEY`          | (none)                    | No       | API key for cloud Qdrant; omit for local                                                                                                                                      |
+| `EMBED_MODEL`             | `BAAI/bge-m3`             | No       | BGE-M3 embedding model (do not change)                                                                                                                                        |
+| `RERANK_MODEL`            | `BAAI/bge-reranker-v2-m3` | No       | BGE Reranker v2-m3 model (do not change)                                                                                                                                      |
+| `GEN_MODEL`               | `google/gemma-4-E4B-it`   | No       | Gemma 4 generation model (do not change)                                                                                                                                      |
+| `LORA_ADAPTER_PATH`       | (none)                    | No       | Path to local PEFT LoRA adapter (e.g. `models/pokesage-lora`). If set but path doesn't exist, falls back to `objones25/pokesage-lora` on HF Hub. Omit to run base model only. |
+| `ROUTING_ENABLED`         | `false`                   | No       | Enable keyword-based query router to classify queries into sources                                                                                                            |
+| `HYDE_ENABLED`            | `false`                   | No       | Enable HyDE query transformation (generates pseudo-answer for better retrieval)                                                                                               |
+| `HYDE_MAX_TOKENS`         | `150`                     | No       | Maximum tokens for HyDE pseudo-answer generation                                                                                                                              |
+| `REFINER_ENABLED`         | `false`                   | No       | Enable post-retrieval knowledge refinement (CRAG-style action triage)                                                                                                         |
+| `REFINER_UPPER_THRESHOLD` | `0.0`                     | No       | Score threshold for accepting chunks (BGE reranker logit space)                                                                                                               |
+| `REFINER_LOWER_THRESHOLD` | `-3.0`                    | No       | Score threshold below which chunks are dropped                                                                                                                                |
+| `REFINER_STRIP_THRESHOLD` | `-1.0`                    | No       | Score threshold for sentence-level strip filtering within chunks                                                                                                              |
+| `TEMPERATURE`             | `0.7`                     | No       | Model temperature for generation (0.0–2.0, higher = more creative)                                                                                                            |
+| `MAX_NEW_TOKENS`          | `512`                     | No       | Maximum tokens to generate in response                                                                                                                                        |
+| `TOP_P`                   | `0.9`                     | No       | Top-P nucleus sampling (0.0–1.0)                                                                                                                                              |
+| `DO_SAMPLE`               | `true`                    | No       | Use sampling vs. greedy decoding                                                                                                                                              |
+| `DEVICE`                  | `cuda`                    | No       | Device: `cpu`, `cuda`, or `mps` (Apple Silicon)                                                                                                                               |
+| `RATE_LIMIT_ENABLED`      | `true`                    | No       | Enable/disable rate limiting on `/query` endpoint (20 req/min/IP)                                                                                                             |
+| `QUERY_TIMEOUT_SECONDS`   | `120`                     | No       | Timeout for inference. Increase for MPS (e.g. `300`).                                                                                                                         |
+| `ALLOWED_ORIGINS`         | `*`                       | No       | CORS allowed origins (comma-separated or `*` for all)                                                                                                                         |
+| `LOG_LEVEL`               | `INFO`                    | No       | Log level: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`                                                                                                                    |
+| `TRUSTED_PROXY_COUNT`     | `0`                       | No       | Number of trusted proxies for X-Forwarded-For header parsing                                                                                                                  |
 
 ## Core Dependencies
 
-| Group     | Key Packages                             | Purpose                            |
-| --------- | ---------------------------------------- | ---------------------------------- |
-| **core**  | `transformers` ≥5.5.0, `torch` ≥2.11.0  | Model loading & inference          |
-|           | `accelerate`                             | Multi-GPU inference support        |
-|           | `FlagEmbedding` ≥1.3.5                   | BGE-M3 embeddings (dense + sparse) |
-|           | `qdrant-client` ≥1.17.1                  | Vector DB client                   |
-|           | `peft` ≥0.14.0                           | LoRA adapter loading at inference  |
-|           | `pydantic` ≥2.13.3, `numpy` ≥2.4.4      | Data validation, numerics          |
-| **api**   | `fastapi` ≥0.136.0, `uvicorn[standard]`  | HTTP server with standard middleware |
-| **dev**   | `pytest` ≥9.0.3, `pytest-mock`, `pytest-cov` | Testing & coverage                |
-|           | `ruff` ≥0.15.11, `mypy` ≥1.20.1         | Linting & type checking (strict)   |
-| **train** | `unsloth`, `trl`, `bitsandbytes`         | SFT fine-tuning (RunPod only)      |
-|           | `datasets`                               | Dataset handling for training      |
+| Group     | Key Packages                                 | Purpose                              |
+| --------- | -------------------------------------------- | ------------------------------------ |
+| **core**  | `transformers` ≥5.5.0, `torch` ≥2.11.0       | Model loading & inference            |
+|           | `accelerate`                                 | Multi-GPU inference support          |
+|           | `FlagEmbedding` ≥1.3.5                       | BGE-M3 embeddings (dense + sparse)   |
+|           | `qdrant-client` ≥1.17.1                      | Vector DB client                     |
+|           | `peft` ≥0.14.0                               | LoRA adapter loading at inference    |
+|           | `pydantic` ≥2.13.3, `numpy` ≥2.4.4           | Data validation, numerics            |
+| **api**   | `fastapi` ≥0.136.0, `uvicorn[standard]`      | HTTP server with standard middleware |
+| **dev**   | `pytest` ≥9.0.3, `pytest-mock`, `pytest-cov` | Testing & coverage                   |
+|           | `ruff` ≥0.15.11, `mypy` ≥1.20.1              | Linting & type checking (strict)     |
+| **train** | `unsloth`, `trl`, `bitsandbytes`             | SFT fine-tuning (RunPod only)        |
+|           | `datasets`                                   | Dataset handling for training        |
 
 Never use `pip install` — use `uv add` only. See `CONTRIBUTING.md` for dependency management.
 
@@ -523,10 +524,10 @@ Each collection stores both `vectors_config` (dense, 1024-dim, cosine) and `spar
 4. **Hybrid search** — Qdrant searches selected or all collections with RRF fusion
 5. **Rerank** — Top-K candidates reranked with `BAAI/bge-reranker-v2-m3`
 6. **Knowledge Refinement** (optional, `REFINER_ENABLED=true`) — Post-retrieval CRAG-style action triage:
-   - *Accepted* chunks (score ≥ `REFINER_UPPER_THRESHOLD`, default 0.0): passed to sentence-level strip filtering via BGE reranker — low-scoring sentences (below `REFINER_STRIP_THRESHOLD`, default -1.0) are dropped and survivors recomposed in original order
-   - *Uncertain* chunks (`REFINER_LOWER_THRESHOLD` ≤ score < upper, default -3.0 to 0.0): passed through as-is, flagged with `metadata.uncertain=True`
-   - *Dropped* chunks (score < `REFINER_LOWER_THRESHOLD`): discarded
-   - *Constraint gap detection*: gen/tier keywords in the query (e.g., "gen9", "ou") are checked against surviving chunks; missing keywords surface as `knowledge_gaps` in the response
+   - _Accepted_ chunks (score ≥ `REFINER_UPPER_THRESHOLD`, default 0.0): passed to sentence-level strip filtering via BGE reranker — low-scoring sentences (below `REFINER_STRIP_THRESHOLD`, default -1.0) are dropped and survivors recomposed in original order
+   - _Uncertain_ chunks (`REFINER_LOWER_THRESHOLD` ≤ score < upper, default -3.0 to 0.0): passed through as-is, flagged with `metadata.uncertain=True`
+   - _Dropped_ chunks (score < `REFINER_LOWER_THRESHOLD`): discarded
+   - _Constraint gap detection_: gen/tier keywords in the query (e.g., "gen9", "ou") are checked against surviving chunks; missing keywords surface as `knowledge_gaps` in the response
 7. **Assemble context** — Chunks truncated to token budget, ordered by score, with metadata
 8. **Generate** — Gemma 4 answers with retrieved context, optionally using LoRA adapter
 
@@ -545,6 +546,7 @@ Enable with `ROUTING_ENABLED=true`. Router outputs a `source_classification: dic
 The `HyDETransformer` in `src/retrieval/query_transformer.py` generates a hypothetical document (pseudo-answer) and uses that text for retrieval instead of the raw query, shifting retrieval to answer-to-answer similarity. This often improves recall on conceptual questions.
 
 Enable with `HYDE_ENABLED=true`, configure max tokens with `HYDE_MAX_TOKENS=150` (default). The transformer:
+
 1. Sends query through Gemma 4 to generate a hypothetical answer
 2. Uses that answer text for embedding & retrieval
 3. Falls back to original query on any failure
@@ -676,9 +678,9 @@ The `pokesage-lora` adapter is a PEFT LoRA adapter trained with Supervised Fine-
 
 ### Published Adapters
 
-| Adapter | Status | Base Model | Checkpoint |
-|---------|--------|-----------|------------|
-| `pokesage-lora` (objones25/pokesage-lora) | v1 | gemma-4-E4B-it | Epoch 2 (best val_loss) |
+| Adapter                                   | Status | Base Model     | Checkpoint              |
+| ----------------------------------------- | ------ | -------------- | ----------------------- |
+| `pokesage-lora` (objones25/pokesage-lora) | v1     | gemma-4-E4B-it | Epoch 2 (best val_loss) |
 
 Available on [HuggingFace Hub](https://huggingface.co/objones25/pokesage-lora).
 
@@ -700,6 +702,7 @@ uv run uvicorn src.api.app:app
 ```
 
 During startup, `ModelLoader._apply_lora_adapter()` wraps the base model with `PeftModel.from_pretrained`:
+
 1. If `LORA_ADAPTER_PATH` is set, tries to load from local path
 2. If local path doesn't exist, falls back to HF Hub
 3. Raises `RuntimeError` if the adapter cannot be loaded

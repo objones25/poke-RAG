@@ -117,16 +117,20 @@ class Inferencer:
             raw: str = self._processor.decode(response_ids, skip_special_tokens=False)
             if not isinstance(raw, str):
                 raise TypeError(f"Processor returned {type(raw).__name__}, expected str")
-            if "<channel|>" in raw:
-                thought = raw.split("<channel|>", 1)[0]
-                _LOG.debug("thinking_block: %s", thought[:200])
-            response: str = self._processor.parse_response(raw)
+            parsed = self._processor.parse_response(raw)
+            # parse_response returns a dict {"role": ..., "thinking": ..., "content": ...}
+            # or a plain str on older transformers versions.
+            if isinstance(parsed, dict):
+                _LOG.debug("thinking_block: %s", str(parsed.get("thinking", ""))[:200])
+                response: str = str(parsed.get("content", ""))
+            else:
+                response = str(parsed)
         else:
             response = self._processor.decode(response_ids, skip_special_tokens=True)
             if not isinstance(response, str):
                 raise TypeError(f"Processor returned {type(response).__name__}, expected str")
 
-        stripped_response = response.strip() if isinstance(response, str) else str(response).strip()
+        stripped_response = response.strip()
         if not stripped_response:
             raise RuntimeError(
                 f"Model generated only whitespace/empty output (input_len={input_len}, "
