@@ -325,6 +325,91 @@ class TestPrepareInputs:
 
 
 @pytest.mark.unit
+class TestInferencerThinking:
+    def _make_thinking_inferencer(
+        self,
+        *,
+        raw_decoded: str = "<|channel>thought\nsome reasoning<channel|>The answer",
+        parse_response_return: str = "The answer",
+    ) -> tuple[Any, Any, Any]:
+        from src.generation.inference import Inferencer
+        from src.generation.models import GenerationConfig
+
+        fake_model = MagicMock()
+        fake_model.device = "cpu"
+        fake_processor = MagicMock()
+        fake_inputs = _make_fake_inputs(3)
+        fake_processor.apply_chat_template.return_value = "formatted"
+        fake_processor.return_value = fake_inputs
+        fake_model.generate.return_value = torch.arange(5).unsqueeze(0)
+        fake_processor.decode.return_value = raw_decoded
+        fake_processor.parse_response.return_value = parse_response_return
+
+        inferencer = Inferencer(
+            fake_model, fake_processor, GenerationConfig(model_id="test/model"),
+            thinking_enabled=True,
+        )
+        return inferencer, fake_model, fake_processor
+
+    def test_thinking_path_uses_skip_special_tokens_false(self) -> None:
+        inferencer, _, fake_processor = self._make_thinking_inferencer()
+        inferencer.infer("question")
+
+        _, kwargs = fake_processor.decode.call_args
+        assert kwargs.get("skip_special_tokens") is False
+
+    def test_thinking_path_calls_parse_response(self) -> None:
+        inferencer, _, fake_processor = self._make_thinking_inferencer()
+        inferencer.infer("question")
+
+        fake_processor.parse_response.assert_called_once()
+        raw = fake_processor.decode.return_value
+        fake_processor.parse_response.assert_called_with(raw)
+
+    def test_thinking_path_returns_parse_response_output(self) -> None:
+        inferencer, _, _ = self._make_thinking_inferencer(parse_response_return="Charizard is Fire.")
+        result = inferencer.infer("question")
+        assert result == "Charizard is Fire."
+
+    def test_thinking_override_false_skips_parse_response(self) -> None:
+        """Inferencer with thinking_enabled=True but infer(thinking=False) uses normal path."""
+        inferencer, _, fake_processor = self._make_thinking_inferencer()
+        fake_processor.decode.return_value = "normal answer"
+        result = inferencer.infer("question", thinking=False)
+
+        _, kwargs = fake_processor.decode.call_args
+        assert kwargs.get("skip_special_tokens") is True
+        fake_processor.parse_response.assert_not_called()
+        assert result == "normal answer"
+
+    def test_thinking_override_true_on_non_thinking_instance(self) -> None:
+        """infer(thinking=True) overrides instance default of False."""
+        from src.generation.inference import Inferencer
+        from src.generation.models import GenerationConfig
+
+        fake_model = MagicMock()
+        fake_model.device = "cpu"
+        fake_processor = MagicMock()
+        fake_inputs = _make_fake_inputs(3)
+        fake_processor.apply_chat_template.return_value = "formatted"
+        fake_processor.return_value = fake_inputs
+        fake_model.generate.return_value = torch.arange(5).unsqueeze(0)
+        fake_processor.decode.return_value = "<|channel>thought\n<channel|>answer"
+        fake_processor.parse_response.return_value = "answer"
+
+        inferencer = Inferencer(
+            fake_model, fake_processor, GenerationConfig(model_id="test/model"),
+            thinking_enabled=False,
+        )
+        result = inferencer.infer("question", thinking=True)
+
+        _, kwargs = fake_processor.decode.call_args
+        assert kwargs.get("skip_special_tokens") is False
+        fake_processor.parse_response.assert_called_once()
+        assert result == "answer"
+
+
+@pytest.mark.unit
 class TestThinkingStreamFilter:
     def _make_filter(self) -> Any:
         from src.generation.inference import _ThinkingStreamFilter

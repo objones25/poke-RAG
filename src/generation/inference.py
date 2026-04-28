@@ -71,15 +71,22 @@ class Inferencer:
         input_len: int = inputs["input_ids"].shape[-1]
         return inputs, input_len
 
-    def infer(self, prompt: str, *, max_new_tokens: int | None = None) -> str:
+    def infer(
+        self,
+        prompt: str,
+        *,
+        max_new_tokens: int | None = None,
+        thinking: bool | None = None,
+    ) -> str:
         if not prompt.strip():
             raise ValueError("prompt must not be empty")
 
+        resolved_thinking = thinking if thinking is not None else self._thinking_enabled
         resolved_max_new_tokens = (
             max_new_tokens if max_new_tokens is not None else self._config.max_new_tokens
         )
 
-        inputs, input_len = self._prepare_inputs(prompt)
+        inputs, input_len = self._prepare_inputs(prompt, thinking=resolved_thinking)
         _LOG.debug(
             "Inferring: prompt_len=%d tokens, max_new=%d",
             input_len,
@@ -106,11 +113,20 @@ class Inferencer:
                 f"output_len={output_ids.shape[-1]})"
             )
 
-        response: str = self._processor.decode(response_ids, skip_special_tokens=True)
-        if not isinstance(response, str):
-            raise TypeError(f"Processor returned {type(response).__name__}, expected str")
+        if resolved_thinking:
+            raw: str = self._processor.decode(response_ids, skip_special_tokens=False)
+            if not isinstance(raw, str):
+                raise TypeError(f"Processor returned {type(raw).__name__}, expected str")
+            if "<channel|>" in raw:
+                thought = raw.split("<channel|>", 1)[0]
+                _LOG.debug("thinking_block: %s", thought[:200])
+            response: str = self._processor.parse_response(raw)
+        else:
+            response = self._processor.decode(response_ids, skip_special_tokens=True)
+            if not isinstance(response, str):
+                raise TypeError(f"Processor returned {type(response).__name__}, expected str")
 
-        stripped_response = response.strip()
+        stripped_response = response.strip() if isinstance(response, str) else str(response).strip()
         if not stripped_response:
             raise RuntimeError(
                 f"Model generated only whitespace/empty output (input_len={input_len}, "
