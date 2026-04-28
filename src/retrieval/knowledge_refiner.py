@@ -16,6 +16,13 @@ if TYPE_CHECKING:
 _LOG = logging.getLogger(__name__)
 
 _SENTENCE_RE = re.compile(r"(?<=[.!?])\s+")
+# Abbreviations that end in "." but are NOT sentence boundaries in Pokémon text.
+# "Sp." in "Sp. Atk" / "Sp. Def" is the most common; list covers other stat/meta shorthands.
+_ABBREV_RE = re.compile(
+    r"\b(Sp|HP|Atk|Def|EV|IV|PP|EVs|IVs|Mr|Mrs|Dr|Jr|Sr|No|Mt|St|vs)\.\s",
+    re.IGNORECASE,
+)
+_ABBREV_SENTINEL = "\x00"  # null byte never appears in text; restored after splitting
 _GEN_RE = re.compile(r"\bgen\s*([0-9]+)", re.IGNORECASE)
 _TIER_RE = re.compile(r"\b(ou|uu|ru|nu|pu|ubers|lc|vgc|doubles)\b", re.IGNORECASE)
 
@@ -72,7 +79,12 @@ class KnowledgeRefiner:
 
     @staticmethod
     def _split_sentences(text: str) -> list[str]:
-        parts = [s.strip() for s in _SENTENCE_RE.split(text)]
+        # Replace "Sp. " → "Sp\x00" so the period is not treated as a sentence boundary,
+        # then restore after splitting.
+        protected = _ABBREV_RE.sub(
+            lambda m: m.group(0).replace(". ", _ABBREV_SENTINEL), text
+        )
+        parts = [s.replace(_ABBREV_SENTINEL, ". ").strip() for s in _SENTENCE_RE.split(protected)]
         return [p for p in parts if p]
 
     def _filter_strips(self, query: str, chunk: RetrievedChunk) -> RetrievedChunk | None:

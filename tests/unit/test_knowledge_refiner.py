@@ -133,6 +133,25 @@ class TestSplitSentences:
         result = self._split("  First.  Second.  ")
         assert result == ["First.", "Second."]
 
+    def test_sp_abbrev_not_split(self) -> None:
+        # "Sp." in "Sp. Atk" / "Sp. Def" must NOT be treated as a sentence boundary.
+        text = "Base stats: HP 91, Attack 134, Defense 95, Sp. Atk 65, Sp. Def 65, Speed 80."
+        result = self._split(text)
+        assert result == [text]
+
+    def test_sp_abbrev_preserves_speed_value(self) -> None:
+        stats = "Base stats: HP 91, Attack 134, Defense 95, Sp. Atk 65, Sp. Def 65, Speed 80."
+        text = f"Dragonite has high attack. {stats}"
+        result = self._split(text)
+        assert len(result) == 2
+        assert "Speed 80." in result[1]
+
+    def test_abbrev_at_real_sentence_boundary(self) -> None:
+        # A sentence that ends normally after an abbreviation-looking word should still split.
+        text = "It knows HP Fire. Pikachu is electric."
+        result = self._split(text)
+        assert len(result) == 2
+
 
 @pytest.mark.unit
 class TestFilterStrips:
