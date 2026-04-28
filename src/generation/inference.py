@@ -136,8 +136,16 @@ class Inferencer:
         _LOG.debug("Generated %d chars", len(stripped_response))
         return stripped_response
 
-    def stream_infer(self, prompt: str, *, max_new_tokens: int | None = None) -> Iterator[str]:
+    def stream_infer(
+        self,
+        prompt: str,
+        *,
+        max_new_tokens: int | None = None,
+        thinking: bool | None = None,
+    ) -> Iterator[str]:
         """Yield tokens one-at-a-time as the model produces them via TextIteratorStreamer.
+
+        When thinking is enabled, thought content is suppressed via _ThinkingStreamFilter.
 
         Raises:
             ValueError: If prompt is empty or whitespace-only.
@@ -146,16 +154,17 @@ class Inferencer:
         if not prompt.strip():
             raise ValueError("prompt must not be empty")
 
+        resolved_thinking = thinking if thinking is not None else self._thinking_enabled
         resolved_max_new_tokens = (
             max_new_tokens if max_new_tokens is not None else self._config.max_new_tokens
         )
 
-        inputs, _ = self._prepare_inputs(prompt)
+        inputs, _ = self._prepare_inputs(prompt, thinking=resolved_thinking)
 
         streamer = TextIteratorStreamer(
             self._processor,
             skip_prompt=True,
-            skip_special_tokens=True,
+            skip_special_tokens=not resolved_thinking,
         )
 
         exc_holder: list[BaseException] = []
@@ -177,10 +186,16 @@ class Inferencer:
         thread = threading.Thread(target=_generate, daemon=True)
         thread.start()
 
+        filter_ = _ThinkingStreamFilter() if resolved_thinking else None
         try:
             for text_piece in streamer:
-                if text_piece:
-                    yield text_piece
+                if not text_piece:
+                    continue
+                if filter_ is not None:
+                    text_piece = filter_.feed(text_piece)
+                    if text_piece is None:
+                        continue
+                yield text_piece
         finally:
             thread.join()
 

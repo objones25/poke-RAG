@@ -346,7 +346,9 @@ class TestInferencerThinking:
         fake_processor.parse_response.return_value = parse_response_return
 
         inferencer = Inferencer(
-            fake_model, fake_processor, GenerationConfig(model_id="test/model"),
+            fake_model,
+            fake_processor,
+            GenerationConfig(model_id="test/model"),
             thinking_enabled=True,
         )
         return inferencer, fake_model, fake_processor
@@ -367,9 +369,10 @@ class TestInferencerThinking:
         fake_processor.parse_response.assert_called_with(raw)
 
     def test_thinking_path_returns_parse_response_output(self) -> None:
-        inferencer, _, _ = self._make_thinking_inferencer(parse_response_return="Charizard is Fire.")
+        resp = "Charizard is Fire."
+        inferencer, _, _ = self._make_thinking_inferencer(parse_response_return=resp)
         result = inferencer.infer("question")
-        assert result == "Charizard is Fire."
+        assert result == resp
 
     def test_thinking_override_false_skips_parse_response(self) -> None:
         """Inferencer with thinking_enabled=True but infer(thinking=False) uses normal path."""
@@ -398,7 +401,9 @@ class TestInferencerThinking:
         fake_processor.parse_response.return_value = "answer"
 
         inferencer = Inferencer(
-            fake_model, fake_processor, GenerationConfig(model_id="test/model"),
+            fake_model,
+            fake_processor,
+            GenerationConfig(model_id="test/model"),
             thinking_enabled=False,
         )
         result = inferencer.infer("question", thinking=True)
@@ -451,3 +456,110 @@ class TestThinkingStreamFilter:
         f = self._make_filter()
         result = f.feed("<|channel>thought\nreasoning<channel|>answer")
         assert result == "answer"
+
+
+@pytest.mark.unit
+class TestInferencerStreamInferThinking:
+    def test_stream_infer_thinking_false_uses_skip_special_tokens_true(self) -> None:
+        from unittest.mock import patch
+
+        from src.generation.inference import Inferencer
+        from src.generation.models import GenerationConfig
+
+        fake_model = MagicMock()
+        fake_model.device = "cpu"
+        fake_processor = MagicMock()
+        fake_inputs = _make_fake_inputs(3)
+        fake_processor.apply_chat_template.return_value = "formatted"
+        fake_processor.return_value = fake_inputs
+
+        with patch("src.generation.inference.TextIteratorStreamer") as mock_cls:
+            mock_cls.return_value = iter(["hello"])
+            inferencer = Inferencer(
+                fake_model,
+                fake_processor,
+                GenerationConfig(model_id="test/model"),
+                thinking_enabled=False,
+            )
+            list(inferencer.stream_infer("prompt"))
+            _, kwargs = mock_cls.call_args
+            assert kwargs.get("skip_special_tokens") is True
+
+    def test_stream_infer_thinking_true_uses_skip_special_tokens_false(self) -> None:
+        from unittest.mock import patch
+
+        from src.generation.inference import Inferencer
+        from src.generation.models import GenerationConfig
+
+        fake_model = MagicMock()
+        fake_model.device = "cpu"
+        fake_processor = MagicMock()
+        fake_inputs = _make_fake_inputs(3)
+        fake_processor.apply_chat_template.return_value = "formatted"
+        fake_processor.return_value = fake_inputs
+
+        with patch("src.generation.inference.TextIteratorStreamer") as mock_cls:
+            mock_cls.return_value = iter(["<|channel>thought\n<channel|>answer"])
+            inferencer = Inferencer(
+                fake_model,
+                fake_processor,
+                GenerationConfig(model_id="test/model"),
+                thinking_enabled=True,
+            )
+            list(inferencer.stream_infer("prompt"))
+            _, kwargs = mock_cls.call_args
+            assert kwargs.get("skip_special_tokens") is False
+
+    def test_stream_infer_thinking_filters_thought_block(self) -> None:
+        from unittest.mock import patch
+
+        from src.generation.inference import Inferencer
+        from src.generation.models import GenerationConfig
+
+        fake_model = MagicMock()
+        fake_model.device = "cpu"
+        fake_processor = MagicMock()
+        fake_inputs = _make_fake_inputs(3)
+        fake_processor.apply_chat_template.return_value = "formatted"
+        fake_processor.return_value = fake_inputs
+
+        tokens = ["<|channel>thought\n", "internal reasoning", "<channel|>", "The answer"]
+
+        with patch("src.generation.inference.TextIteratorStreamer") as mock_cls:
+            mock_cls.return_value = iter(tokens)
+            inferencer = Inferencer(
+                fake_model,
+                fake_processor,
+                GenerationConfig(model_id="test/model"),
+                thinking_enabled=True,
+            )
+            result = list(inferencer.stream_infer("prompt"))
+
+        assert result == ["The answer"]
+
+    def test_stream_infer_thinking_false_no_filter_applied(self) -> None:
+        from unittest.mock import patch
+
+        from src.generation.inference import Inferencer
+        from src.generation.models import GenerationConfig
+
+        fake_model = MagicMock()
+        fake_model.device = "cpu"
+        fake_processor = MagicMock()
+        fake_inputs = _make_fake_inputs(3)
+        fake_processor.apply_chat_template.return_value = "formatted"
+        fake_processor.return_value = fake_inputs
+
+        tokens = ["hello", " world"]
+
+        with patch("src.generation.inference.TextIteratorStreamer") as mock_cls:
+            mock_cls.return_value = iter(tokens)
+            inferencer = Inferencer(
+                fake_model,
+                fake_processor,
+                GenerationConfig(model_id="test/model"),
+                thinking_enabled=False,
+            )
+            result = list(inferencer.stream_infer("prompt"))
+
+        assert result == ["hello", " world"]
