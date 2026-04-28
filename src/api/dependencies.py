@@ -98,6 +98,7 @@ def _build_shared_components(settings: Settings) -> _SharedComponents:
         model=loader.get_model(),
         processor=loader.get_tokenizer(),
         config=gen_config,
+        thinking_enabled=settings.thinking_enabled,
     )
 
     query_transformer: MultiDraftHyDETransformer | HyDETransformer | None

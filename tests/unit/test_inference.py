@@ -46,13 +46,16 @@ def _make_inferencer(
 @pytest.mark.unit
 class TestInferencerInfer:
     def test_apply_chat_template_called_with_prompt(self) -> None:
+        from src.generation.prompt_builder import SYSTEM_PROMPT
+
         inferencer, _, fake_processor, _ = _make_inferencer()
         inferencer.infer("What is Pikachu?")
 
         fake_processor.apply_chat_template.assert_called_once()
         args, _ = fake_processor.apply_chat_template.call_args
         messages = args[0]
-        assert messages == [{"role": "user", "content": "What is Pikachu?"}]
+        assert messages[0] == {"role": "system", "content": SYSTEM_PROMPT}
+        assert messages[1] == {"role": "user", "content": "What is Pikachu?"}
 
     def test_apply_chat_template_kwargs(self) -> None:
         inferencer, _, fake_processor, _ = _make_inferencer()
@@ -257,11 +260,15 @@ class TestPrepareInputs:
         assert input_len == 5
 
     def test_apply_chat_template_called(self) -> None:
+        from src.generation.prompt_builder import SYSTEM_PROMPT
+
         inferencer, _, fake_processor, _ = _make_inferencer()
         inferencer._prepare_inputs("test prompt")
         fake_processor.apply_chat_template.assert_called_once()
         args, _ = fake_processor.apply_chat_template.call_args
-        assert args[0] == [{"role": "user", "content": "test prompt"}]
+        messages = args[0]
+        assert messages[0] == {"role": "system", "content": SYSTEM_PROMPT}
+        assert messages[1] == {"role": "user", "content": "test prompt"}
 
     def test_processor_called_with_pt_tensors(self) -> None:
         inferencer, _, fake_processor, _ = _make_inferencer()
@@ -273,3 +280,286 @@ class TestPrepareInputs:
         inferencer, _, _, fake_inputs = _make_inferencer(device="cuda")
         inferencer._prepare_inputs("test prompt")
         fake_inputs.to.assert_called_once_with("cuda")
+
+    def test_prepare_inputs_sends_system_and_user_messages(self) -> None:
+        from src.generation.prompt_builder import SYSTEM_PROMPT
+
+        inferencer, _, fake_processor, _ = _make_inferencer()
+        inferencer.infer("What is Pikachu?")
+
+        args, _ = fake_processor.apply_chat_template.call_args
+        messages = args[0]
+        assert len(messages) == 2
+        assert messages[0] == {"role": "system", "content": SYSTEM_PROMPT}
+        assert messages[1] == {"role": "user", "content": "What is Pikachu?"}
+
+    def test_prepare_inputs_enable_thinking_false_by_default(self) -> None:
+        inferencer, _, fake_processor, _ = _make_inferencer()
+        inferencer.infer("prompt")
+
+        _, kwargs = fake_processor.apply_chat_template.call_args
+        assert kwargs["enable_thinking"] is False
+
+    def test_prepare_inputs_enable_thinking_true_when_thinking_on(self) -> None:
+        inferencer, _, fake_processor, _ = _make_inferencer()
+        inferencer._prepare_inputs("prompt", thinking=True)
+
+        _, kwargs = fake_processor.apply_chat_template.call_args
+        assert kwargs["enable_thinking"] is True
+
+    def test_thinking_enabled_defaults_to_false(self) -> None:
+        inferencer, _, _, _ = _make_inferencer()
+        assert inferencer._thinking_enabled is False
+
+    def test_thinking_enabled_true_stored(self) -> None:
+        from src.generation.inference import Inferencer
+        from src.generation.models import GenerationConfig
+
+        inferencer = Inferencer(
+            MagicMock(),
+            MagicMock(),
+            GenerationConfig(model_id="test/model"),
+            thinking_enabled=True,
+        )
+        assert inferencer._thinking_enabled is True
+
+
+@pytest.mark.unit
+class TestInferencerThinking:
+    def _make_thinking_inferencer(
+        self,
+        *,
+        raw_decoded: str = "<|channel>thought\nsome reasoning<channel|>The answer",
+        parse_response_return: str = "The answer",
+    ) -> tuple[Any, Any, Any]:
+        from src.generation.inference import Inferencer
+        from src.generation.models import GenerationConfig
+
+        fake_model = MagicMock()
+        fake_model.device = "cpu"
+        fake_processor = MagicMock()
+        fake_inputs = _make_fake_inputs(3)
+        fake_processor.apply_chat_template.return_value = "formatted"
+        fake_processor.return_value = fake_inputs
+        fake_model.generate.return_value = torch.arange(5).unsqueeze(0)
+        fake_processor.decode.return_value = raw_decoded
+        fake_processor.parse_response.return_value = parse_response_return
+
+        inferencer = Inferencer(
+            fake_model,
+            fake_processor,
+            GenerationConfig(model_id="test/model"),
+            thinking_enabled=True,
+        )
+        return inferencer, fake_model, fake_processor
+
+    def test_thinking_path_uses_skip_special_tokens_false(self) -> None:
+        inferencer, _, fake_processor = self._make_thinking_inferencer()
+        inferencer.infer("question")
+
+        _, kwargs = fake_processor.decode.call_args
+        assert kwargs.get("skip_special_tokens") is False
+
+    def test_thinking_path_calls_parse_response(self) -> None:
+        inferencer, _, fake_processor = self._make_thinking_inferencer()
+        inferencer.infer("question")
+
+        fake_processor.parse_response.assert_called_once()
+        raw = fake_processor.decode.return_value
+        fake_processor.parse_response.assert_called_with(raw)
+
+    def test_thinking_path_returns_parse_response_output(self) -> None:
+        resp = "Charizard is Fire."
+        inferencer, _, _ = self._make_thinking_inferencer(parse_response_return=resp)
+        result = inferencer.infer("question")
+        assert result == resp
+
+    def test_thinking_override_false_skips_parse_response(self) -> None:
+        """Inferencer with thinking_enabled=True but infer(thinking=False) uses normal path."""
+        inferencer, _, fake_processor = self._make_thinking_inferencer()
+        fake_processor.decode.return_value = "normal answer"
+        result = inferencer.infer("question", thinking=False)
+
+        _, kwargs = fake_processor.decode.call_args
+        assert kwargs.get("skip_special_tokens") is True
+        fake_processor.parse_response.assert_not_called()
+        assert result == "normal answer"
+
+    def test_thinking_override_true_on_non_thinking_instance(self) -> None:
+        """infer(thinking=True) overrides instance default of False."""
+        from src.generation.inference import Inferencer
+        from src.generation.models import GenerationConfig
+
+        fake_model = MagicMock()
+        fake_model.device = "cpu"
+        fake_processor = MagicMock()
+        fake_inputs = _make_fake_inputs(3)
+        fake_processor.apply_chat_template.return_value = "formatted"
+        fake_processor.return_value = fake_inputs
+        fake_model.generate.return_value = torch.arange(5).unsqueeze(0)
+        fake_processor.decode.return_value = "<|channel>thought\n<channel|>answer"
+        fake_processor.parse_response.return_value = "answer"
+
+        inferencer = Inferencer(
+            fake_model,
+            fake_processor,
+            GenerationConfig(model_id="test/model"),
+            thinking_enabled=False,
+        )
+        result = inferencer.infer("question", thinking=True)
+
+        _, kwargs = fake_processor.decode.call_args
+        assert kwargs.get("skip_special_tokens") is False
+        fake_processor.parse_response.assert_called_once()
+        assert result == "answer"
+
+
+@pytest.mark.unit
+class TestThinkingStreamFilter:
+    def _make_filter(self) -> Any:
+        from src.generation.inference import _ThinkingStreamFilter
+
+        return _ThinkingStreamFilter()
+
+    def test_buffers_all_tokens_before_close_tag(self) -> None:
+        f = self._make_filter()
+        assert f.feed("<|channel>thought\n") is None
+        assert f.feed("some internal reasoning") is None
+
+    def test_emits_suffix_when_close_tag_received(self) -> None:
+        f = self._make_filter()
+        f.feed("<|channel>thought\n")
+        result = f.feed("<channel|>The actual answer")
+        assert result == "The actual answer"
+
+    def test_returns_none_when_close_tag_has_no_suffix(self) -> None:
+        f = self._make_filter()
+        f.feed("<|channel>thought\n")
+        result = f.feed("<channel|>")
+        assert result is None
+
+    def test_passthrough_after_close_tag_seen(self) -> None:
+        f = self._make_filter()
+        f.feed("<|channel>thought\n<channel|>")
+        assert f.feed("more answer tokens") == "more answer tokens"
+        assert f.feed("and more") == "and more"
+
+    def test_handles_straddled_close_tag(self) -> None:
+        f = self._make_filter()
+        f.feed("<|channel>thought\n")
+        f.feed("reasoning ")
+        f.feed("<channel")  # first half of tag
+        result = f.feed("|>answer here")  # second half
+        assert result == "answer here"
+
+    def test_close_tag_inline_with_thought(self) -> None:
+        f = self._make_filter()
+        result = f.feed("<|channel>thought\nreasoning<channel|>answer")
+        assert result == "answer"
+
+
+@pytest.mark.unit
+class TestInferencerStreamInferThinking:
+    def test_stream_infer_thinking_false_uses_skip_special_tokens_true(self) -> None:
+        from unittest.mock import patch
+
+        from src.generation.inference import Inferencer
+        from src.generation.models import GenerationConfig
+
+        fake_model = MagicMock()
+        fake_model.device = "cpu"
+        fake_processor = MagicMock()
+        fake_inputs = _make_fake_inputs(3)
+        fake_processor.apply_chat_template.return_value = "formatted"
+        fake_processor.return_value = fake_inputs
+
+        with patch("src.generation.inference.TextIteratorStreamer") as mock_cls:
+            mock_cls.return_value = iter(["hello"])
+            inferencer = Inferencer(
+                fake_model,
+                fake_processor,
+                GenerationConfig(model_id="test/model"),
+                thinking_enabled=False,
+            )
+            list(inferencer.stream_infer("prompt"))
+            _, kwargs = mock_cls.call_args
+            assert kwargs.get("skip_special_tokens") is True
+
+    def test_stream_infer_thinking_true_uses_skip_special_tokens_false(self) -> None:
+        from unittest.mock import patch
+
+        from src.generation.inference import Inferencer
+        from src.generation.models import GenerationConfig
+
+        fake_model = MagicMock()
+        fake_model.device = "cpu"
+        fake_processor = MagicMock()
+        fake_inputs = _make_fake_inputs(3)
+        fake_processor.apply_chat_template.return_value = "formatted"
+        fake_processor.return_value = fake_inputs
+
+        with patch("src.generation.inference.TextIteratorStreamer") as mock_cls:
+            mock_cls.return_value = iter(["<|channel>thought\n<channel|>answer"])
+            inferencer = Inferencer(
+                fake_model,
+                fake_processor,
+                GenerationConfig(model_id="test/model"),
+                thinking_enabled=True,
+            )
+            list(inferencer.stream_infer("prompt"))
+            _, kwargs = mock_cls.call_args
+            assert kwargs.get("skip_special_tokens") is False
+
+    def test_stream_infer_thinking_filters_thought_block(self) -> None:
+        from unittest.mock import patch
+
+        from src.generation.inference import Inferencer
+        from src.generation.models import GenerationConfig
+
+        fake_model = MagicMock()
+        fake_model.device = "cpu"
+        fake_processor = MagicMock()
+        fake_inputs = _make_fake_inputs(3)
+        fake_processor.apply_chat_template.return_value = "formatted"
+        fake_processor.return_value = fake_inputs
+
+        tokens = ["<|channel>thought\n", "internal reasoning", "<channel|>", "The answer"]
+
+        with patch("src.generation.inference.TextIteratorStreamer") as mock_cls:
+            mock_cls.return_value = iter(tokens)
+            inferencer = Inferencer(
+                fake_model,
+                fake_processor,
+                GenerationConfig(model_id="test/model"),
+                thinking_enabled=True,
+            )
+            result = list(inferencer.stream_infer("prompt"))
+
+        assert result == ["The answer"]
+
+    def test_stream_infer_thinking_false_no_filter_applied(self) -> None:
+        from unittest.mock import patch
+
+        from src.generation.inference import Inferencer
+        from src.generation.models import GenerationConfig
+
+        fake_model = MagicMock()
+        fake_model.device = "cpu"
+        fake_processor = MagicMock()
+        fake_inputs = _make_fake_inputs(3)
+        fake_processor.apply_chat_template.return_value = "formatted"
+        fake_processor.return_value = fake_inputs
+
+        tokens = ["hello", " world"]
+
+        with patch("src.generation.inference.TextIteratorStreamer") as mock_cls:
+            mock_cls.return_value = iter(tokens)
+            inferencer = Inferencer(
+                fake_model,
+                fake_processor,
+                GenerationConfig(model_id="test/model"),
+                thinking_enabled=False,
+            )
+            result = list(inferencer.stream_infer("prompt"))
+
+        assert result == ["hello", " world"]

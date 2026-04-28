@@ -372,7 +372,7 @@ class TestModelLoaderLoraAdapter:
             ),
             patch("src.generation.loader.Path", mock_path_cls),
             patch(
-                "src.generation.loader.PeftModel.from_pretrained",
+                "peft.PeftModel.from_pretrained",
                 return_value=fake_peft_model,
             ) as mock_peft,
         ):
@@ -408,7 +408,7 @@ class TestModelLoaderLoraAdapter:
             ),
             patch("src.generation.loader.Path", mock_path_cls),
             patch(
-                "src.generation.loader.PeftModel.from_pretrained",
+                "peft.PeftModel.from_pretrained",
                 return_value=fake_peft_model,
             ) as mock_peft,
         ):
@@ -442,7 +442,7 @@ class TestModelLoaderLoraAdapter:
             ),
             patch("src.generation.loader.Path", mock_path_cls),
             patch(
-                "src.generation.loader.PeftModel.from_pretrained",
+                "peft.PeftModel.from_pretrained",
                 side_effect=OSError("adapter not found"),
             ),
         ):
@@ -471,7 +471,7 @@ class TestModelLoaderLoraAdapter:
                 return_value=fake_processor,
             ),
             patch(
-                "src.generation.loader.PeftModel.from_pretrained",
+                "peft.PeftModel.from_pretrained",
             ) as mock_peft,
         ):
             loader = ModelLoader(

@@ -202,6 +202,7 @@ class Settings:
     refiner_strip_threshold: float = -1.0
     retrieval_top_k: int = 5
     retrieval_hard_floor: float = -2.0
+    thinking_enabled: bool = False
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -339,4 +340,5 @@ class Settings:
             refiner_strip_threshold=refiner_strip_threshold,
             retrieval_top_k=retrieval_top_k,
             retrieval_hard_floor=retrieval_hard_floor,
+            thinking_enabled=_parse_bool(os.getenv("THINKING_ENABLED"), "THINKING_ENABLED", False),
         )

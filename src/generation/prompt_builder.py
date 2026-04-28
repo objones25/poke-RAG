@@ -6,7 +6,7 @@ from src.types import RetrievedChunk
 
 # PokéSage — System Prompt (final)
 
-_SYSTEM_PROMPT = (
+SYSTEM_PROMPT = (
     "You are PokéSage, an expert Pokémon assistant. "
     "Answer every question using ONLY the context provided. "
     "Do not use outside knowledge. "
@@ -109,6 +109,4 @@ def build_prompt(query: str, chunks: tuple[RetrievedChunk, ...]) -> str:
 
     context_block = "\n\n".join(context_parts)
 
-    return (
-        f"{_SYSTEM_PROMPT}\n\nContext:\n{context_block}\n\nQuestion: {sanitized_query}\n\nAnswer:"
-    )
+    return f"Context:\n{context_block}\n\nQuestion: {sanitized_query}\n\nAnswer:"

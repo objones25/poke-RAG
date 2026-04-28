@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Any
 
 import torch
-from peft import PeftModel
 from transformers import AutoModelForImageTextToText, AutoProcessor, PreTrainedModel
 
 from src.generation.models import GenerationConfig
@@ -78,6 +77,13 @@ class ModelLoader:
     def _apply_lora_adapter(self, model: PreTrainedModel) -> PreTrainedModel:
         if self._lora_adapter_path is None:
             return model
+        try:
+            from peft import PeftModel  # noqa: PLC0415
+        except ImportError as exc:
+            raise RuntimeError(
+                "peft is not installed — required for LoRA adapters. "
+                "Install it with: uv sync --extra lora"
+            ) from exc
         source = (
             self._lora_adapter_path
             if Path(self._lora_adapter_path).exists()

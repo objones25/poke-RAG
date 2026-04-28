@@ -8,37 +8,85 @@ from typing import Any
 from transformers import PreTrainedModel, TextIteratorStreamer
 
 from src.generation.models import GenerationConfig
+from src.generation.prompt_builder import SYSTEM_PROMPT
 
 _LOG = logging.getLogger(__name__)
 
 
+class _ThinkingStreamFilter:
+    """Two-state machine that buffers thought content and emits only post-thought tokens.
+
+    BUFFERING: accumulates tokens until '<channel|>' is detected.
+    EMITTING: yields tokens directly to caller.
+    A 64-char rolling buffer handles '<channel|>' arriving across two streamer chunks.
+    """
+
+    _CLOSE = "<channel|>"
+    _LOOKBACK = 64
+
+    def __init__(self) -> None:
+        self._emitting = False
+        self._buf = ""
+
+    def feed(self, token: str) -> str | None:
+        if self._emitting:
+            return token
+        self._buf += token
+        if self._CLOSE in self._buf:
+            self._emitting = True
+            suffix = self._buf.split(self._CLOSE, 1)[1]
+            self._buf = ""
+            return suffix or None
+        if len(self._buf) > self._LOOKBACK:
+            self._buf = self._buf[-self._LOOKBACK :]
+        return None
+
+
 class Inferencer:
-    def __init__(self, model: PreTrainedModel, processor: Any, config: GenerationConfig) -> None:
+    def __init__(
+        self,
+        model: PreTrainedModel,
+        processor: Any,
+        config: GenerationConfig,
+        *,
+        thinking_enabled: bool = False,
+    ) -> None:
         self._model = model
         self._processor = processor
         self._config = config
+        self._thinking_enabled = thinking_enabled
 
-    def _prepare_inputs(self, prompt: str) -> tuple[Any, int]:
-        messages = [{"role": "user", "content": prompt}]
+    def _prepare_inputs(self, user_message: str, *, thinking: bool = False) -> tuple[Any, int]:
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_message},
+        ]
         text: str = self._processor.apply_chat_template(
             messages,
             tokenize=False,
             add_generation_prompt=True,
-            enable_thinking=False,
+            enable_thinking=thinking,
         )
         inputs = self._processor(text=text, return_tensors="pt").to(self._model.device)
         input_len: int = inputs["input_ids"].shape[-1]
         return inputs, input_len
 
-    def infer(self, prompt: str, *, max_new_tokens: int | None = None) -> str:
+    def infer(
+        self,
+        prompt: str,
+        *,
+        max_new_tokens: int | None = None,
+        thinking: bool | None = None,
+    ) -> str:
         if not prompt.strip():
             raise ValueError("prompt must not be empty")
 
+        resolved_thinking = thinking if thinking is not None else self._thinking_enabled
         resolved_max_new_tokens = (
             max_new_tokens if max_new_tokens is not None else self._config.max_new_tokens
         )
 
-        inputs, input_len = self._prepare_inputs(prompt)
+        inputs, input_len = self._prepare_inputs(prompt, thinking=resolved_thinking)
         _LOG.debug(
             "Inferring: prompt_len=%d tokens, max_new=%d",
             input_len,
@@ -65,11 +113,20 @@ class Inferencer:
                 f"output_len={output_ids.shape[-1]})"
             )
 
-        response: str = self._processor.decode(response_ids, skip_special_tokens=True)
-        if not isinstance(response, str):
-            raise TypeError(f"Processor returned {type(response).__name__}, expected str")
+        if resolved_thinking:
+            raw: str = self._processor.decode(response_ids, skip_special_tokens=False)
+            if not isinstance(raw, str):
+                raise TypeError(f"Processor returned {type(raw).__name__}, expected str")
+            if "<channel|>" in raw:
+                thought = raw.split("<channel|>", 1)[0]
+                _LOG.debug("thinking_block: %s", thought[:200])
+            response: str = self._processor.parse_response(raw)
+        else:
+            response = self._processor.decode(response_ids, skip_special_tokens=True)
+            if not isinstance(response, str):
+                raise TypeError(f"Processor returned {type(response).__name__}, expected str")
 
-        stripped_response = response.strip()
+        stripped_response = response.strip() if isinstance(response, str) else str(response).strip()
         if not stripped_response:
             raise RuntimeError(
                 f"Model generated only whitespace/empty output (input_len={input_len}, "
@@ -79,8 +136,16 @@ class Inferencer:
         _LOG.debug("Generated %d chars", len(stripped_response))
         return stripped_response
 
-    def stream_infer(self, prompt: str, *, max_new_tokens: int | None = None) -> Iterator[str]:
+    def stream_infer(
+        self,
+        prompt: str,
+        *,
+        max_new_tokens: int | None = None,
+        thinking: bool | None = None,
+    ) -> Iterator[str]:
         """Yield tokens one-at-a-time as the model produces them via TextIteratorStreamer.
+
+        When thinking is enabled, thought content is suppressed via _ThinkingStreamFilter.
 
         Raises:
             ValueError: If prompt is empty or whitespace-only.
@@ -89,16 +154,17 @@ class Inferencer:
         if not prompt.strip():
             raise ValueError("prompt must not be empty")
 
+        resolved_thinking = thinking if thinking is not None else self._thinking_enabled
         resolved_max_new_tokens = (
             max_new_tokens if max_new_tokens is not None else self._config.max_new_tokens
         )
 
-        inputs, _ = self._prepare_inputs(prompt)
+        inputs, _ = self._prepare_inputs(prompt, thinking=resolved_thinking)
 
         streamer = TextIteratorStreamer(
             self._processor,
             skip_prompt=True,
-            skip_special_tokens=True,
+            skip_special_tokens=not resolved_thinking,
         )
 
         exc_holder: list[BaseException] = []
@@ -120,10 +186,16 @@ class Inferencer:
         thread = threading.Thread(target=_generate, daemon=True)
         thread.start()
 
+        filter_ = _ThinkingStreamFilter() if resolved_thinking else None
         try:
             for text_piece in streamer:
-                if text_piece:
-                    yield text_piece
+                if not text_piece:
+                    continue
+                if filter_ is not None:
+                    text_piece = filter_.feed(text_piece)
+                    if text_piece is None:
+                        continue
+                yield text_piece
         finally:
             thread.join()
 
