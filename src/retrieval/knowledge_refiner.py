@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import replace
 from typing import TYPE_CHECKING
@@ -12,7 +13,16 @@ from src.types import RetrievedChunk
 if TYPE_CHECKING:
     from src.retrieval.protocols import RerankerProtocol
 
+_LOG = logging.getLogger(__name__)
+
 _SENTENCE_RE = re.compile(r"(?<=[.!?])\s+")
+# Abbreviations that end in "." but are NOT sentence boundaries in Pokémon text.
+# "Sp." in "Sp. Atk" / "Sp. Def" is the most common; list covers other stat/meta shorthands.
+_ABBREV_RE = re.compile(
+    r"\b(Sp|HP|Atk|Def|EV|IV|PP|EVs|IVs|Mr|Mrs|Dr|Jr|Sr|No|Mt|St|vs)\.\s",
+    re.IGNORECASE,
+)
+_ABBREV_SENTINEL = "\x00"  # null byte never appears in text; restored after splitting
 _GEN_RE = re.compile(r"\bgen\s*([0-9]+)", re.IGNORECASE)
 _TIER_RE = re.compile(r"\b(ou|uu|ru|nu|pu|ubers|lc|vgc|doubles)\b", re.IGNORECASE)
 
@@ -69,7 +79,10 @@ class KnowledgeRefiner:
 
     @staticmethod
     def _split_sentences(text: str) -> list[str]:
-        parts = [s.strip() for s in _SENTENCE_RE.split(text)]
+        # Replace "Sp. " → "Sp\x00" so the period is not treated as a sentence boundary,
+        # then restore after splitting.
+        protected = _ABBREV_RE.sub(lambda m: m.group(0).replace(". ", _ABBREV_SENTINEL), text)
+        parts = [s.replace(_ABBREV_SENTINEL, ". ").strip() for s in _SENTENCE_RE.split(protected)]
         return [p for p in parts if p]
 
     def _filter_strips(self, query: str, chunk: RetrievedChunk) -> RetrievedChunk | None:
@@ -155,16 +168,38 @@ class KnowledgeRefiner:
             return RefinementResult(chunks=(), gaps=(), dropped_chunks=())
 
         accepted, uncertain, dropped = self._triage(chunks)
+        _LOG.info(
+            "refiner_triage: accepted=%d uncertain=%d dropped=%d",
+            len(accepted),
+            len(uncertain),
+            len(dropped),
+        )
 
         refined: list[RetrievedChunk] = []
+        strip_survived = 0
+        fallback_kept = 0
         for chunk in accepted:
             filtered = self._filter_strips(query, chunk)
             if filtered is not None:
                 refined.append(filtered)
+                strip_survived += 1
             else:
-                dropped.append(chunk)
+                refined.append(chunk)
+                fallback_kept += 1
 
+        _LOG.info(
+            "refiner_strips: pre_strip=%d survived=%d strip_dropped=%d fallback_kept=%d",
+            len(accepted),
+            strip_survived,
+            len(accepted) - len(refined),
+            fallback_kept,
+        )
         refined.extend(uncertain)
 
         gaps = tuple(self._check_sufficiency(query, refined))
+        _LOG.info(
+            "refiner_output: chunks=%d gaps=%d",
+            len(refined),
+            len(gaps),
+        )
         return RefinementResult(chunks=tuple(refined), gaps=gaps, dropped_chunks=tuple(dropped))

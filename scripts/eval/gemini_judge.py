@@ -3,11 +3,14 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 
+from dotenv import load_dotenv
 from google import genai
 from google.genai.types import GenerateContentConfig, HttpOptions
 
+load_dotenv()
+
 _MODEL = "gemini-3.1-flash-lite-preview"
-_TIMEOUT = 60
+_TIMEOUT = 60_000
 
 
 def _client() -> genai.Client:

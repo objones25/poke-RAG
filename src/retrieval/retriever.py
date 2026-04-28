@@ -204,14 +204,22 @@ class Retriever:
             top_confidence = _sigmoid(raw_reranked[0].score) if raw_reranked else 0.0
             if raw_reranked and top_confidence >= threshold:
                 _LOG.info(
-                    "Raw pass confidence %.3f >= threshold %.3f; skipping HyDE",
+                    "hyde_fired=false top_raw_confidence=%.3f threshold=%.3f",
                     top_confidence,
                     threshold,
+                )
+                scores = [c.score for c in raw_reranked]
+                _LOG.info(
+                    "score_distribution: top=%.3f min=%.3f mean=%.3f n=%d",
+                    scores[0],
+                    scores[-1],
+                    sum(scores) / len(scores),
+                    len(scores),
                 )
                 return RetrievalResult(documents=tuple(raw_reranked), query=query)
 
             _LOG.info(
-                "Raw pass confidence %.3f < threshold %.3f; running HyDE pass",
+                "hyde_fired=true top_raw_confidence=%.3f threshold=%.3f",
                 top_confidence,
                 threshold,
             )
@@ -235,6 +243,14 @@ class Retriever:
         if not reranked:
             raise RetrievalError("No documents found for query.")
 
+        scores = [c.score for c in reranked]
+        _LOG.info(
+            "score_distribution: top=%.3f min=%.3f mean=%.3f n=%d",
+            scores[0],
+            scores[-1],
+            sum(scores) / len(scores),
+            len(scores),
+        )
         _LOG.info("Retrieval complete: %d document(s) returned", len(reranked))
         return RetrievalResult(documents=tuple(reranked), query=query)
 
@@ -426,14 +442,22 @@ class AsyncRetriever:
             top_confidence = _sigmoid(raw_reranked[0].score) if raw_reranked else 0.0
             if raw_reranked and top_confidence >= threshold:
                 _LOG.info(
-                    "Raw pass confidence %.3f >= threshold %.3f; skipping HyDE",
+                    "hyde_fired=false top_raw_confidence=%.3f threshold=%.3f",
                     top_confidence,
                     threshold,
+                )
+                scores = [c.score for c in raw_reranked]
+                _LOG.info(
+                    "score_distribution: top=%.3f min=%.3f mean=%.3f n=%d",
+                    scores[0],
+                    scores[-1],
+                    sum(scores) / len(scores),
+                    len(scores),
                 )
                 return RetrievalResult(documents=tuple(raw_reranked), query=query)
 
             _LOG.info(
-                "Raw pass confidence %.3f < threshold %.3f; running HyDE pass",
+                "hyde_fired=true top_raw_confidence=%.3f threshold=%.3f",
                 top_confidence,
                 threshold,
             )
@@ -459,5 +483,13 @@ class AsyncRetriever:
         if not reranked:
             raise RetrievalError("No documents found for query.")
 
+        scores = [c.score for c in reranked]
+        _LOG.info(
+            "score_distribution: top=%.3f min=%.3f mean=%.3f n=%d",
+            scores[0],
+            scores[-1],
+            sum(scores) / len(scores),
+            len(scores),
+        )
         _LOG.info("Retrieval complete: %d document(s) returned", len(reranked))
         return RetrievalResult(documents=tuple(reranked), query=query)

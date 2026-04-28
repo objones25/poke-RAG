@@ -129,6 +129,9 @@ def _recursive_split(
     if len(sentences) > 1:
         return _merge_into_chunks(sentences, target_tokens, tokenize_fn=tokenize_fn)
 
+    approx = _approx_tokens(stripped, tokenize_fn=tokenize_fn)
+    if approx > target_tokens:
+        _LOG.warning("oversized_chunk: tokens≈%d target=%d", approx, target_tokens)
     return [stripped]
 
 

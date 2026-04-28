@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from unittest.mock import MagicMock
 
 import pytest
@@ -917,3 +918,63 @@ class TestFusedEmbeddingProtocol:
             "retriever.py should use isinstance(…, FusedEmbeddingTransformerProtocol) "
             "instead of hasattr"
         )
+
+
+@pytest.mark.unit
+class TestRetrieverLogging:
+    def test_hyde_skip_log(self, caplog) -> None:
+        """Test that 'hyde_fired=false' appears in logs when HyDE is skipped."""
+        transformer = _make_transformer("transformed query")
+        chunk_high_score = make_chunk(score=0.9)
+        reranker = _make_reranker([chunk_high_score])
+
+        retriever = Retriever(
+            embedder=_make_embedder(),
+            vector_store=_make_vector_store(),
+            reranker=reranker,
+            query_transformer=transformer,
+            hyde_confidence_threshold=0.5,
+        )
+
+        with caplog.at_level(logging.INFO, logger="src.retrieval.retriever"):
+            retriever.retrieve("query")
+
+        assert "hyde_fired=false" in caplog.text
+
+    def test_hyde_fire_log(self, caplog) -> None:
+        """Test that 'hyde_fired=true' appears in logs when HyDE is fired."""
+        transformer = _make_transformer("transformed query")
+        chunk_low_score = make_chunk(score=-0.5)
+        hyde_chunk = make_chunk(text="hyde result", score=0.7)
+        reranker = MagicMock()
+        reranker.rerank.side_effect = [[chunk_low_score], [hyde_chunk]]
+
+        retriever = Retriever(
+            embedder=_make_embedder(),
+            vector_store=_make_vector_store(),
+            reranker=reranker,
+            query_transformer=transformer,
+            hyde_confidence_threshold=0.5,
+        )
+
+        with caplog.at_level(logging.INFO, logger="src.retrieval.retriever"):
+            retriever.retrieve("query")
+
+        assert "hyde_fired=true" in caplog.text
+
+    def test_score_distribution_log(self, caplog) -> None:
+        """Test that 'score_distribution:' appears in logs with chunk scores."""
+        chunk1 = make_chunk(score=0.9, text="first")
+        chunk2 = make_chunk(score=0.7, text="second")
+        reranker = _make_reranker([chunk1, chunk2])
+
+        retriever = Retriever(
+            embedder=_make_embedder(),
+            vector_store=_make_vector_store(),
+            reranker=reranker,
+        )
+
+        with caplog.at_level(logging.INFO, logger="src.retrieval.retriever"):
+            retriever.retrieve("query")
+
+        assert "score_distribution:" in caplog.text

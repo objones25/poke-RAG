@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import replace
 from unittest.mock import MagicMock
 
@@ -131,6 +132,25 @@ class TestSplitSentences:
     def test_strips_whitespace(self) -> None:
         result = self._split("  First.  Second.  ")
         assert result == ["First.", "Second."]
+
+    def test_sp_abbrev_not_split(self) -> None:
+        # "Sp." in "Sp. Atk" / "Sp. Def" must NOT be treated as a sentence boundary.
+        text = "Base stats: HP 91, Attack 134, Defense 95, Sp. Atk 65, Sp. Def 65, Speed 80."
+        result = self._split(text)
+        assert result == [text]
+
+    def test_sp_abbrev_preserves_speed_value(self) -> None:
+        stats = "Base stats: HP 91, Attack 134, Defense 95, Sp. Atk 65, Sp. Def 65, Speed 80."
+        text = f"Dragonite has high attack. {stats}"
+        result = self._split(text)
+        assert len(result) == 2
+        assert "Speed 80." in result[1]
+
+    def test_abbrev_at_real_sentence_boundary(self) -> None:
+        # A sentence that ends normally after an abbreviation-looking word should still split.
+        text = "It knows HP Fire. Pikachu is electric."
+        result = self._split(text)
+        assert len(result) == 2
 
 
 @pytest.mark.unit
@@ -402,6 +422,13 @@ class TestRefine:
         result = r.refine("query", [chunk])
         assert result.chunks == ()
 
+    def test_accepted_chunk_kept_when_all_strips_are_filtered(self) -> None:
+        chunk = make_chunk(text="First short fact. Second short fact.", score=1.0)
+        r = self._refiner(scores=[-5.0, -5.0], strip_threshold=-1.0)
+        result = r.refine("query", [chunk])
+        assert result.chunks == (chunk,)
+        assert result.dropped_chunks == ()
+
     def test_all_chunks_uncertain_all_pass_through(self) -> None:
         c1 = make_chunk(text="First.", score=-1.0)
         c2 = make_chunk(text="Second.", score=-2.0)
@@ -467,3 +494,71 @@ class TestDroppedChunksAuditTrail:
         # Backward-compatible: old call sites that only pass chunks/gaps still work
         result = RefinementResult(chunks=(), gaps=())
         assert result.dropped_chunks == ()
+
+
+@pytest.mark.unit
+class TestKnowledgeRefinerLogging:
+    def test_refiner_triage_log(self, caplog) -> None:
+        """refiner_triage: logged with accepted/uncertain/dropped counts."""
+        from src.retrieval.knowledge_refiner import KnowledgeRefiner
+
+        accepted_chunk = make_chunk("Pikachu Speed 90", score=0.5, source="pokeapi")
+        uncertain_chunk = make_chunk("Some info", score=-1.0, source="pokeapi")
+        dropped_chunk = make_chunk("Irrelevant", score=-5.0, source="pokeapi")
+        refiner = KnowledgeRefiner(reranker=_make_reranker([]))
+
+        with caplog.at_level(logging.INFO, logger="src.retrieval.knowledge_refiner"):
+            refiner.refine(
+                "What is Pikachu's Speed?",
+                [accepted_chunk, uncertain_chunk, dropped_chunk],
+            )
+
+        triage_records = [r for r in caplog.records if "refiner_triage:" in r.message]
+        assert len(triage_records) == 1
+        assert "accepted=1" in triage_records[0].message
+        assert "uncertain=1" in triage_records[0].message
+        assert "dropped=1" in triage_records[0].message
+
+    def test_refiner_strips_log(self, caplog) -> None:
+        """refiner_strips: pre_strip matches accepted count."""
+        from src.retrieval.knowledge_refiner import KnowledgeRefiner
+
+        accepted_chunk = make_chunk("Pikachu Speed 90", score=0.5, source="pokeapi")
+        refiner = KnowledgeRefiner(reranker=_make_reranker([]))
+
+        with caplog.at_level(logging.INFO, logger="src.retrieval.knowledge_refiner"):
+            refiner.refine("What is Pikachu's Speed?", [accepted_chunk])
+
+        strips_records = [r for r in caplog.records if "refiner_strips:" in r.message]
+        assert len(strips_records) == 1
+        assert "pre_strip=1" in strips_records[0].message
+
+    def test_refiner_strips_fallback_log(self, caplog) -> None:
+        """refiner_strips: fallback_kept counts accepted chunks restored after stripping."""
+        from src.retrieval.knowledge_refiner import KnowledgeRefiner
+
+        accepted_chunk = make_chunk("First short fact. Second short fact.", score=0.5)
+        refiner = KnowledgeRefiner(reranker=_make_reranker([-5.0, -5.0]))
+
+        with caplog.at_level(logging.INFO, logger="src.retrieval.knowledge_refiner"):
+            refiner.refine("What is Pikachu's Speed?", [accepted_chunk])
+
+        strips_records = [r for r in caplog.records if "refiner_strips:" in r.message]
+        assert len(strips_records) == 1
+        assert "survived=0" in strips_records[0].message
+        assert "strip_dropped=0" in strips_records[0].message
+        assert "fallback_kept=1" in strips_records[0].message
+
+    def test_refiner_output_log(self, caplog) -> None:
+        """refiner_output: chunk count matches final refined list length."""
+        from src.retrieval.knowledge_refiner import KnowledgeRefiner
+
+        accepted_chunk = make_chunk("Pikachu Speed 90", score=0.5, source="pokeapi")
+        refiner = KnowledgeRefiner(reranker=_make_reranker([]))
+
+        with caplog.at_level(logging.INFO, logger="src.retrieval.knowledge_refiner"):
+            result = refiner.refine("What is Pikachu's Speed?", [accepted_chunk])
+
+        output_records = [r for r in caplog.records if "refiner_output:" in r.message]
+        assert len(output_records) == 1
+        assert f"chunks={len(result.chunks)}" in output_records[0].message

@@ -47,6 +47,13 @@ class BGEReranker:
 
         _LOG.debug("Reranking %d candidates, top_k=%d", len(documents), top_k)
         pairs = [[query, doc.text] for doc in documents]
+        tokenizer = getattr(self._model, "tokenizer", None)
+        if tokenizer is not None:
+            truncated = sum(
+                1 for q, d in pairs if len(tokenizer.encode(q + " " + d)) > _RERANKER_MAX_LENGTH
+            )
+            if truncated:
+                _LOG.info("reranker_truncated_pairs=%d of %d", truncated, len(pairs))
         raw_scores = self._model.compute_score(pairs, max_length=_RERANKER_MAX_LENGTH)
         scores: list[float] = [float(s) if math.isfinite(float(s)) else 0.0 for s in raw_scores]
         if any(not math.isfinite(float(s)) for s in raw_scores):

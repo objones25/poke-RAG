@@ -13,11 +13,14 @@ import sys
 from pathlib import Path
 
 import yaml
+from dotenv import load_dotenv
 from google import genai
 from google.genai.types import GenerateContentConfig, HttpOptions
 
+load_dotenv()
+
 _MODEL = "gemini-3.1-flash-lite-preview"
-_TIMEOUT = 60
+_TIMEOUT = 60_000
 _QUESTIONS_PATH = Path(__file__).parent / "gen_questions.yaml"
 
 

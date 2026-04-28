@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from unittest.mock import MagicMock
 
 import pytest
@@ -13,6 +14,7 @@ from tests.conftest import make_chunk
 
 def _make_mock_reranker(scores: list[float]) -> MagicMock:
     mock = MagicMock()
+    mock.tokenizer = None
     mock.compute_score.return_value = scores
     return mock
 
@@ -273,3 +275,39 @@ class TestBGERerankerEdgeCases:
         assert len(results) == 2
         assert results[0].score == pytest.approx(0.8)
         assert results[1].score == pytest.approx(0.3)
+
+
+@pytest.mark.unit
+class TestBGERerankerLogging:
+    def test_reranker_truncation_log(self, caplog) -> None:
+        """reranker_truncated_pairs= logged when tokenizer reports long pairs."""
+        mock_model = MagicMock()
+        mock_tokenizer = MagicMock()
+        mock_tokenizer.encode.return_value = list(range(600))
+        mock_model.tokenizer = mock_tokenizer
+        mock_model.compute_score.return_value = [0.5, 0.3]
+        reranker = BGEReranker(mock_model)
+
+        chunks = [
+            make_chunk("text a", score=0.5, source="pokeapi"),
+            make_chunk("text b", score=0.3, source="pokeapi"),
+        ]
+        with caplog.at_level(logging.INFO, logger="src.retrieval.reranker"):
+            reranker.rerank("query", chunks, top_k=2)
+
+        assert any("reranker_truncated_pairs=" in r.message for r in caplog.records)
+
+    def test_reranker_no_truncation_log(self, caplog) -> None:
+        """No log emitted when all pairs fit within max length."""
+        mock_model = MagicMock()
+        mock_tokenizer = MagicMock()
+        mock_tokenizer.encode.return_value = list(range(10))
+        mock_model.tokenizer = mock_tokenizer
+        mock_model.compute_score.return_value = [0.5]
+        reranker = BGEReranker(mock_model)
+
+        chunks = [make_chunk("text a", score=0.5, source="pokeapi")]
+        with caplog.at_level(logging.INFO, logger="src.retrieval.reranker"):
+            reranker.rerank("query", chunks, top_k=1)
+
+        assert not any("reranker_truncated_pairs=" in r.message for r in caplog.records)
