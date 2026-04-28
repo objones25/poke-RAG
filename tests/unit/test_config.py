@@ -1111,3 +1111,30 @@ class TestRetrievalHardFloor:
         monkeypatch.setenv("RETRIEVAL_HARD_FLOOR", "0.5")
         s = Settings.from_env()
         assert s.retrieval_hard_floor == pytest.approx(0.5)
+
+
+@pytest.mark.unit
+class TestThinkingEnabled:
+    def test_thinking_enabled_defaults_to_false(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.delenv("THINKING_ENABLED", raising=False)
+        settings = Settings.from_env()
+        assert settings.thinking_enabled is False
+
+    def test_thinking_enabled_true(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("THINKING_ENABLED", "true")
+        settings = Settings.from_env()
+        assert settings.thinking_enabled is True
+
+    def test_thinking_enabled_invalid_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from src.config import Settings
+
+        monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setenv("THINKING_ENABLED", "maybe")
+        with pytest.raises(ValueError, match="THINKING_ENABLED"):
+            Settings.from_env()
