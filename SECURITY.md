@@ -52,6 +52,7 @@ The rate limiter uses an in-memory store and is safe for single-instance deploym
 ## Prompt injection prevention
 
 **Primary defense**: The `build_prompt()` function in `src/generation/prompt_builder.py` sanitizes all user input before building the prompt via the `_sanitize_for_prompt()` helper. This function:
+
 - Normalizes Unicode via `unicodedata.normalize("NFKC")` to prevent homograph attacks
 - Removes all control characters (Unicode category "C": Cc, Cf, Co, Cs, Cn) to strip newlines, tabs, and other whitespace-like characters that might break out of the prompt template
 - Strips leading/trailing whitespace
@@ -59,6 +60,7 @@ The rate limiter uses an in-memory store and is safe for single-instance deploym
 This comprehensive sanitization prevents prompt injection attacks while preserving printable Unicode characters.
 
 **Request validation**: The `QueryRequest` model in `src/api/models.py` enforces:
+
 - `query`: required, length 1–2000 characters
 - `entity_name`: optional, regex-validated (letters, digits, spaces, hyphens, underscores, apostrophes only)
 
