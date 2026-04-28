@@ -113,6 +113,14 @@ class TestHyDETransformer:
         # exc_info=True means the record should have an exception attached
         assert warning_record.exc_info is not None
 
+    def test_infer_called_with_thinking_false(self) -> None:
+        mock_inf = self._make_inferencer()
+        t = HyDETransformer(mock_inf, max_new_tokens=100)
+        t.transform("What is Pikachu?")
+
+        _, kwargs = mock_inf.infer.call_args
+        assert kwargs.get("thinking") is False
+
 
 @pytest.mark.unit
 class TestMultiDraftHyDETransformer:
@@ -232,6 +240,30 @@ class TestMultiDraftHyDETransformer:
 
         t = MultiDraftHyDETransformer(self._make_inferencer(), self._make_embedder(), num_drafts=2)
         assert isinstance(t, QueryTransformerProtocol)
+
+    def test_transform_called_with_thinking_false(self) -> None:
+        mock_inf = MagicMock()
+        mock_inf.infer.return_value = "a hypothesis"
+        mock_embedder = MagicMock()
+        mock_embedder.encode.return_value = MagicMock(dense=[[0.1]], sparse=[{1: 0.5}])
+
+        t = MultiDraftHyDETransformer(mock_inf, mock_embedder, num_drafts=1)
+        t.transform("What is Pikachu?")
+
+        _, kwargs = mock_inf.infer.call_args
+        assert kwargs.get("thinking") is False
+
+    def test_transform_to_embedding_called_with_thinking_false(self) -> None:
+        mock_inf = MagicMock()
+        mock_inf.infer.return_value = "a hypothesis"
+        mock_embedder = MagicMock()
+        mock_embedder.encode.return_value = MagicMock(dense=[[0.1]], sparse=[{1: 0.5}])
+
+        t = MultiDraftHyDETransformer(mock_inf, mock_embedder, num_drafts=1)
+        t.transform_to_embedding("What is Pikachu?")
+
+        _, kwargs = mock_inf.infer.call_args
+        assert kwargs.get("thinking") is False
 
 
 @pytest.mark.unit

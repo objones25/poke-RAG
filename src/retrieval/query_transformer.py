@@ -39,7 +39,9 @@ class HyDETransformer:
     def transform(self, query: str) -> str:
         prompt = _HYDE_PROMPT_TEMPLATE.format(query=query)
         try:
-            hypothesis: str = self._inferencer.infer(prompt, max_new_tokens=self._max_new_tokens)
+            hypothesis: str = self._inferencer.infer(
+                prompt, max_new_tokens=self._max_new_tokens, thinking=False
+            )
         except Exception as exc:
             _LOG.warning(
                 "HyDE inference failed, falling back to original query: %s",
@@ -85,7 +87,9 @@ class MultiDraftHyDETransformer:
         """Return first successful draft or the original query on failure."""
         prompt = _HYDE_PROMPT_TEMPLATE.format(query=query)
         try:
-            hypothesis: str = self._inferencer.infer(prompt, max_new_tokens=self._max_new_tokens)
+            hypothesis: str = self._inferencer.infer(
+                prompt, max_new_tokens=self._max_new_tokens, thinking=False
+            )
         except Exception as exc:
             _LOG.warning("MultiDraftHyDE single transform failed, falling back: %s", exc)
             return query
@@ -99,7 +103,9 @@ class MultiDraftHyDETransformer:
         prompt = _HYDE_PROMPT_TEMPLATE.format(query=query)
         for i in range(self._num_drafts):
             try:
-                result: str = self._inferencer.infer(prompt, max_new_tokens=self._max_new_tokens)
+                result: str = self._inferencer.infer(
+                    prompt, max_new_tokens=self._max_new_tokens, thinking=False
+                )
                 if result and result.strip():
                     drafts.append(result)
             except Exception as exc:
