@@ -1,6 +1,6 @@
 import pytest
 
-from src.generation.prompt_builder import build_prompt
+from src.generation.prompt_builder import SYSTEM_PROMPT, build_prompt
 from tests.conftest import make_chunk as _chunk
 
 
@@ -155,3 +155,16 @@ class TestBuildPromptSanitization:
         prompt = build_prompt(long_query, (chunk,))
         assert isinstance(prompt, str)
         assert len(prompt) > 0
+
+
+@pytest.mark.unit
+class TestSystemPromptExport:
+    def test_system_prompt_is_public(self) -> None:
+        assert isinstance(SYSTEM_PROMPT, str)
+        assert "PokéSage" in SYSTEM_PROMPT
+
+    def test_build_prompt_returns_user_message_only(self) -> None:
+        chunk = _chunk("Some text.", score=0.9)
+        prompt = build_prompt("What type?", (chunk,))
+        assert prompt.startswith("Context:")
+        assert not prompt.startswith(SYSTEM_PROMPT[:30])
