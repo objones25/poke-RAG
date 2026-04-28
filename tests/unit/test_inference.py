@@ -368,11 +368,18 @@ class TestInferencerThinking:
         raw = fake_processor.decode.return_value
         fake_processor.parse_response.assert_called_with(raw)
 
-    def test_thinking_path_returns_parse_response_output(self) -> None:
+    def test_thinking_path_returns_parse_response_str_output(self) -> None:
         resp = "Charizard is Fire."
         inferencer, _, _ = self._make_thinking_inferencer(parse_response_return=resp)
         result = inferencer.infer("question")
         assert result == resp
+
+    def test_thinking_path_returns_content_from_parse_response_dict(self) -> None:
+        # parse_response returns a dict on current transformers — content key holds the answer
+        resp = {"role": "assistant", "thinking": "some reasoning", "content": "Charizard is Fire."}
+        inferencer, _, _ = self._make_thinking_inferencer(parse_response_return=resp)
+        result = inferencer.infer("question")
+        assert result == "Charizard is Fire."
 
     def test_thinking_override_false_skips_parse_response(self) -> None:
         """Inferencer with thinking_enabled=True but infer(thinking=False) uses normal path."""
