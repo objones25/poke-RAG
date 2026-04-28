@@ -46,13 +46,16 @@ def _make_inferencer(
 @pytest.mark.unit
 class TestInferencerInfer:
     def test_apply_chat_template_called_with_prompt(self) -> None:
+        from src.generation.prompt_builder import SYSTEM_PROMPT
+
         inferencer, _, fake_processor, _ = _make_inferencer()
         inferencer.infer("What is Pikachu?")
 
         fake_processor.apply_chat_template.assert_called_once()
         args, _ = fake_processor.apply_chat_template.call_args
         messages = args[0]
-        assert messages == [{"role": "user", "content": "What is Pikachu?"}]
+        assert messages[0] == {"role": "system", "content": SYSTEM_PROMPT}
+        assert messages[1] == {"role": "user", "content": "What is Pikachu?"}
 
     def test_apply_chat_template_kwargs(self) -> None:
         inferencer, _, fake_processor, _ = _make_inferencer()
@@ -257,11 +260,15 @@ class TestPrepareInputs:
         assert input_len == 5
 
     def test_apply_chat_template_called(self) -> None:
+        from src.generation.prompt_builder import SYSTEM_PROMPT
+
         inferencer, _, fake_processor, _ = _make_inferencer()
         inferencer._prepare_inputs("test prompt")
         fake_processor.apply_chat_template.assert_called_once()
         args, _ = fake_processor.apply_chat_template.call_args
-        assert args[0] == [{"role": "user", "content": "test prompt"}]
+        messages = args[0]
+        assert messages[0] == {"role": "system", "content": SYSTEM_PROMPT}
+        assert messages[1] == {"role": "user", "content": "test prompt"}
 
     def test_processor_called_with_pt_tensors(self) -> None:
         inferencer, _, fake_processor, _ = _make_inferencer()
@@ -273,6 +280,48 @@ class TestPrepareInputs:
         inferencer, _, _, fake_inputs = _make_inferencer(device="cuda")
         inferencer._prepare_inputs("test prompt")
         fake_inputs.to.assert_called_once_with("cuda")
+
+    def test_prepare_inputs_sends_system_and_user_messages(self) -> None:
+        from src.generation.prompt_builder import SYSTEM_PROMPT
+
+        inferencer, _, fake_processor, _ = _make_inferencer()
+        inferencer.infer("What is Pikachu?")
+
+        args, _ = fake_processor.apply_chat_template.call_args
+        messages = args[0]
+        assert len(messages) == 2
+        assert messages[0] == {"role": "system", "content": SYSTEM_PROMPT}
+        assert messages[1] == {"role": "user", "content": "What is Pikachu?"}
+
+    def test_prepare_inputs_enable_thinking_false_by_default(self) -> None:
+        inferencer, _, fake_processor, _ = _make_inferencer()
+        inferencer.infer("prompt")
+
+        _, kwargs = fake_processor.apply_chat_template.call_args
+        assert kwargs["enable_thinking"] is False
+
+    def test_prepare_inputs_enable_thinking_true_when_thinking_on(self) -> None:
+        inferencer, _, fake_processor, _ = _make_inferencer()
+        inferencer._prepare_inputs("prompt", thinking=True)
+
+        _, kwargs = fake_processor.apply_chat_template.call_args
+        assert kwargs["enable_thinking"] is True
+
+    def test_thinking_enabled_defaults_to_false(self) -> None:
+        inferencer, _, _, _ = _make_inferencer()
+        assert inferencer._thinking_enabled is False
+
+    def test_thinking_enabled_true_stored(self) -> None:
+        from src.generation.inference import Inferencer
+        from src.generation.models import GenerationConfig
+
+        inferencer = Inferencer(
+            MagicMock(),
+            MagicMock(),
+            GenerationConfig(model_id="test/model"),
+            thinking_enabled=True,
+        )
+        assert inferencer._thinking_enabled is True
 
 
 @pytest.mark.unit
@@ -309,7 +358,7 @@ class TestThinkingStreamFilter:
         f = self._make_filter()
         f.feed("<|channel>thought\n")
         f.feed("reasoning ")
-        f.feed("<channel")      # first half of tag
+        f.feed("<channel")  # first half of tag
         result = f.feed("|>answer here")  # second half
         assert result == "answer here"
 

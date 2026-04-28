@@ -8,6 +8,7 @@ from typing import Any
 from transformers import PreTrainedModel, TextIteratorStreamer
 
 from src.generation.models import GenerationConfig
+from src.generation.prompt_builder import SYSTEM_PROMPT
 
 _LOG = logging.getLogger(__name__)
 
@@ -42,18 +43,29 @@ class _ThinkingStreamFilter:
 
 
 class Inferencer:
-    def __init__(self, model: PreTrainedModel, processor: Any, config: GenerationConfig) -> None:
+    def __init__(
+        self,
+        model: PreTrainedModel,
+        processor: Any,
+        config: GenerationConfig,
+        *,
+        thinking_enabled: bool = False,
+    ) -> None:
         self._model = model
         self._processor = processor
         self._config = config
+        self._thinking_enabled = thinking_enabled
 
-    def _prepare_inputs(self, prompt: str) -> tuple[Any, int]:
-        messages = [{"role": "user", "content": prompt}]
+    def _prepare_inputs(self, user_message: str, *, thinking: bool = False) -> tuple[Any, int]:
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_message},
+        ]
         text: str = self._processor.apply_chat_template(
             messages,
             tokenize=False,
             add_generation_prompt=True,
-            enable_thinking=False,
+            enable_thinking=thinking,
         )
         inputs = self._processor(text=text, return_tensors="pt").to(self._model.device)
         input_len: int = inputs["input_ids"].shape[-1]
